@@ -1,0 +1,12 @@
+CreatePseudoConsole
+ClosePseudoConsole
+ResizePseudoConsole
+CreatePipe
+CreateProcess
+InitializeProcThreadAttributeList
+UpdateProcThreadAttribute
+DeleteProcThreadAttributeList
+CloseHandle
+GetExitCodeProcess
+TerminateProcess
+WaitForSingleObject

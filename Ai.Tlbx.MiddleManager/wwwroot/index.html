@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" />
+    <title>MiddleManager</title>
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#1e1e1e" />
+
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/xterm.css" />
+</head>
+<body>
+    <div id="app" class="terminal-page">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <span>Sessions</span>
+                <div class="sidebar-header-buttons">
+                    <button class="sidebar-btn" id="btn-settings" title="Settings">⚙</button>
+                    <button class="sidebar-btn primary" id="btn-new-session" title="New Terminal">+</button>
+                </div>
+            </div>
+            <div class="session-list" id="session-list"></div>
+            <div class="sidebar-footer">
+                <div class="network-list" id="network-list"></div>
+                <div class="footer-row">
+                    <span class="client-count" id="session-count">0 session(s)</span>
+                    <span class="version" id="app-version"></span>
+                </div>
+            </div>
+        </aside>
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+        <div class="main-content">
+            <header class="mobile-header">
+                <button class="hamburger-btn" id="btn-hamburger">☰</button>
+                <span class="mobile-title" id="mobile-title">MiddleManager</span>
+                <button class="add-session-btn mobile-add" id="btn-new-session-mobile" title="New Terminal">+</button>
+            </header>
+
+            <div class="terminals-area">
+                <div id="terminal-container" class="terminal-container hidden"></div>
+                <div id="empty-state" class="empty-state">
+                    <p>No terminals open</p>
+                    <button id="btn-create-terminal">Create Terminal</button>
+                </div>
+                <div id="settings-view" class="settings-view hidden">
+                    <div class="settings-container">
+                        <h2>Settings</h2>
+
+                        <!-- Session Defaults -->
+                        <div class="settings-section">
+                            <h3>Session Defaults</h3>
+                            <div class="setting-row">
+                                <label for="setting-default-shell">Default Shell</label>
+                                <select id="setting-default-shell">
+                                    <option value="Pwsh">PowerShell 7</option>
+                                    <option value="PowerShell">Windows PowerShell</option>
+                                    <option value="Cmd">Command Prompt</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-working-dir">Default Working Directory</label>
+                                <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
+                                    <input type="text" id="setting-working-dir" placeholder="Leave empty for home directory" />
+                                    <button class="inline-save-btn" title="Save">✓</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Terminal Appearance -->
+                        <div class="settings-section">
+                            <h3>Terminal Appearance</h3>
+                            <div class="setting-row">
+                                <label for="setting-font-size">Font Size</label>
+                                <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
+                                    <input type="number" id="setting-font-size" min="8" max="24" value="14" />
+                                    <button class="inline-save-btn" title="Save">✓</button>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-cursor-style">Cursor Style</label>
+                                <select id="setting-cursor-style">
+                                    <option value="bar">Bar</option>
+                                    <option value="block">Block</option>
+                                    <option value="underline">Underline</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-cursor-blink">Cursor Blink</label>
+                                <input type="checkbox" id="setting-cursor-blink" checked />
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-theme">Theme</label>
+                                <select id="setting-theme">
+                                    <option value="dark">Dark</option>
+                                    <option value="light">Light</option>
+                                    <option value="solarizedDark">Solarized Dark</option>
+                                    <option value="solarizedLight">Solarized Light</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Terminal Behavior -->
+                        <div class="settings-section">
+                            <h3>Terminal Behavior</h3>
+                            <div class="setting-row">
+                                <label for="setting-scrollback">Scrollback Lines</label>
+                                <div class="text-input-wrapper" data-setting="scrollbackLines" data-type="number">
+                                    <input type="number" id="setting-scrollback" min="500" max="100000" step="500" value="10000" />
+                                    <button class="inline-save-btn" title="Save">✓</button>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-bell-style">Bell Style</label>
+                                <select id="setting-bell-style">
+                                    <option value="notification">Desktop Notification</option>
+                                    <option value="sound">Sound</option>
+                                    <option value="visual">Visual Flash</option>
+                                    <option value="off">Off</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-copy-on-select">Copy on Select</label>
+                                <input type="checkbox" id="setting-copy-on-select" />
+                            </div>
+                            <div class="setting-row">
+                                <label for="setting-right-click-paste">Right-Click Paste</label>
+                                <input type="checkbox" id="setting-right-click-paste" checked />
+                            </div>
+                        </div>
+
+                        <!-- Server -->
+                        <div class="settings-section">
+                            <h3>Server</h3>
+                            <p class="setting-hint">Server settings are configured via command line arguments:</p>
+                            <div class="setting-info">
+                                <code>--port 2000</code> - Port to listen on (default: 2000)
+                            </div>
+                            <div class="setting-info">
+                                <code>--bind 0.0.0.0</code> - Bind address (default: 0.0.0.0, use 127.0.0.1 for local only)
+                            </div>
+                        </div>
+
+                        <!-- OSS Licenses -->
+                        <div class="settings-section">
+                            <h3>Open Source Licenses</h3>
+                            <p class="setting-hint">MiddleManager uses the following open source components:</p>
+                            <div class="license-item">
+                                <strong>xterm.js</strong> <span class="license-version">v5.3.0</span>
+                                <span class="license-type">MIT License</span>
+                                <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
+                            </div>
+                            <div class="license-item">
+                                <strong>xterm-addon-fit</strong> <span class="license-version">v0.8.0</span>
+                                <span class="license-type">MIT License</span>
+                                <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener">github.com/xtermjs/xterm.js</a>
+                            </div>
+                            <div class="license-item">
+                                <strong>CsWin32</strong> <span class="license-version">v0.3.106</span>
+                                <span class="license-type">MIT License</span>
+                                <a href="https://github.com/microsoft/CsWin32" target="_blank" rel="noopener">github.com/microsoft/CsWin32</a>
+                            </div>
+                            <div class="license-item">
+                                <strong>ASP.NET Core</strong>
+                                <span class="license-type">MIT License</span>
+                                <a href="https://github.com/dotnet/aspnetcore" target="_blank" rel="noopener">github.com/dotnet/aspnetcore</a>
+                            </div>
+                        </div>
+
+                        <div class="settings-footer">
+                            <button id="btn-settings-save" class="btn-primary">Save</button>
+                            <button id="btn-settings-cancel" class="btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="connection-status" class="connection-status"></div>
+
+    <script src="js/xterm.min.js"></script>
+    <script src="js/xterm-addon-fit.min.js"></script>
+    <script src="js/terminal.js"></script>
+</body>
+</html>

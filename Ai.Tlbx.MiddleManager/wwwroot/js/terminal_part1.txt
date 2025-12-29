@@ -1,0 +1,52 @@
+(function() {
+    'use strict';
+
+    // Mux protocol constants
+    const MUX_HEADER_SIZE = 9;
+    const MUX_TYPE_OUTPUT = 0x01;
+    const MUX_TYPE_INPUT = 0x02;
+    const MUX_TYPE_RESIZE = 0x03;
+    const MUX_TYPE_INIT = 0xFF;
+
+    // State
+    let sessions = [];
+    let activeSessionId = null;
+    let stateWs = null;
+    let stateReconnectTimer = null;
+    let stateReconnectDelay = 1000;
+    let muxWs = null;
+    let muxReconnectTimer = null;
+    let muxReconnectDelay = 1000;
+    let clientId = null;
+    let settingsOpen = false;
+    let currentSettings = null;
+    let sidebarOpen = false;
+    let notificationPermission = Notification.permission;
+
+    // Per-session state: { terminal, fitAddon, container, serverCols, serverRows }
+    const sessionTerminals = new Map();
+
+    // Theme definitions
+    const themes = {
+        dark: { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#ffffff', cursorAccent: '#1e1e1e', selectionBackground: '#264f78' },
+        light: { background: '#ffffff', foreground: '#1e1e1e', cursor: '#1e1e1e', cursorAccent: '#ffffff', selectionBackground: '#add6ff' },
+        solarizedDark: { background: '#002b36', foreground: '#839496', cursor: '#93a1a1', cursorAccent: '#002b36', selectionBackground: '#073642' },
+        solarizedLight: { background: '#fdf6e3', foreground: '#657b83', cursor: '#586e75', cursorAccent: '#fdf6e3', selectionBackground: '#eee8d5' }
+    };
+
+    // Cookie helpers for immediate theme availability
+    function setCookie(name, value, days = 365) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Lax';
+    }
+
+    function getCookie(name) {
+        const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+        return value ? decodeURIComponent(value.split('=')[1]) : null;
+    }
+
+    // Apply theme from cookie immediately to prevent flash
+    const savedTheme = getCookie('mm-theme');
+    if (savedTheme && themes[savedTheme]) {
+        document.documentElement.style.setProperty('--terminal-bg', themes[savedTheme].background);
+    }

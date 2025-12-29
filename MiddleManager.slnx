@@ -1,0 +1,4 @@
+<Solution>  
+  <Project Path="Ai.Tlbx.MiddleManager.Tests/Ai.Tlbx.MiddleManager.Tests.csproj" />
+  <Project Path="Ai.Tlbx.MiddleManager./Ai.Tlbx.MiddleManager.csproj" />
+</Solution>
