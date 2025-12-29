@@ -14,17 +14,17 @@ MiddleManager is a web-based terminal multiplexer. Single executable (~15MB), na
 
 ```bash
 # Build
-dotnet build Ai.Tlbx.MiddleManager.Aot/Ai.Tlbx.MiddleManager.Aot.csproj
+dotnet build Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj
 
 # Test
-dotnet test Ai.Tlbx.MiddleManager.Aot.Tests/Ai.Tlbx.MiddleManager.Aot.Tests.csproj
+dotnet test Ai.Tlbx.MiddleManager.Tests/Ai.Tlbx.MiddleManager.Tests.csproj
 
 # AOT publish (platform-specific)
-Ai.Tlbx.MiddleManager.Aot/build-aot.cmd        # Windows
-./Ai.Tlbx.MiddleManager.Aot/build-aot-linux.sh # Linux
-./Ai.Tlbx.MiddleManager.Aot/build-aot-macos.sh # macOS
+Ai.Tlbx.MiddleManager/build-aot.cmd        # Windows
+./Ai.Tlbx.MiddleManager/build-aot-linux.sh # Linux
+./Ai.Tlbx.MiddleManager/build-aot-macos.sh # macOS
 
-# Output: Ai.Tlbx.MiddleManager.Aot/publish/mm[.exe]
+# Output: Ai.Tlbx.MiddleManager/publish/mm[.exe]
 ```
 
 ## Architecture

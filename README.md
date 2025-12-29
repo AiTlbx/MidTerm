@@ -5,26 +5,59 @@
 [![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](#installation)
 [![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#installation)
 
-**A web-based terminal multiplexer.** Access your terminal sessions from any browser.
+**Your terminal, anywhere.** Run AI coding agents and TUI apps on your machine, access them from any browser.
 
 <!-- TODO: Add screenshot or GIF demo here -->
 ![MiddleManager Screenshot](docs/screenshot.png)
 
-## Why MiddleManager?
+## The Problem
 
-Ever needed to access a terminal on a remote machine but SSH wasn't an option? Or wanted to share a terminal session with a colleague without screen sharing? MiddleManager solves this by serving your terminal through a web interface.
+You kick off Claude Code on a complex refactor. It's going to take a while. Now you need to leave your desk — grab lunch, head to a meeting, go home. Your options:
 
-- **Zero dependencies** — Single ~15MB executable, no runtime required
-- **Cross-platform** — Native binaries for Windows, Linux, and macOS
-- **Instant startup** — Built with .NET Native AOT for sub-second launch
-- **Multi-session** — Run multiple terminals, all multiplexed over one WebSocket
-- **Any shell** — PowerShell, CMD, Bash, Zsh — whatever's on your system
+- **Cloud terminals** — Expensive, resource-limited, your API keys live on someone else's server
+- **SSH** — Blocked by firewalls, corporate networks, coffee shop WiFi
+- **Just wait** — Watch the terminal until it's done
+
+## The Solution
+
+MiddleManager serves your terminal through a browser. Start a task on your main rig, continue watching from your laptop, phone, or tablet. Your machine does the work. You stay connected.
+
+```
+Your PC                          Anywhere
+┌─────────────────┐              ┌─────────────────┐
+│ Claude Code     │    HTTPS     │                 │
+│ OpenAI Codex    │◄────────────►│   Browser       │
+│ Any TUI app     │   WebSocket  │                 │
+└─────────────────┘              └─────────────────┘
+     Full power                    Full access
+```
+
+**Perfect for:**
+- **AI coding agents** — Claude Code, OpenAI Codex, Aider, Cursor CLI
+- **Long-running tasks** — Builds, deployments, data processing
+- **Any TUI app** — htop, vim, tmux sessions, whatever you run in a terminal
+
+## Why Not Just...?
+
+| Alternative | Problem |
+|-------------|---------|
+| Cloud VMs | Expensive, limited resources, your API keys on their servers |
+| SSH | Firewalls, NAT, corporate networks block it |
+| Screen sharing | Laggy, needs coordination, can't multitask |
+| tmux + SSH | Still needs SSH access |
+
+MiddleManager: HTTP works everywhere. Your machine, your power, your keys.
+
+## Features
+
+- **Single binary** — ~15MB, no dependencies, no runtime
+- **Cross-platform** — Windows, Linux, macOS
+- **Instant startup** — Native AOT compiled, sub-second launch
+- **Multi-session** — Multiple terminals, one WebSocket connection
+- **Any shell** — PowerShell, CMD, Bash, Zsh
 
 ## Installation
 
-### Download Binary
-
-<!-- TODO: Add actual release links when available -->
 Download the latest release for your platform:
 
 | Platform | Download |
@@ -34,20 +67,30 @@ Download the latest release for your platform:
 | macOS ARM64 | [mm-osx-arm64.tar.gz](https://github.com/AiTlbx/MiddleManager/releases/latest) |
 | macOS x64 | [mm-osx-x64.tar.gz](https://github.com/AiTlbx/MiddleManager/releases/latest) |
 
-### Quick Start
+## Quick Start
 
 ```bash
-# Windows
-mm.exe
+# Start MiddleManager
+./mm                    # Linux/macOS
+mm.exe                  # Windows
 
-# Linux/macOS
-chmod +x mm
-./mm
+# Open in browser
+http://localhost:2000
+
+# Start Claude Code in the terminal
+claude
 ```
 
-Open `http://localhost:2000` in your browser.
+That's it. Now open that same URL from any device on your network.
 
-### Options
+## Remote Access
+
+For access outside your local network, expose port 2000 via:
+- **Tailscale/ZeroTier** — Mesh VPN, easiest setup
+- **Cloudflare Tunnel** — Free, no port forwarding needed
+- **Reverse proxy** — nginx/Caddy with HTTPS
+
+## Options
 
 ```
 mm [options]
@@ -56,30 +99,9 @@ mm [options]
   --bind 0.0.0.0  Address to bind to (default: 0.0.0.0)
 ```
 
-## Building from Source
-
-Requires [.NET 10 SDK](https://dotnet.microsoft.com/download).
-
-```bash
-# Clone
-git clone https://github.com/AiTlbx/MiddleManager.git
-cd MiddleManager
-
-# Build (debug)
-dotnet build
-
-# Build AOT binary
-cd Ai.Tlbx.MiddleManager.Aot
-./build-aot.cmd          # Windows
-./build-aot-linux.sh     # Linux
-./build-aot-macos.sh     # macOS
-```
-
-Output binary will be in `publish/`.
-
 ## Configuration
 
-Settings are stored in `~/.middlemanager/settings.json`:
+Settings stored in `~/.middlemanager/settings.json`:
 
 ```json
 {
@@ -89,9 +111,27 @@ Settings are stored in `~/.middlemanager/settings.json`:
 }
 ```
 
+## Building from Source
+
+Requires [.NET 10 SDK](https://dotnet.microsoft.com/download).
+
+```bash
+git clone https://github.com/AiTlbx/MiddleManager.git
+cd MiddleManager
+
+# Build
+dotnet build
+
+# AOT binary (platform-specific)
+cd Ai.Tlbx.MiddleManager
+./build-aot.cmd          # Windows
+./build-aot-linux.sh     # Linux
+./build-aot-macos.sh     # macOS
+```
+
 ## License
 
-This project is licensed under the [Mozilla Public License 2.0](LICENSE) — you can use it freely, but modifications to MPL-covered files must be shared under the same license.
+[Mozilla Public License 2.0](LICENSE) — Use freely, share modifications to MPL files.
 
 ---
 
