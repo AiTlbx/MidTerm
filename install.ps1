@@ -247,7 +247,8 @@ function Install-AsService
     Write-Host "Creating web service..." -ForegroundColor Gray
     if (Test-Path $hostBinaryPath)
     {
-        sc.exe create $WebServiceName binPath= "`"$webBinaryPath`" --sidecar" start= auto depend= "$HostServiceName" DisplayName= "$WebDisplayName" | Out-Null
+        $binPathWithSidecar = "`"$webBinaryPath`" --sidecar"
+        sc.exe create $WebServiceName binPath= $binPathWithSidecar start= auto depend= "$HostServiceName" DisplayName= "$WebDisplayName" | Out-Null
     }
     else
     {
