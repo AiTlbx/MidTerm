@@ -70,9 +70,11 @@
     var stateWs = null;
     var stateReconnectTimer = null;
     var stateReconnectDelay = 1000;
+    var stateWsConnected = false;
     var muxWs = null;
     var muxReconnectTimer = null;
     var muxReconnectDelay = 1000;
+    var muxWsConnected = false;
 
     // Per-session terminal state: { terminal, fitAddon, container, serverCols, serverRows }
     var sessionTerminals = new Map();
@@ -166,6 +168,8 @@
         stateWs.onopen = function() {
             console.log('State WebSocket connected');
             stateReconnectDelay = 1000;
+            stateWsConnected = true;
+            updateConnectionStatus();
         };
 
         stateWs.onmessage = function(event) {
@@ -181,6 +185,8 @@
 
         stateWs.onclose = function() {
             console.log('State WebSocket closed, reconnecting...');
+            stateWsConnected = false;
+            updateConnectionStatus();
             scheduleReconnect('state');
         };
 
@@ -432,12 +438,11 @@
         muxWs = new WebSocket(protocol + '//' + location.host + '/ws/mux');
         muxWs.binaryType = 'arraybuffer';
 
-        updateConnectionStatus('connecting');
-
         muxWs.onopen = function() {
             console.log('Mux WebSocket connected');
             muxReconnectDelay = 1000;
-            updateConnectionStatus('connected');
+            muxWsConnected = true;
+            updateConnectionStatus();
         };
 
         muxWs.onmessage = function(event) {
@@ -467,7 +472,8 @@
 
         muxWs.onclose = function() {
             console.log('Mux WebSocket closed, reconnecting...');
-            updateConnectionStatus('reconnecting');
+            muxWsConnected = false;
+            updateConnectionStatus();
             scheduleReconnect('mux');
         };
 
@@ -542,17 +548,25 @@
         }
     }
 
-    function updateConnectionStatus(status) {
+    function updateConnectionStatus() {
         var indicator = document.getElementById('connection-status');
         if (!indicator) return;
 
+        var status;
+        var text;
+        if (stateWsConnected && muxWsConnected) {
+            status = 'connected';
+            text = '';
+        } else if (!stateWsConnected && !muxWsConnected) {
+            status = 'disconnected';
+            text = 'Server disconnected';
+        } else {
+            status = 'reconnecting';
+            text = 'Reconnecting...';
+        }
+
         indicator.className = 'connection-status ' + status;
-        var statusText = {
-            'connected': '',
-            'connecting': 'Connecting...',
-            'reconnecting': 'Reconnecting...'
-        };
-        indicator.textContent = statusText[status] || 'Disconnected';
+        indicator.textContent = text;
     }
 
     // ========================================================================

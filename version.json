@@ -1,6 +1,6 @@
 {
-  "web": "2.1.1",
-  "pty": "2.1.1",
+  "web": "2.1.2",
+  "pty": "2.1.2",
   "protocol": 1,
   "minCompatiblePty": "2.0.0"
 }
