@@ -1170,3 +1170,97 @@ html, body {
 .changelog-error a {
     color: #569cd6;
 }
+
+/* System Status Section */
+.system-status-section .status-loading {
+    color: #888;
+    font-style: italic;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.status-item {
+    background-color: #2d2d2d;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.status-label {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.status-value {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.status-value.status-healthy {
+    color: #4ec9b0;
+}
+
+.status-value.status-ok {
+    color: #4ec9b0;
+}
+
+.status-value.status-error {
+    color: #f14c4c;
+}
+
+.status-details {
+    background-color: #252525;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 12px;
+}
+
+.status-detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid #333;
+}
+
+.status-detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    color: #888;
+}
+
+.detail-value {
+    color: #d4d4d4;
+}
+
+.detail-value code {
+    background-color: #1e1e1e;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Cascadia Mono NF', Consolas, monospace;
+    font-size: 11px;
+}
+
+.status-error-msg {
+    margin-top: 12px;
+    padding: 10px;
+    background-color: #4a1515;
+    border: 1px solid #6b2020;
+    border-radius: 6px;
+    color: #f48771;
+    font-size: 13px;
+}
+
+@media (max-width: 600px) {
+    .status-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

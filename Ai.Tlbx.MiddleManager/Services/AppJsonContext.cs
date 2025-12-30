@@ -41,4 +41,12 @@ public sealed class SystemHealth
     public string? HostError { get; init; }
     public int SessionCount { get; init; }
     public string Version { get; init; } = "";
+
+    // Technical diagnostics for machine room
+    public string? IpcTransport { get; init; }
+    public string? IpcEndpoint { get; init; }
+    public long? LastHeartbeatMs { get; init; }
+    public int WebProcessId { get; init; }
+    public long UptimeSeconds { get; init; }
+    public string Platform { get; init; } = "";
 }

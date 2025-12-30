@@ -616,6 +616,85 @@
             });
     }
 
+    function fetchSystemStatus() {
+        var container = document.getElementById('system-status-content');
+        if (!container) return;
+
+        fetch('/api/health')
+            .then(function(response) { return response.json(); })
+            .then(function(health) {
+                var statusClass = health.healthy ? 'status-healthy' : 'status-error';
+                var statusText = health.healthy ? 'Healthy' : 'Unhealthy';
+                var hostStatus = health.hostConnected ? 'Connected' : 'Disconnected';
+                var hostClass = health.hostConnected ? 'status-ok' : 'status-error';
+
+                var uptimeStr = formatUptime(health.uptimeSeconds);
+                var heartbeatStr = health.lastHeartbeatMs != null
+                    ? (health.lastHeartbeatMs < 1000 ? health.lastHeartbeatMs + 'ms ago' : Math.floor(health.lastHeartbeatMs / 1000) + 's ago')
+                    : 'N/A';
+
+                container.innerHTML =
+                    '<div class="status-grid">' +
+                        '<div class="status-item">' +
+                            '<span class="status-label">Status</span>' +
+                            '<span class="status-value ' + statusClass + '">' + statusText + '</span>' +
+                        '</div>' +
+                        '<div class="status-item">' +
+                            '<span class="status-label">Mode</span>' +
+                            '<span class="status-value">' + health.mode + '</span>' +
+                        '</div>' +
+                        '<div class="status-item">' +
+                            '<span class="status-label">PTY Host</span>' +
+                            '<span class="status-value ' + hostClass + '">' + hostStatus + '</span>' +
+                        '</div>' +
+                        '<div class="status-item">' +
+                            '<span class="status-label">Sessions</span>' +
+                            '<span class="status-value">' + health.sessionCount + '</span>' +
+                        '</div>' +
+                        '<div class="status-item">' +
+                            '<span class="status-label">Uptime</span>' +
+                            '<span class="status-value">' + uptimeStr + '</span>' +
+                        '</div>' +
+                        '<div class="status-item">' +
+                            '<span class="status-label">Last Heartbeat</span>' +
+                            '<span class="status-value">' + heartbeatStr + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="status-details">' +
+                        '<div class="status-detail-row">' +
+                            '<span class="detail-label">Platform</span>' +
+                            '<span class="detail-value">' + health.platform + '</span>' +
+                        '</div>' +
+                        '<div class="status-detail-row">' +
+                            '<span class="detail-label">IPC Transport</span>' +
+                            '<span class="detail-value">' + (health.ipcTransport || 'N/A') + '</span>' +
+                        '</div>' +
+                        '<div class="status-detail-row">' +
+                            '<span class="detail-label">IPC Endpoint</span>' +
+                            '<span class="detail-value"><code>' + (health.ipcEndpoint || 'N/A') + '</code></span>' +
+                        '</div>' +
+                        '<div class="status-detail-row">' +
+                            '<span class="detail-label">Web Process ID</span>' +
+                            '<span class="detail-value">' + health.webProcessId + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                    (health.hostError ? '<div class="status-error-msg">' + health.hostError + '</div>' : '');
+            })
+            .catch(function(err) {
+                container.innerHTML = '<div class="status-error-msg">Failed to load system status: ' + err.message + '</div>';
+            });
+    }
+
+    function formatUptime(seconds) {
+        if (seconds < 60) return seconds + 's';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+        var hours = Math.floor(seconds / 3600);
+        var mins = Math.floor((seconds % 3600) / 60);
+        if (hours < 24) return hours + 'h ' + mins + 'm';
+        var days = Math.floor(hours / 24);
+        return days + 'd ' + (hours % 24) + 'h';
+    }
+
     // ========================================================================
     // Terminal Management
     // ========================================================================
@@ -999,6 +1078,7 @@
         if (emptyState) emptyState.classList.add('hidden');
         if (settingsView) settingsView.classList.remove('hidden');
         fetchSettings();
+        fetchSystemStatus();
     }
 
     function closeSettings() {

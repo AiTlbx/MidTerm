@@ -253,6 +253,7 @@ public class Program
             var sessionCount = sidecarManager?.GetSessionList().Sessions?.Count
                 ?? directManager?.GetSessionList().Sessions?.Count ?? 0;
 
+            var client = sidecarManager?.SidecarClient;
             var health = new SystemHealth
             {
                 Healthy = !isSidecarMode || hostConnected,
@@ -260,7 +261,13 @@ public class Program
                 HostConnected = hostConnected,
                 HostError = isSidecarMode && !hostConnected ? "Cannot connect to mm-host process" : null,
                 SessionCount = sessionCount,
-                Version = version
+                Version = version,
+                IpcTransport = client?.TransportType,
+                IpcEndpoint = client?.Endpoint,
+                LastHeartbeatMs = client?.LastHeartbeatAgoMs,
+                WebProcessId = Environment.ProcessId,
+                UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
+                Platform = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux"
             };
             return Results.Json(health, AppJsonContext.Default.SystemHealth);
         });

@@ -28,6 +28,15 @@ public sealed class SidecarClient : IAsyncDisposable
 
     public bool IsConnected => _connected == 1 && _transport?.IsConnected == true;
 
+    // Diagnostic properties for machine room
+    public string TransportType => _transport?.GetType().Name ?? "None";
+    public string Endpoint => OperatingSystem.IsWindows()
+        ? @"\\.\pipe\MiddleManager"
+        : "/tmp/middlemanager.sock";
+    public long? LastHeartbeatAgoMs => _lastPingTicks > 0
+        ? (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPingTicks)) / TimeSpan.TicksPerMillisecond
+        : null;
+
     public async Task<bool> ConnectAsync(CancellationToken cancellationToken = default)
     {
         return await ConnectInternalAsync(false, cancellationToken).ConfigureAwait(false);
