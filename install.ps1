@@ -190,12 +190,41 @@ function Install-MiddleManager
 
         Install-AsService -InstallDir $installDir -Version $Version
 
-        # Show final service status
+        # Wait for mm.exe to spawn
+        Start-Sleep -Seconds 2
+
+        # Show final status
         Write-Host ""
-        Write-Host "Service Status:" -ForegroundColor Cyan
+        Write-Host "Process Status:" -ForegroundColor Cyan
         $serviceStatus = (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue).Status
-        if ($serviceStatus -eq "Running") { Write-Host "  $ServiceName : Running" -ForegroundColor Green }
-        else { Write-Host "  $ServiceName : $serviceStatus" -ForegroundColor Red }
+        $mmHostProc = Get-Process -Name "mm-host" -ErrorAction SilentlyContinue
+        $mmProc = Get-Process -Name "mm" -ErrorAction SilentlyContinue
+
+        if ($serviceStatus -eq "Running") { Write-Host "  Service    : Running" -ForegroundColor Green }
+        else { Write-Host "  Service    : $serviceStatus" -ForegroundColor Red }
+
+        if ($mmHostProc) { Write-Host "  mm-host    : Running (PID $($mmHostProc.Id))" -ForegroundColor Green }
+        else { Write-Host "  mm-host    : Not running" -ForegroundColor Red }
+
+        if ($mmProc) { Write-Host "  mm (web)   : Running (PID $($mmProc.Id))" -ForegroundColor Green }
+        else { Write-Host "  mm (web)   : Not running" -ForegroundColor Yellow; Write-Host "               (mm-host spawns mm.exe - may take a moment)" -ForegroundColor Gray }
+
+        # Check health endpoint
+        try
+        {
+            $health = Invoke-RestMethod -Uri "http://localhost:2000/api/health" -TimeoutSec 5 -ErrorAction Stop
+            Write-Host ""
+            Write-Host "Health Check:" -ForegroundColor Cyan
+            if ($health.healthy) { Write-Host "  Status     : Healthy" -ForegroundColor Green }
+            else { Write-Host "  Status     : Unhealthy" -ForegroundColor Red; if ($health.hostError) { Write-Host "  Error      : $($health.hostError)" -ForegroundColor Red } }
+            Write-Host "  Version    : $($health.version)" -ForegroundColor Gray
+        }
+        catch
+        {
+            Write-Host ""
+            Write-Host "Health Check:" -ForegroundColor Cyan
+            Write-Host "  Status     : Could not connect to http://localhost:2000" -ForegroundColor Yellow
+        }
     }
     else
     {
