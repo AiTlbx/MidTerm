@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.3] - 2025-12-30
+
+- Fix release artifact double-zipping (raw binaries now packaged in release job)
+
 ## [1.3.2] - 2025-12-30
 
 - Fix cross-platform build (conditional compilation for Windows Service)

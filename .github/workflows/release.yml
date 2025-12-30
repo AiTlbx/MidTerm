@@ -16,16 +16,12 @@ jobs:
         include:
           - os: macos-14
             rid: osx-arm64
-            artifact: mm-osx-arm64.tar.gz
           - os: macos-14
             rid: osx-x64
-            artifact: mm-osx-x64.tar.gz
           - os: windows-latest
             rid: win-x64
-            artifact: mm-win-x64.zip
           - os: ubuntu-latest
             rid: linux-x64
-            artifact: mm-linux-x64.tar.gz
 
     runs-on: ${{ matrix.os }}
 
@@ -46,27 +42,28 @@ jobs:
         run: |
           clang -O2 Ai.Tlbx.MiddleManager/Pty/pty_helper.c -o Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/pty_helper
 
-      - name: Package (Windows)
+      - name: Upload binary (Windows)
         if: matrix.rid == 'win-x64'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/mm.exe -DestinationPath ${{ matrix.artifact }}
-
-      - name: Package (Unix)
-        if: matrix.rid != 'win-x64'
-        run: |
-          cd Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish
-          if [ "${{ matrix.rid }}" = "osx-arm64" ] || [ "${{ matrix.rid }}" = "osx-x64" ]; then
-            tar -czvf ${{ github.workspace }}/${{ matrix.artifact }} mm pty_helper
-          else
-            tar -czvf ${{ github.workspace }}/${{ matrix.artifact }} mm
-          fi
-
-      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: ${{ matrix.rid }}
+          path: Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/mm.exe
+
+      - name: Upload binary (macOS)
+        if: startsWith(matrix.rid, 'osx')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}
+          path: |
+            Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/mm
+            Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/pty_helper
+
+      - name: Upload binary (Linux)
+        if: matrix.rid == 'linux-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}
+          path: Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/mm
 
   release:
     needs: build
@@ -84,7 +81,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
+
+      - name: Package artifacts
+        run: |
+          cd artifacts
+          # Windows
+          cd win-x64 && zip ../mm-win-x64.zip mm.exe && cd ..
+          # macOS
+          cd osx-arm64 && tar -czvf ../mm-osx-arm64.tar.gz mm pty_helper && cd ..
+          cd osx-x64 && tar -czvf ../mm-osx-x64.tar.gz mm pty_helper && cd ..
+          # Linux
+          cd linux-x64 && tar -czvf ../mm-linux-x64.tar.gz mm && cd ..
 
       - name: Generate changelog
         id: changelog
