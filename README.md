@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="80" align="left" style="margin-right: 16px">
+
 # MiddleManager
 
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
