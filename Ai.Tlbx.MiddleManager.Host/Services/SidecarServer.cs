@@ -35,8 +35,10 @@ public sealed class SidecarServer : IAsyncDisposable
         {
             try
             {
+                Console.WriteLine("Waiting for client connection...");
                 var transport = await _server.AcceptAsync(cancellationToken).ConfigureAwait(false);
                 var clientId = Interlocked.Increment(ref _nextClientId);
+                Console.WriteLine($"Client {clientId} connected");
                 var handler = new ClientHandler(clientId, transport, _sessionManager, RemoveClient);
                 _clients[clientId] = handler;
                 _ = handler.RunAsync(cancellationToken);
@@ -136,6 +138,7 @@ internal sealed class ClientHandler : IAsyncDisposable
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        Console.WriteLine($"Client {_clientId} RunAsync started");
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _heartbeatCts.Token);
         var linkedToken = linkedCts.Token;
 
@@ -148,14 +151,17 @@ internal sealed class ClientHandler : IAsyncDisposable
                 var frame = await _transport.ReadFrameAsync(linkedToken).ConfigureAwait(false);
                 if (frame is null)
                 {
+                    Console.WriteLine($"Client {_clientId} received null frame, disconnecting");
                     break;
                 }
 
+                Console.WriteLine($"Client {_clientId} received frame type: {frame.Value.Type}");
                 await HandleFrameAsync(frame.Value, linkedToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
+            Console.WriteLine($"Client {_clientId} cancelled");
         }
         catch (Exception ex)
         {
@@ -163,6 +169,7 @@ internal sealed class ClientHandler : IAsyncDisposable
         }
         finally
         {
+            Console.WriteLine($"Client {_clientId} disconnected");
             _onDisconnect(_clientId);
             await DisposeAsync().ConfigureAwait(false);
         }
@@ -170,15 +177,19 @@ internal sealed class ClientHandler : IAsyncDisposable
 
     private async Task HeartbeatLoopAsync(CancellationToken cancellationToken)
     {
+        Console.WriteLine($"Client {_clientId} heartbeat loop started");
         try
         {
             await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+            Console.WriteLine($"Client {_clientId} heartbeat loop: initial delay complete, starting pings");
 
             while (!cancellationToken.IsCancellationRequested && _transport.IsConnected)
             {
                 try
                 {
+                    Console.WriteLine($"Client {_clientId} sending Ping");
                     await SendFrameAsync(new IpcFrame(IpcMessageType.Ping)).ConfigureAwait(false);
+                    Console.WriteLine($"Client {_clientId} Ping sent successfully");
                 }
                 catch (Exception ex)
                 {
@@ -191,7 +202,7 @@ internal sealed class ClientHandler : IAsyncDisposable
                 var elapsed = DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPongTicks);
                 if (TimeSpan.FromTicks(elapsed).TotalMilliseconds > PingIntervalMs + PongTimeoutMs)
                 {
-                    Console.WriteLine($"Client {_clientId} heartbeat timeout, closing connection");
+                    Console.WriteLine($"Client {_clientId} heartbeat timeout (no Pong received), closing connection");
                     _heartbeatCts.Cancel();
                     break;
                 }
@@ -202,9 +213,11 @@ internal sealed class ClientHandler : IAsyncDisposable
                     await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
                 }
             }
+            Console.WriteLine($"Client {_clientId} heartbeat loop exiting (cancelled={cancellationToken.IsCancellationRequested}, connected={_transport.IsConnected})");
         }
         catch (OperationCanceledException)
         {
+            Console.WriteLine($"Client {_clientId} heartbeat loop cancelled");
         }
         catch (Exception ex)
         {
