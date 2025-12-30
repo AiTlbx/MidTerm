@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.4] - 2025-12-30
+
+- Add application icon to Windows executable
+
 ## [1.3.3] - 2025-12-30
 
 - Fix release artifact double-zipping (raw binaries now packaged in release job)
