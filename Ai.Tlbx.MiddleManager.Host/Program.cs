@@ -7,7 +7,7 @@ namespace Ai.Tlbx.MiddleManager.Host;
 
 public static class Program
 {
-    public const string Version = "2.1.3";
+    public const string Version = "2.2.0";
 
     public static async Task<int> Main(string[] args)
     {
@@ -23,7 +23,10 @@ public static class Program
             return 0;
         }
 
-        Console.WriteLine($"mm-host {Version} starting...");
+        var isServiceMode = args.Contains("--service");
+        var (port, bindAddress) = ParseArgs(args);
+
+        Console.WriteLine($"mm-host {Version} starting{(isServiceMode ? " (service mode)" : "")}...");
 
         try
         {
@@ -32,13 +35,14 @@ public static class Program
 #if WINDOWS
             builder.Services.AddWindowsService(options =>
             {
-                options.ServiceName = "MiddleManagerHost";
+                options.ServiceName = "MiddleManager";
             });
 #else
             builder.Services.AddSystemd();
 #endif
 
             builder.Services.AddSingleton<SessionManager>();
+            builder.Services.AddSingleton(new SupervisorConfig(isServiceMode, port, bindAddress));
             builder.Services.AddHostedService<SidecarHostedService>();
 
             var host = builder.Build();
@@ -52,6 +56,28 @@ public static class Program
         }
     }
 
+    private static (int port, string bindAddress) ParseArgs(string[] args)
+    {
+        var port = 2000;
+        var bindAddress = "0.0.0.0";
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--port" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
+            {
+                port = p;
+                i++;
+            }
+            else if (args[i] == "--bind" && i + 1 < args.Length)
+            {
+                bindAddress = args[i + 1];
+                i++;
+            }
+        }
+
+        return (port, bindAddress);
+    }
+
     private static void PrintHelp()
     {
         Console.WriteLine($"""
@@ -62,6 +88,9 @@ public static class Program
             Options:
               -h, --help       Show this help message
               -v, --version    Show version information
+              --service        Service mode: spawn and supervise mm.exe
+              --port <port>    Port for mm.exe web server (default: 2000)
+              --bind <addr>    Bind address for mm.exe (default: 0.0.0.0)
 
             Environment Variables:
               MM_RUN_AS_USER       Username to run terminals as
@@ -72,23 +101,27 @@ public static class Program
             IPC Endpoint:
               {IpcServerFactory.GetEndpointDescription()}
 
-            The host process manages terminal sessions and communicates with
-            the mm web server via IPC. It keeps sessions alive across web
-            server restarts.
+            In standalone mode (default), mm-host runs the IPC server only.
+            In service mode (--service), mm-host also spawns and monitors mm.exe,
+            restarting it automatically if it crashes.
             """);
     }
 }
 
+public sealed record SupervisorConfig(bool IsServiceMode, int Port, string BindAddress);
+
 public sealed class SidecarHostedService : BackgroundService
 {
     private readonly SessionManager _sessionManager;
+    private readonly SupervisorConfig _config;
     private SidecarServer? _server;
+    private WebServerSupervisor? _supervisor;
 
-    public SidecarHostedService(SessionManager sessionManager)
+    public SidecarHostedService(SessionManager sessionManager, SupervisorConfig config)
     {
         _sessionManager = sessionManager;
+        _config = config;
 
-        // Load runAs settings from environment (passed by web server or install script)
         _sessionManager.RunAsUser = Environment.GetEnvironmentVariable("MM_RUN_AS_USER");
         _sessionManager.RunAsUserSid = Environment.GetEnvironmentVariable("MM_RUN_AS_USER_SID");
         if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_UID"), out var uid))
@@ -106,18 +139,31 @@ public sealed class SidecarHostedService : BackgroundService
         _server = new SidecarServer(_sessionManager);
         await _server.StartAsync(stoppingToken);
 
-        try
+        if (_config.IsServiceMode)
         {
-            await Task.Delay(Timeout.Infinite, stoppingToken);
+            _supervisor = new WebServerSupervisor(_config.Port, _config.BindAddress);
+            await _supervisor.RunAsync(stoppingToken);
         }
-        catch (OperationCanceledException)
+        else
         {
+            try
+            {
+                await Task.Delay(Timeout.Infinite, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         Console.WriteLine("Shutting down...");
+
+        if (_supervisor is not null)
+        {
+            await _supervisor.DisposeAsync();
+        }
 
         if (_server is not null)
         {

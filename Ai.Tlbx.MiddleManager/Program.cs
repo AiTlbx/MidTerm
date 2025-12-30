@@ -24,7 +24,7 @@ public class Program
             return;
         }
 
-        var (port, bindAddress, useSidecar) = ParseCommandLineArgs(args);
+        var (port, bindAddress, useSidecar, wasSpawned) = ParseCommandLineArgs(args);
         var builder = CreateBuilder(args);
         var app = builder.Build();
         var version = GetVersion();
@@ -35,14 +35,13 @@ public class Program
         var shellRegistry = app.Services.GetRequiredService<ShellRegistry>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
 
-        // Try sidecar mode if enabled
         SidecarSessionManager? sidecarSessionManager = null;
         SidecarMuxConnectionManager? sidecarMuxManager = null;
         SidecarLifecycle? sidecarLifecycle = null;
 
         if (useSidecar)
         {
-            sidecarLifecycle = new SidecarLifecycle(settingsService);
+            sidecarLifecycle = new SidecarLifecycle(settingsService, wasSpawned);
             if (await sidecarLifecycle.StartAndConnectAsync())
             {
                 sidecarSessionManager = new SidecarSessionManager(shellRegistry, settingsService, sidecarLifecycle.Client);
@@ -50,6 +49,11 @@ public class Program
                 sidecarSessionManager.SetMuxManager(sidecarMuxManager);
                 await sidecarSessionManager.SyncSessionsAsync();
                 Console.WriteLine("Running in sidecar mode (sessions persist across restarts)");
+            }
+            else if (wasSpawned)
+            {
+                Console.WriteLine("Error: Could not connect to parent mm-host. Exiting.");
+                return;
             }
             else
             {
@@ -59,7 +63,6 @@ public class Program
             }
         }
 
-        // Fallback to direct mode if sidecar not available
         SessionManager? directSessionManager = null;
         MuxConnectionManager? directMuxManager = null;
 
@@ -142,11 +145,12 @@ public class Program
         return false;
     }
 
-    private static (int port, string bindAddress, bool useSidecar) ParseCommandLineArgs(string[] args)
+    private static (int port, string bindAddress, bool useSidecar, bool wasSpawned) ParseCommandLineArgs(string[] args)
     {
         var port = DefaultPort;
         var bindAddress = DefaultBindAddress;
         var useSidecar = !args.Contains("--no-sidecar");
+        var wasSpawned = args.Contains("--spawned");
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -162,7 +166,7 @@ public class Program
             }
         }
 
-        return (port, bindAddress, useSidecar);
+        return (port, bindAddress, useSidecar, wasSpawned);
     }
 
     private static WebApplicationBuilder CreateBuilder(string[] args)
@@ -699,10 +703,12 @@ public class Program
                 }
 
                 var sessionList = sidecarManager?.GetSessionList() ?? directManager!.GetSessionList();
+                var hostConnected = sidecarManager?.IsConnected ?? true;
                 var state = new StateUpdate
                 {
                     Sessions = sessionList,
-                    Update = lastUpdate
+                    Update = lastUpdate,
+                    HostConnected = hostConnected
                 };
                 var json = JsonSerializer.Serialize(state, AppJsonContext.Default.StateUpdate);
                 var bytes = Encoding.UTF8.GetBytes(json);

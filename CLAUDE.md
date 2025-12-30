@@ -31,29 +31,77 @@ Ai.Tlbx.MiddleManager.Aot/build-aot.cmd        # Windows
 # Output: Ai.Tlbx.MiddleManager.Aot/publish/mm[.exe]
 ```
 
-## Architecture (v2.0+ Sidecar)
+## Architecture (v2.2+ Supervisor Model)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  mm.exe (Web Server) - Ai.Tlbx.MiddleManager                │
-│  ├─ REST API, WebSocket handlers, Static files              │
-│  ├─ Settings UI                                             │
-│  └─ SidecarClient (connects to mm-host via IPC)             │
+│  Single Service (MiddleManager)                             │
+│  Entry point: mm-host --service                             │
+├─────────────────────────────────────────────────────────────┤
+│  mm-host.exe (PTY Host + Supervisor)                        │
+│  ├─ SidecarServer (IPC listener)                            │
+│  ├─ SessionManager (owns sessions, survives web restarts)   │
+│  ├─ WebServerSupervisor (spawns/monitors mm.exe)            │
+│  ├─ Heartbeat sender (Ping every 5s)                        │
+│  └─ TerminalSession (wraps PTY, buffers output)             │
 └─────────────────────────────────────────────────────────────┘
            │ Named Pipe (Win) / Unix Socket (Unix)
+           │ ← Heartbeat (Ping/Pong) →
            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  mm-host.exe (PTY Sidecar) - Ai.Tlbx.MiddleManager.Host     │
-│  ├─ SidecarServer (accepts IPC connections)                 │
-│  ├─ SessionManager (owns sessions, survives web restarts)   │
-│  ├─ TerminalSession (wraps PTY, buffers output)             │
-│  └─ IPtyConnection (Windows ConPTY / Unix forkpty)          │
+│  mm.exe (Web Server) - spawned as child process             │
+│  ├─ REST API, WebSocket handlers, Static files              │
+│  ├─ SidecarClient (connects to mm-host via IPC)             │
+│  ├─ Heartbeat responder (Pong on Ping)                      │
+│  └─ Auto-reconnect (exponential backoff 100ms → 5s)         │
 └─────────────────────────────────────────────────────────────┘
            │
     Shell Processes (pwsh, bash, zsh)
 ```
 
-**Key Benefit:** Terminal sessions persist across web server restarts. Most updates only restart mm.exe.
+**Key Benefits:**
+- Terminal sessions persist across web server restarts
+- Single service entry point (mm-host spawns and supervises mm.exe)
+- Auto-restart on crash (exponential backoff 1s → 30s)
+- Heartbeat monitoring detects frozen processes
+- Auto-reconnect if connection drops
+
+### Command-Line Flags
+
+**mm-host.exe:**
+- `--service` — Service mode: spawn and supervise mm.exe
+- (no flags) — Standalone mode: just IPC server (for debugging)
+
+**mm.exe:**
+- `--spawned` — Spawned by mm-host, use auto-reconnect
+- `--port <n>` — Listen on port (default: 2000)
+- `--bind <addr>` — Bind address (default: localhost)
+
+### Heartbeat Protocol
+
+```
+mm-host                                 mm.exe
+   │                                      │
+   │──────── Ping (0xF0) ────────────────▶│
+   │                                      │
+   │◀─────── Pong (0xF3) ─────────────────│
+   │         (every 5 seconds)            │
+```
+
+**Timeouts:**
+- Ping interval: 5 seconds
+- Pong timeout: 8 seconds (mm-host closes connection if no Pong)
+- mm.exe considers host dead if no Ping for 15 seconds
+
+**Auto-reconnect (mm.exe):**
+- On disconnect: exponential backoff 100ms → 200ms → 400ms → ... → 5s max
+- On reconnect: re-sync sessions from mm-host
+- UI shows "Host disconnected" indicator when connection lost
+
+**Auto-restart (mm-host):**
+- Monitors mm.exe process handle
+- On exit: restart with exponential backoff 1s → 2s → 4s → ... → 30s max
+- Reset backoff after 60s of stable running
 
 ### Project Structure
 
@@ -76,9 +124,10 @@ Ai.Tlbx.MiddleManager/              Web Server (mm.exe)
 └── wwwroot/                        Static files (embedded)
 
 Ai.Tlbx.MiddleManager.Host/         PTY Host (mm-host.exe)
-├── Program.cs                      Entry point, CLI parsing
+├── Program.cs                      Entry point, --service flag
 ├── Services/
-│   ├── SidecarServer               IPC listener
+│   ├── SidecarServer               IPC listener + heartbeat
+│   ├── WebServerSupervisor         Spawns/monitors mm.exe
 │   ├── SessionManager              Session lifecycle
 │   └── TerminalSession             PTY wrapper + output buffer
 ├── Pty/                            PTY implementations
@@ -268,10 +317,21 @@ Please save your work - all terminal sessions will close.
 | System service | `C:\Program Files\MiddleManager` (Win) / `/usr/local/bin` (Unix) | `%ProgramData%\MiddleManager` (Win) / `/usr/local/etc/middlemanager` (Unix) |
 | User install | `%LOCALAPPDATA%\MiddleManager` (Win) / `~/.local/bin` (Unix) | `~/.middlemanager` |
 
+**Single Service Architecture (v2.2+):**
+- One service runs `mm-host --service`
+- mm-host spawns and supervises mm.exe internally
+- No service dependencies to manage
+
 **Service registration:**
-- Windows: `sc.exe create` Windows Service, runs as LocalSystem
-- macOS: launchd plist in `/Library/LaunchDaemons`
-- Linux: systemd unit in `/etc/systemd/system`
+- Windows: `sc.exe create MiddleManager binPath= "mm-host.exe --service"`
+- macOS: launchd plist runs `mm-host --service`
+- Linux: systemd unit runs `mm-host --service`
+
+**Migration from v2.1.x:**
+Install scripts automatically detect old two-service architecture and migrate:
+- Stop old services (MiddleManagerHost, MiddleManager)
+- Remove old service registrations
+- Install new single service
 
 **User de-elevation:** When running as service (root/LocalSystem), terminals spawn as the installing user via:
 - Windows: `CreateProcessAsUser` with `WTSQueryUserToken`

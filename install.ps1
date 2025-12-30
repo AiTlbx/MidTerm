@@ -11,10 +11,9 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$WebServiceName = "MiddleManager"
-$HostServiceName = "MiddleManagerHost"
-$WebDisplayName = "MiddleManager Terminal Server"
-$HostDisplayName = "MiddleManager PTY Host"
+$ServiceName = "MiddleManager"
+$OldHostServiceName = "MiddleManagerHost"
+$DisplayName = "MiddleManager"
 $Publisher = "AiTlbx"
 $RepoOwner = "AiTlbx"
 $RepoName = "MiddleManager"
@@ -115,20 +114,23 @@ function Install-MiddleManager
     {
         $installDir = "$env:ProgramFiles\MiddleManager"
 
-        # Stop existing services before copying (files may be locked)
-        $existingWebService = Get-Service -Name $WebServiceName -ErrorAction SilentlyContinue
-        $existingHostService = Get-Service -Name $HostServiceName -ErrorAction SilentlyContinue
+        # Stop and remove old two-service architecture if present
+        $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        $oldHostService = Get-Service -Name $OldHostServiceName -ErrorAction SilentlyContinue
 
-        if ($existingWebService)
+        if ($existingService)
         {
-            Write-Host "Stopping existing web service..." -ForegroundColor Gray
-            Stop-Service -Name $WebServiceName -Force -ErrorAction SilentlyContinue
+            Write-Host "Stopping existing service..." -ForegroundColor Gray
+            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 1
         }
-        if ($existingHostService)
+
+        # Migration: remove old MiddleManagerHost service from v2.1.x
+        if ($oldHostService)
         {
-            Write-Host "Stopping existing host service..." -ForegroundColor Gray
-            Stop-Service -Name $HostServiceName -Force -ErrorAction SilentlyContinue
+            Write-Host "Migrating from old two-service architecture..." -ForegroundColor Yellow
+            Stop-Service -Name $OldHostServiceName -Force -ErrorAction SilentlyContinue
+            sc.exe delete $OldHostServiceName | Out-Null
             Start-Sleep -Seconds 2
         }
     }
@@ -187,6 +189,13 @@ function Install-MiddleManager
         }
 
         Install-AsService -InstallDir $installDir -Version $Version
+
+        # Show final service status
+        Write-Host ""
+        Write-Host "Service Status:" -ForegroundColor Cyan
+        $serviceStatus = (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue).Status
+        if ($serviceStatus -eq "Running") { Write-Host "  $ServiceName : Running" -ForegroundColor Green }
+        else { Write-Host "  $ServiceName : $serviceStatus" -ForegroundColor Red }
     }
     else
     {
@@ -208,61 +217,28 @@ function Install-AsService
         [string]$Version
     )
 
-    $webBinaryPath = Join-Path $InstallDir $WebBinaryName
     $hostBinaryPath = Join-Path $InstallDir $HostBinaryName
 
-    # Remove existing services if present
-    $existingWebService = Get-Service -Name $WebServiceName -ErrorAction SilentlyContinue
-    if ($existingWebService)
+    # Remove existing service if present
+    $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($existingService)
     {
-        Write-Host "Removing existing web service..." -ForegroundColor Gray
-        Stop-Service -Name $WebServiceName -Force -ErrorAction SilentlyContinue
-        sc.exe delete $WebServiceName | Out-Null
+        Write-Host "Removing existing service..." -ForegroundColor Gray
+        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+        sc.exe delete $ServiceName | Out-Null
         Start-Sleep -Seconds 1
     }
 
-    $existingHostService = Get-Service -Name $HostServiceName -ErrorAction SilentlyContinue
-    if ($existingHostService)
-    {
-        Write-Host "Removing existing host service..." -ForegroundColor Gray
-        Stop-Service -Name $HostServiceName -Force -ErrorAction SilentlyContinue
-        sc.exe delete $HostServiceName | Out-Null
-        Start-Sleep -Seconds 2
-    }
+    # Create single service that runs mm-host.exe --service
+    # mm-host will spawn and supervise mm.exe internally
+    Write-Host "Creating MiddleManager service..." -ForegroundColor Gray
+    $binPathWithService = "`"$hostBinaryPath`" --service"
+    sc.exe create $ServiceName binPath= $binPathWithService start= auto DisplayName= "$DisplayName" | Out-Null
+    sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
 
-    # Create host service first (web server depends on it)
-    if (Test-Path $hostBinaryPath)
-    {
-        Write-Host "Creating PTY host service..." -ForegroundColor Gray
-        sc.exe create $HostServiceName binPath= "`"$hostBinaryPath`"" start= auto DisplayName= "$HostDisplayName" | Out-Null
-        sc.exe description $HostServiceName "PTY session host for MiddleManager (persists terminal sessions)" | Out-Null
-
-        # Start host service
-        Write-Host "Starting host service..." -ForegroundColor Gray
-        Start-Service -Name $HostServiceName
-        Start-Sleep -Seconds 1
-    }
-
-    # Create web service with dependency on host service
-    Write-Host "Creating web service..." -ForegroundColor Gray
-    if (Test-Path $hostBinaryPath)
-    {
-        # Use New-Service first, then sc.exe config to add dependency and --sidecar arg
-        New-Service -Name $WebServiceName -BinaryPathName "`"$webBinaryPath`"" -DisplayName $WebDisplayName -StartupType Automatic | Out-Null
-        # sc.exe requires very specific quoting - pass as single raw argument string
-        $scArgs = "config $WebServiceName binPath= `"\`"$webBinaryPath\`" --sidecar`""
-        Start-Process -FilePath "sc.exe" -ArgumentList $scArgs -Wait -NoNewWindow | Out-Null
-        sc.exe config $WebServiceName depend= $HostServiceName | Out-Null
-    }
-    else
-    {
-        sc.exe create $WebServiceName binPath= "`"$webBinaryPath`"" start= auto DisplayName= "$WebDisplayName" | Out-Null
-    }
-    sc.exe description $WebServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
-
-    # Start web service
-    Write-Host "Starting web service..." -ForegroundColor Gray
-    Start-Service -Name $WebServiceName
+    # Start service
+    Write-Host "Starting service..." -ForegroundColor Gray
+    Start-Service -Name $ServiceName
 
     # Register in Add/Remove Programs
     Register-Uninstall -InstallDir $InstallDir -Version $Version -IsService $true
@@ -316,12 +292,12 @@ function Register-Uninstall
     }
 
     $regValues = @{
-        DisplayName = $WebDisplayName
+        DisplayName = $DisplayName
         DisplayVersion = $Version
         Publisher = $Publisher
         InstallLocation = $InstallDir
         UninstallString = "pwsh -ExecutionPolicy Bypass -File `"$uninstallScript`""
-        DisplayIcon = Join-Path $InstallDir $WebBinaryName
+        DisplayIcon = Join-Path $InstallDir $HostBinaryName
         NoModify = 1
         NoRepair = 1
     }
@@ -354,13 +330,13 @@ function Create-UninstallScript
 
 Write-Host "Uninstalling MiddleManager..." -ForegroundColor Cyan
 
-# Stop and remove web service first (depends on host)
-Stop-Service -Name "$WebServiceName" -Force -ErrorAction SilentlyContinue
-sc.exe delete "$WebServiceName" | Out-Null
+# Stop and remove service
+Stop-Service -Name "$ServiceName" -Force -ErrorAction SilentlyContinue
+sc.exe delete "$ServiceName" | Out-Null
 
-# Stop and remove host service
-Stop-Service -Name "$HostServiceName" -Force -ErrorAction SilentlyContinue
-sc.exe delete "$HostServiceName" | Out-Null
+# Remove old host service if present (migration cleanup)
+Stop-Service -Name "$OldHostServiceName" -Force -ErrorAction SilentlyContinue
+sc.exe delete "$OldHostServiceName" 2>`$null | Out-Null
 
 # Remove registry entry
 Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MiddleManager" -Force -ErrorAction SilentlyContinue
@@ -436,7 +412,7 @@ Write-Host "      - Runs in background, starts on boot" -ForegroundColor Gray
 Write-Host "      - Available before you log in" -ForegroundColor Gray
 Write-Host "      - Installs to Program Files" -ForegroundColor Gray
 Write-Host "      - Terminals run as: $($currentUser.Name)" -ForegroundColor Gray
-Write-Host "      - Requires admin privileges" -ForegroundColor Yellow
+Write-Host "      - Will prompt for admin elevation if needed" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  [2] User install (no admin required)" -ForegroundColor Cyan
 Write-Host "      - You start it manually when needed" -ForegroundColor Gray

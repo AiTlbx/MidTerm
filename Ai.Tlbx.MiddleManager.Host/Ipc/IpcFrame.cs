@@ -43,9 +43,11 @@ public enum IpcMessageType : byte
     GetBuffer = 0x16,
     Buffer = 0x17,
 
-    Heartbeat = 0xF0,
+    Ping = 0xF0,
+    Pong = 0xF3,
     Handshake = 0xF1,
     HandshakeAck = 0xF2,
+    RestartWeb = 0xFD,
     Error = 0xFE,
     Shutdown = 0xFF,
 }

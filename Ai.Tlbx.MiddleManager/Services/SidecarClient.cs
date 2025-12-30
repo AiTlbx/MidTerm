@@ -6,20 +6,39 @@ namespace Ai.Tlbx.MiddleManager.Services;
 
 public sealed class SidecarClient : IAsyncDisposable
 {
+    private const int PingTimeoutMs = 15_000;
+    private const int ReconnectInitialDelayMs = 100;
+    private const int ReconnectMaxDelayMs = 5_000;
+
     private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<IpcFrame>> _pendingRequests = new();
     private IIpcTransport? _transport;
     private CancellationTokenSource? _readCts;
+    private CancellationTokenSource? _reconnectCts;
     private bool _disposed;
     private int _connected;
+    private long _lastPingTicks;
+    private bool _autoReconnect;
 
     public event Action<string, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<SessionSnapshot>? OnStateChanged;
     public event Action? OnDisconnected;
+    public event Action? OnReconnected;
 
     public bool IsConnected => _connected == 1 && _transport?.IsConnected == true;
 
     public async Task<bool> ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        return await ConnectInternalAsync(false, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> ConnectWithAutoReconnectAsync(CancellationToken cancellationToken = default)
+    {
+        return await ConnectInternalAsync(true, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ConnectInternalAsync(bool autoReconnect, CancellationToken cancellationToken)
     {
         if (_disposed)
         {
@@ -39,7 +58,6 @@ public sealed class SidecarClient : IAsyncDisposable
             _transport = IpcTransportFactory.CreateClient();
             await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
 
-            // Handshake
             var handshakePayload = SidecarProtocol.CreateHandshakePayload(string.Empty);
             await _transport.WriteFrameAsync(
                 new IpcFrame(IpcMessageType.Handshake, string.Empty, handshakePayload),
@@ -57,6 +75,8 @@ public sealed class SidecarClient : IAsyncDisposable
                 throw new InvalidOperationException("Invalid handshake response");
             }
 
+            _autoReconnect = autoReconnect;
+            Interlocked.Exchange(ref _lastPingTicks, DateTime.UtcNow.Ticks);
             Interlocked.Exchange(ref _connected, 1);
 
             _readCts = new CancellationTokenSource();
@@ -81,13 +101,20 @@ public sealed class SidecarClient : IAsyncDisposable
         {
             while (!cancellationToken.IsCancellationRequested && _transport?.IsConnected == true)
             {
+                var elapsed = DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPingTicks);
+                if (TimeSpan.FromTicks(elapsed).TotalMilliseconds > PingTimeoutMs)
+                {
+                    Console.WriteLine("Host heartbeat timeout, disconnecting");
+                    break;
+                }
+
                 var frame = await _transport.ReadFrameAsync(cancellationToken).ConfigureAwait(false);
                 if (frame is null)
                 {
                     break;
                 }
 
-                HandleFrame(frame.Value);
+                await HandleFrameAsync(frame.Value).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -98,12 +125,55 @@ public sealed class SidecarClient : IAsyncDisposable
         }
         finally
         {
-            Interlocked.Exchange(ref _connected, 0);
-            OnDisconnected?.Invoke();
+            var wasConnected = Interlocked.Exchange(ref _connected, 0) == 1;
+            if (wasConnected)
+            {
+                OnDisconnected?.Invoke();
+
+                if (_autoReconnect && !_disposed)
+                {
+                    _ = ReconnectLoopAsync();
+                }
+            }
         }
     }
 
-    private void HandleFrame(IpcFrame frame)
+    private async Task ReconnectLoopAsync()
+    {
+        _reconnectCts?.Cancel();
+        _reconnectCts = new CancellationTokenSource();
+        var token = _reconnectCts.Token;
+        var delay = ReconnectInitialDelayMs;
+
+        Console.WriteLine("Starting reconnection loop...");
+
+        while (!token.IsCancellationRequested && !_disposed)
+        {
+            try
+            {
+                await Task.Delay(delay, token).ConfigureAwait(false);
+
+                if (await ConnectInternalAsync(true, token).ConfigureAwait(false))
+                {
+                    Console.WriteLine("Reconnected to mm-host");
+                    OnReconnected?.Invoke();
+                    return;
+                }
+
+                delay = Math.Min(delay * 2, ReconnectMaxDelayMs);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                delay = Math.Min(delay * 2, ReconnectMaxDelayMs);
+            }
+        }
+    }
+
+    private async Task HandleFrameAsync(IpcFrame frame)
     {
         switch (frame.Type)
         {
@@ -130,8 +200,31 @@ public sealed class SidecarClient : IAsyncDisposable
                 }
                 break;
 
-            case IpcMessageType.Heartbeat:
+            case IpcMessageType.Ping:
+                Interlocked.Exchange(ref _lastPingTicks, DateTime.UtcNow.Ticks);
+                await WriteFrameAsync(new IpcFrame(IpcMessageType.Pong)).ConfigureAwait(false);
                 break;
+
+            case IpcMessageType.Pong:
+                break;
+        }
+    }
+
+    private async Task WriteFrameAsync(IpcFrame frame)
+    {
+        if (_transport is null || !_transport.IsConnected)
+        {
+            return;
+        }
+
+        await _writeLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await _transport.WriteFrameAsync(frame).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
         }
     }
 
@@ -301,7 +394,10 @@ public sealed class SidecarClient : IAsyncDisposable
         }
         _disposed = true;
 
+        _reconnectCts?.Cancel();
         await DisconnectInternalAsync().ConfigureAwait(false);
         _connectLock.Dispose();
+        _writeLock.Dispose();
+        _reconnectCts?.Dispose();
     }
 }

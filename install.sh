@@ -6,10 +6,10 @@ set -e
 
 REPO_OWNER="AiTlbx"
 REPO_NAME="MiddleManager"
-WEB_SERVICE_NAME="middlemanager"
-HOST_SERVICE_NAME="middlemanager-host"
-LAUNCHD_WEB_LABEL="com.aitlbx.middlemanager"
-LAUNCHD_HOST_LABEL="com.aitlbx.middlemanager-host"
+SERVICE_NAME="middlemanager"
+OLD_HOST_SERVICE_NAME="middlemanager-host"
+LAUNCHD_LABEL="com.aitlbx.middlemanager"
+OLD_LAUNCHD_HOST_LABEL="com.aitlbx.middlemanager-host"
 
 # Colors
 RED='\033[0;31m'
@@ -216,66 +216,38 @@ install_as_service() {
 
 install_launchd() {
     local install_dir="$1"
-    local host_plist_path="/Library/LaunchDaemons/${LAUNCHD_HOST_LABEL}.plist"
-    local web_plist_path="/Library/LaunchDaemons/${LAUNCHD_WEB_LABEL}.plist"
+    local plist_path="/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist"
+    local old_host_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_HOST_LABEL}.plist"
     local log_dir="/usr/local/var/log"
 
-    echo -e "${GRAY}Creating launchd services...${NC}"
+    echo -e "${GRAY}Creating launchd service...${NC}"
 
     # Create log directory
     mkdir -p "$log_dir"
 
     # Unload existing services if present
-    launchctl unload "$web_plist_path" 2>/dev/null || true
-    launchctl unload "$host_plist_path" 2>/dev/null || true
+    launchctl unload "$plist_path" 2>/dev/null || true
 
-    # Create host plist first (web depends on it)
-    if [ -f "$install_dir/mm-host" ]; then
-        cat > "$host_plist_path" << EOF
+    # Migration: remove old host service from v2.1.x
+    if [ -f "$old_host_plist" ]; then
+        echo -e "${YELLOW}Migrating from old two-service architecture...${NC}"
+        launchctl unload "$old_host_plist" 2>/dev/null || true
+        rm -f "$old_host_plist"
+    fi
+
+    # Create single service plist that runs mm-host --service
+    # mm-host will spawn and supervise mm.exe internally
+    cat > "$plist_path" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>${LAUNCHD_HOST_LABEL}</string>
+    <string>${LAUNCHD_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
         <string>${install_dir}/mm-host</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${log_dir}/middlemanager-host.log</string>
-    <key>StandardErrorPath</key>
-    <string>${log_dir}/middlemanager-host.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-</dict>
-</plist>
-EOF
-
-        # Load host service
-        echo -e "${GRAY}Starting host service...${NC}"
-        launchctl load "$host_plist_path"
-        sleep 1
-    fi
-
-    # Create web plist
-    cat > "$web_plist_path" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>${LAUNCHD_WEB_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${install_dir}/mm</string>
+        <string>--service</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -294,75 +266,40 @@ EOF
 </plist>
 EOF
 
-    # Load web service
-    echo -e "${GRAY}Starting web service...${NC}"
-    launchctl load "$web_plist_path"
+    # Load service
+    echo -e "${GRAY}Starting service...${NC}"
+    launchctl load "$plist_path"
 }
 
 install_systemd() {
     local install_dir="$1"
-    local host_service_path="/etc/systemd/system/${HOST_SERVICE_NAME}.service"
-    local web_service_path="/etc/systemd/system/${WEB_SERVICE_NAME}.service"
+    local service_path="/etc/systemd/system/${SERVICE_NAME}.service"
+    local old_host_service="/etc/systemd/system/${OLD_HOST_SERVICE_NAME}.service"
 
-    echo -e "${GRAY}Creating systemd services...${NC}"
+    echo -e "${GRAY}Creating systemd service...${NC}"
 
-    # Stop existing services if present
-    systemctl stop "$WEB_SERVICE_NAME" 2>/dev/null || true
-    systemctl stop "$HOST_SERVICE_NAME" 2>/dev/null || true
+    # Unload existing service if present
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    systemctl disable "$SERVICE_NAME" 2>/dev/null || true
 
-    # Create host service file first
-    if [ -f "$install_dir/mm-host" ]; then
-        cat > "$host_service_path" << EOF
-[Unit]
-Description=MiddleManager PTY Host
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=${install_dir}/mm-host
-Restart=always
-RestartSec=5
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-        # Enable and start host service
-        echo -e "${GRAY}Starting host service...${NC}"
-        systemctl daemon-reload
-        systemctl enable "$HOST_SERVICE_NAME"
-        systemctl start "$HOST_SERVICE_NAME"
-        sleep 1
+    # Migration: remove old host service from v2.1.x
+    if [ -f "$old_host_service" ]; then
+        echo -e "${YELLOW}Migrating from old two-service architecture...${NC}"
+        systemctl stop "$OLD_HOST_SERVICE_NAME" 2>/dev/null || true
+        systemctl disable "$OLD_HOST_SERVICE_NAME" 2>/dev/null || true
+        rm -f "$old_host_service"
     fi
 
-    # Create web service file with dependency on host
-    if [ -f "$install_dir/mm-host" ]; then
-        cat > "$web_service_path" << EOF
-[Unit]
-Description=MiddleManager Terminal Server
-After=network.target ${HOST_SERVICE_NAME}.service
-Requires=${HOST_SERVICE_NAME}.service
-
-[Service]
-Type=simple
-ExecStart=${install_dir}/mm --sidecar
-Restart=always
-RestartSec=5
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    else
-        cat > "$web_service_path" << EOF
+    # Create single service that runs mm-host --service
+    # mm-host will spawn and supervise mm internally
+    cat > "$service_path" << EOF
 [Unit]
 Description=MiddleManager Terminal Server
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=${install_dir}/mm
+ExecStart=${install_dir}/mm-host --service
 Restart=always
 RestartSec=5
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
@@ -370,13 +307,12 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 [Install]
 WantedBy=multi-user.target
 EOF
-    fi
 
-    # Reload and start web service
-    echo -e "${GRAY}Starting web service...${NC}"
+    # Reload and start service
+    echo -e "${GRAY}Starting service...${NC}"
     systemctl daemon-reload
-    systemctl enable "$WEB_SERVICE_NAME"
-    systemctl start "$WEB_SERVICE_NAME"
+    systemctl enable "$SERVICE_NAME"
+    systemctl start "$SERVICE_NAME"
 }
 
 install_as_user() {
@@ -428,16 +364,18 @@ set -e
 echo "Uninstalling MiddleManager..."
 
 if [ "$(uname -s)" = "Darwin" ]; then
-    # macOS - unload web service first (depends on host)
+    # macOS - unload service
     sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.middlemanager.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/com.aitlbx.middlemanager.plist
+    # Cleanup old host service if present (from v2.1.x)
     sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.middlemanager-host.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/com.aitlbx.middlemanager-host.plist
 else
-    # Linux - stop web service first (depends on host)
+    # Linux - stop and remove service
     sudo systemctl stop middlemanager 2>/dev/null || true
     sudo systemctl disable middlemanager 2>/dev/null || true
     sudo rm -f /etc/systemd/system/middlemanager.service
+    # Cleanup old host service if present (from v2.1.x)
     sudo systemctl stop middlemanager-host 2>/dev/null || true
     sudo systemctl disable middlemanager-host 2>/dev/null || true
     sudo rm -f /etc/systemd/system/middlemanager-host.service

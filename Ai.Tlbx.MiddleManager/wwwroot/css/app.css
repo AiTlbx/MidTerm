@@ -505,6 +505,34 @@ html, body {
     opacity: 1;
 }
 
+/* Host connection status indicator */
+.host-status {
+    position: fixed;
+    bottom: 8px;
+    right: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.host-status.connected {
+    opacity: 0;
+}
+
+.host-status.disconnected {
+    background-color: #c44;
+    color: white;
+    opacity: 1;
+}
+
+/* When both indicators are visible, stack them */
+.host-status.disconnected ~ .connection-status:not(.connected) {
+    bottom: 36px;
+}
+
 /* Scaled terminal indicator */
 .terminal-container.scaled::after {
     content: 'Scaled view - another viewer controls size';

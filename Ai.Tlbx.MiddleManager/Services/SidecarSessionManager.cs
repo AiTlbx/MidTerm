@@ -37,6 +37,7 @@ public sealed class SidecarSessionManager : IDisposable
         _sidecarClient.OnOutput += HandleSidecarOutput;
         _sidecarClient.OnStateChanged += HandleSidecarStateChange;
         _sidecarClient.OnDisconnected += HandleSidecarDisconnected;
+        _sidecarClient.OnReconnected += HandleSidecarReconnected;
     }
 
     public void SetMuxManager(SidecarMuxConnectionManager muxManager)
@@ -198,6 +199,12 @@ public sealed class SidecarSessionManager : IDisposable
         NotifyStateChange();
     }
 
+    private void HandleSidecarReconnected()
+    {
+        Console.WriteLine("Sidecar reconnected, syncing sessions...");
+        _ = SyncSessionsAsync();
+    }
+
     private static string GetDefaultWorkingDirectory(Settings.MiddleManagerSettings settings)
     {
         if (!string.IsNullOrWhiteSpace(settings.DefaultWorkingDirectory) &&
@@ -227,6 +234,7 @@ public sealed class SidecarSessionManager : IDisposable
         _sidecarClient.OnOutput -= HandleSidecarOutput;
         _sidecarClient.OnStateChanged -= HandleSidecarStateChange;
         _sidecarClient.OnDisconnected -= HandleSidecarDisconnected;
+        _sidecarClient.OnReconnected -= HandleSidecarReconnected;
 
         _sessions.Clear();
         _stateListeners.Clear();

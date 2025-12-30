@@ -75,6 +75,7 @@
     var muxReconnectTimer = null;
     var muxReconnectDelay = 1000;
     var muxWsConnected = false;
+    var hostConnected = true;
 
     // Per-session terminal state: { terminal, fitAddon, container, serverCols, serverRows }
     var sessionTerminals = new Map();
@@ -178,6 +179,11 @@
                 var sessionList = data.sessions && data.sessions.sessions ? data.sessions.sessions : [];
                 handleStateUpdate(sessionList);
                 handleUpdateInfo(data.update);
+                var newHostConnected = data.hostConnected !== false;
+                if (newHostConnected !== hostConnected) {
+                    hostConnected = newHostConnected;
+                    updateHostStatus();
+                }
             } catch (e) {
                 console.error('Error parsing state:', e);
             }
@@ -567,6 +573,19 @@
 
         indicator.className = 'connection-status ' + status;
         indicator.textContent = text;
+    }
+
+    function updateHostStatus() {
+        var indicator = document.getElementById('host-status');
+        if (!indicator) return;
+
+        if (hostConnected) {
+            indicator.className = 'host-status connected';
+            indicator.textContent = '';
+        } else {
+            indicator.className = 'host-status disconnected';
+            indicator.textContent = 'Host disconnected';
+        }
     }
 
     // ========================================================================

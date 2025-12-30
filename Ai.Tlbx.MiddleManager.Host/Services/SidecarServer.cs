@@ -109,11 +109,16 @@ public sealed class SidecarServer : IAsyncDisposable
 
 internal sealed class ClientHandler : IAsyncDisposable
 {
+    private const int PingIntervalMs = 5000;
+    private const int PongTimeoutMs = 3000;
+
     private readonly int _clientId;
     private readonly IIpcTransport _transport;
     private readonly SessionManager _sessionManager;
     private readonly Action<int> _onDisconnect;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private readonly CancellationTokenSource _heartbeatCts = new();
+    private long _lastPongTicks;
     private bool _disposed;
 
     public ClientHandler(
@@ -126,21 +131,27 @@ internal sealed class ClientHandler : IAsyncDisposable
         _transport = transport;
         _sessionManager = sessionManager;
         _onDisconnect = onDisconnect;
+        _lastPongTicks = DateTime.UtcNow.Ticks;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _heartbeatCts.Token);
+        var linkedToken = linkedCts.Token;
+
+        _ = HeartbeatLoopAsync(linkedToken);
+
         try
         {
-            while (!cancellationToken.IsCancellationRequested && _transport.IsConnected)
+            while (!linkedToken.IsCancellationRequested && _transport.IsConnected)
             {
-                var frame = await _transport.ReadFrameAsync(cancellationToken).ConfigureAwait(false);
+                var frame = await _transport.ReadFrameAsync(linkedToken).ConfigureAwait(false);
                 if (frame is null)
                 {
                     break;
                 }
 
-                await HandleFrameAsync(frame.Value, cancellationToken).ConfigureAwait(false);
+                await HandleFrameAsync(frame.Value, linkedToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -154,6 +165,38 @@ internal sealed class ClientHandler : IAsyncDisposable
         {
             _onDisconnect(_clientId);
             await DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task HeartbeatLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+
+            while (!cancellationToken.IsCancellationRequested && _transport.IsConnected)
+            {
+                await SendFrameAsync(new IpcFrame(IpcMessageType.Ping)).ConfigureAwait(false);
+
+                await Task.Delay(PongTimeoutMs, cancellationToken).ConfigureAwait(false);
+
+                var elapsed = DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPongTicks);
+                if (TimeSpan.FromTicks(elapsed).TotalMilliseconds > PingIntervalMs + PongTimeoutMs)
+                {
+                    Console.WriteLine($"Client {_clientId} heartbeat timeout, closing connection");
+                    _heartbeatCts.Cancel();
+                    break;
+                }
+
+                var remaining = PingIntervalMs - PongTimeoutMs;
+                if (remaining > 0)
+                {
+                    await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -189,8 +232,12 @@ internal sealed class ClientHandler : IAsyncDisposable
                 await HandleGetBufferAsync(frame, cancellationToken).ConfigureAwait(false);
                 break;
 
-            case IpcMessageType.Heartbeat:
-                await SendFrameAsync(new IpcFrame(IpcMessageType.Heartbeat)).ConfigureAwait(false);
+            case IpcMessageType.Pong:
+                Interlocked.Exchange(ref _lastPongTicks, DateTime.UtcNow.Ticks);
+                break;
+
+            case IpcMessageType.Ping:
+                await SendFrameAsync(new IpcFrame(IpcMessageType.Pong)).ConfigureAwait(false);
                 break;
         }
     }
@@ -283,7 +330,9 @@ internal sealed class ClientHandler : IAsyncDisposable
         }
         _disposed = true;
 
+        _heartbeatCts.Cancel();
         await _transport.DisposeAsync().ConfigureAwait(false);
         _sendLock.Dispose();
+        _heartbeatCts.Dispose();
     }
 }

@@ -29,4 +29,5 @@ public sealed class StateUpdate
 {
     public SessionListDto? Sessions { get; init; }
     public UpdateInfo? Update { get; init; }
+    public bool HostConnected { get; init; }
 }
