@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>2.0.0</Version>
+    <Version>2.0.1</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <PublishAot>true</PublishAot>
@@ -48,12 +48,18 @@
     <LinkerArg Include="/OPT:ICF" />
   </ItemGroup>
 
-  <!-- Windows-specific: CsWin32 for ConPTY P/Invoke -->
+  <!-- Windows-specific: CsWin32 for ConPTY P/Invoke and Windows Service support -->
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('win')) Or '$(RuntimeIdentifier)' == ''">
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.106">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.1" />
+  </ItemGroup>
+
+  <!-- Unix: Generic host for systemd integration -->
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('linux')) Or $(RuntimeIdentifier.StartsWith('osx'))">
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.1" />
   </ItemGroup>
 
 </Project>

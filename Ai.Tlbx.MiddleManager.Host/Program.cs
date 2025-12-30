@@ -1,11 +1,13 @@
 using Ai.Tlbx.MiddleManager.Host.Ipc;
 using Ai.Tlbx.MiddleManager.Host.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Ai.Tlbx.MiddleManager.Host;
 
 public static class Program
 {
-    public const string Version = "2.0.0";
+    public const string Version = "2.0.1";
 
     public static async Task<int> Main(string[] args)
     {
@@ -23,48 +25,24 @@ public static class Program
 
         Console.WriteLine($"mm-host {Version} starting...");
 
-        var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            Console.WriteLine("\nShutdown requested...");
-            cts.Cancel();
-        };
-
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-        {
-            cts.Cancel();
-        };
-
         try
         {
-            using var sessionManager = new SessionManager();
+            var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(args);
 
-            // Load runAs settings from environment (passed by web server or install script)
-            sessionManager.RunAsUser = Environment.GetEnvironmentVariable("MM_RUN_AS_USER");
-            sessionManager.RunAsUserSid = Environment.GetEnvironmentVariable("MM_RUN_AS_USER_SID");
-            if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_UID"), out var uid))
+#if WINDOWS
+            builder.Services.AddWindowsService(options =>
             {
-                sessionManager.RunAsUid = uid;
-            }
-            if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_GID"), out var gid))
-            {
-                sessionManager.RunAsGid = gid;
-            }
+                options.ServiceName = "MiddleManagerHost";
+            });
+#else
+            builder.Services.AddSystemd();
+#endif
 
-            await using var server = new SidecarServer(sessionManager);
-            await server.StartAsync(cts.Token);
+            builder.Services.AddSingleton<SessionManager>();
+            builder.Services.AddHostedService<SidecarHostedService>();
 
-            // Wait until cancelled
-            try
-            {
-                await Task.Delay(Timeout.Infinite, cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-
-            Console.WriteLine("Shutting down...");
+            var host = builder.Build();
+            await host.RunAsync();
             return 0;
         }
         catch (Exception ex)
@@ -98,5 +76,55 @@ public static class Program
             the mm web server via IPC. It keeps sessions alive across web
             server restarts.
             """);
+    }
+}
+
+public sealed class SidecarHostedService : BackgroundService
+{
+    private readonly SessionManager _sessionManager;
+    private SidecarServer? _server;
+
+    public SidecarHostedService(SessionManager sessionManager)
+    {
+        _sessionManager = sessionManager;
+
+        // Load runAs settings from environment (passed by web server or install script)
+        _sessionManager.RunAsUser = Environment.GetEnvironmentVariable("MM_RUN_AS_USER");
+        _sessionManager.RunAsUserSid = Environment.GetEnvironmentVariable("MM_RUN_AS_USER_SID");
+        if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_UID"), out var uid))
+        {
+            _sessionManager.RunAsUid = uid;
+        }
+        if (int.TryParse(Environment.GetEnvironmentVariable("MM_RUN_AS_GID"), out var gid))
+        {
+            _sessionManager.RunAsGid = gid;
+        }
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _server = new SidecarServer(_sessionManager);
+        await _server.StartAsync(stoppingToken);
+
+        try
+        {
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        Console.WriteLine("Shutting down...");
+
+        if (_server is not null)
+        {
+            await _server.DisposeAsync();
+        }
+
+        _sessionManager.Dispose();
+        await base.StopAsync(cancellationToken);
     }
 }
