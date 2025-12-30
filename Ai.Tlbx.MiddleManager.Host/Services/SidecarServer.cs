@@ -176,7 +176,15 @@ internal sealed class ClientHandler : IAsyncDisposable
 
             while (!cancellationToken.IsCancellationRequested && _transport.IsConnected)
             {
-                await SendFrameAsync(new IpcFrame(IpcMessageType.Ping)).ConfigureAwait(false);
+                try
+                {
+                    await SendFrameAsync(new IpcFrame(IpcMessageType.Ping)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Client {_clientId} heartbeat send failed: {ex.Message}");
+                    break;
+                }
 
                 await Task.Delay(PongTimeoutMs, cancellationToken).ConfigureAwait(false);
 
@@ -197,6 +205,10 @@ internal sealed class ClientHandler : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Client {_clientId} heartbeat loop error: {ex.Message}");
         }
     }
 
