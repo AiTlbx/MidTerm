@@ -1,107 +1,99 @@
 #!/usr/bin/env pwsh
-# Release script for MiddleManager
-# Usage: ./release.ps1
+<#
+.SYNOPSIS
+    Creates a new release by bumping version, committing, tagging, and pushing.
+
+.PARAMETER Bump
+    Version bump type: major, minor, or patch
+
+.PARAMETER Message
+    What was done in this release (used in commit message)
+
+.EXAMPLE
+    .\release.ps1 -Bump patch -Message "Fix installer sc.exe quoting"
+    .\release.ps1 -Bump minor -Message "Add new terminal feature"
+#>
+
+param(
+    [Parameter(Mandatory=$true)]
+    [ValidateSet("major", "minor", "patch")]
+    [string]$Bump,
+
+    [Parameter(Mandatory=$true)]
+    [string]$Message
+)
 
 $ErrorActionPreference = "Stop"
 
-$csprojPath = "Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj"
-$changelogPath = "CHANGELOG.md"
+# Files to update
+$versionJsonPath = "$PSScriptRoot\version.json"
+$webCsprojPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager\Ai.Tlbx.MiddleManager.csproj"
+$hostCsprojPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager.Host\Ai.Tlbx.MiddleManager.Host.csproj"
+$hostProgramPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager.Host\Program.cs"
 
-# Read current version
-$csproj = Get-Content $csprojPath -Raw
-if ($csproj -match '<Version>(\d+)\.(\d+)\.(\d+)</Version>')
-{
-    $major = [int]$Matches[1]
-    $minor = [int]$Matches[2]
-    $patch = [int]$Matches[3]
-    $currentVersion = "$major.$minor.$patch"
-}
-else
-{
-    Write-Error "Could not find version in $csprojPath"
-    exit 1
-}
-
+# Read current version from version.json
+$versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
+$currentVersion = $versionJson.web
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Release type:"
-Write-Host "  [1] patch  ($major.$minor.$($patch + 1))"
-Write-Host "  [2] minor  ($major.$($minor + 1).0)"
-Write-Host "  [3] major  ($($major + 1).0.0)"
-Write-Host ""
 
-$choice = Read-Host "Select [1/2/3]"
+# Parse and bump version
+$parts = $currentVersion.Split('.')
+$major = [int]$parts[0]
+$minor = [int]$parts[1]
+$patch = [int]$parts[2]
 
-switch ($choice)
-{
-    "1" { $patch++; }
-    "2" { $minor++; $patch = 0; }
-    "3" { $major++; $minor = 0; $patch = 0; }
-    default { Write-Error "Invalid choice"; exit 1 }
+switch ($Bump) {
+    "major" { $major++; $minor = 0; $patch = 0 }
+    "minor" { $minor++; $patch = 0 }
+    "patch" { $patch++ }
 }
 
 $newVersion = "$major.$minor.$patch"
-$tag = "v$newVersion"
-
-Write-Host ""
 Write-Host "New version: $newVersion" -ForegroundColor Green
-Write-Host "Tag: $tag" -ForegroundColor Green
-Write-Host ""
 
-# Confirm
-$confirm = Read-Host "Proceed? [y/N]"
-if ($confirm -ne "y" -and $confirm -ne "Y")
-{
-    Write-Host "Aborted."
-    exit 0
-}
+# Update version.json
+$versionJson.web = $newVersion
+$versionJson.pty = $newVersion
+$versionJson | ConvertTo-Json | Set-Content $versionJsonPath
+Write-Host "  Updated: version.json" -ForegroundColor Gray
 
-# Update csproj
-$csproj = $csproj -replace '<Version>\d+\.\d+\.\d+</Version>', "<Version>$newVersion</Version>"
-Set-Content $csprojPath $csproj -NoNewline
+# Update web csproj
+$content = Get-Content $webCsprojPath -Raw
+$content = $content -replace "<Version>$currentVersion</Version>", "<Version>$newVersion</Version>"
+Set-Content $webCsprojPath $content -NoNewline
+Write-Host "  Updated: Ai.Tlbx.MiddleManager.csproj" -ForegroundColor Gray
 
-Write-Host "Updated $csprojPath" -ForegroundColor Gray
+# Update host csproj
+$content = Get-Content $hostCsprojPath -Raw
+$content = $content -replace "<Version>$currentVersion</Version>", "<Version>$newVersion</Version>"
+Set-Content $hostCsprojPath $content -NoNewline
+Write-Host "  Updated: Ai.Tlbx.MiddleManager.Host.csproj" -ForegroundColor Gray
 
-# Generate changelog entry
-$lastTag = git describe --tags --abbrev=0 2>$null
-if ($lastTag)
-{
-    $commits = git log --pretty=format:"- %s" "$lastTag..HEAD"
-}
-else
-{
-    $commits = git log --pretty=format:"- %s"
-}
-
-$date = Get-Date -Format "yyyy-MM-dd"
-$entry = @"
-## [$newVersion] - $date
-
-$commits
-
-"@
-
-# Prepend to changelog
-if (Test-Path $changelogPath)
-{
-    $existingChangelog = Get-Content $changelogPath -Raw
-    $newChangelog = "# Changelog`n`n$entry`n$($existingChangelog -replace '^# Changelog\s*\n*', '')"
-}
-else
-{
-    $newChangelog = "# Changelog`n`n$entry"
-}
-
-Set-Content $changelogPath $newChangelog -NoNewline
-Write-Host "Updated $changelogPath" -ForegroundColor Gray
+# Update host Program.cs
+$content = Get-Content $hostProgramPath -Raw
+$content = $content -replace "public const string Version = `"$currentVersion`"", "public const string Version = `"$newVersion`""
+Set-Content $hostProgramPath $content -NoNewline
+Write-Host "  Updated: Program.cs" -ForegroundColor Gray
 
 # Git operations
-git add $csprojPath $changelogPath
-git commit -m "Release $tag"
-git tag $tag
+Write-Host ""
+Write-Host "Committing and tagging..." -ForegroundColor Cyan
+
+git add -A
+if ($LASTEXITCODE -ne 0) { throw "git add failed" }
+
+git commit -m "v${newVersion}: $Message"
+if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
+
+git tag -a "v$newVersion" -m "v${newVersion}: $Message"
+if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
+
+git push origin main
+if ($LASTEXITCODE -ne 0) { throw "git push main failed" }
+
+git push origin "v$newVersion"
+if ($LASTEXITCODE -ne 0) { throw "git push tag failed" }
 
 Write-Host ""
-Write-Host "Created commit and tag $tag" -ForegroundColor Green
-Write-Host ""
-Write-Host "Push to trigger release build:" -ForegroundColor Yellow
-Write-Host "  git push && git push --tags" -ForegroundColor White
+Write-Host "Released v$newVersion" -ForegroundColor Green
+Write-Host "Monitor build: https://github.com/AiTlbx/MiddleManager/actions" -ForegroundColor Cyan
