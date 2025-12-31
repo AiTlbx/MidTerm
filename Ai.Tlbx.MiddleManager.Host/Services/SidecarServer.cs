@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Ai.Tlbx.MiddleManager.Host.Ipc;
 using static Ai.Tlbx.MiddleManager.Host.Log;
 
@@ -10,6 +11,8 @@ public sealed class SidecarServer : IAsyncDisposable
     private readonly SessionManager _sessionManager;
     private readonly ConcurrentDictionary<int, ClientHandler> _clients = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly Channel<(IpcMessageType type, string sessionId, byte[] data)> _broadcastQueue =
+        Channel.CreateUnbounded<(IpcMessageType, string, byte[])>();
     private int _nextClientId;
     private bool _disposed;
 
@@ -28,6 +31,7 @@ public sealed class SidecarServer : IAsyncDisposable
         Write($"mm-host listening on {IpcServerFactory.GetEndpointDescription()}");
 
         _ = AcceptLoopAsync(_cts.Token);
+        _ = ProcessBroadcastQueueAsync(_cts.Token);
     }
 
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)
@@ -63,11 +67,8 @@ public sealed class SidecarServer : IAsyncDisposable
 
     private void BroadcastOutput(string sessionId, ReadOnlyMemory<byte> data)
     {
-        var frame = new IpcFrame(IpcMessageType.Output, sessionId, data);
-        foreach (var client in _clients.Values)
-        {
-            _ = client.SendFrameAsync(frame);
-        }
+        // Enqueue for sequential processing - guarantees in-order delivery
+        _broadcastQueue.Writer.TryWrite((IpcMessageType.Output, sessionId, data.ToArray()));
     }
 
     private void BroadcastStateChange(string sessionId)
@@ -81,11 +82,26 @@ public sealed class SidecarServer : IAsyncDisposable
         };
 
         var payload = SidecarProtocol.CreateStateChangePayload(snapshot);
-        var frame = new IpcFrame(IpcMessageType.StateChange, sessionId, payload);
+        // Enqueue for sequential processing
+        _broadcastQueue.Writer.TryWrite((IpcMessageType.StateChange, sessionId, payload));
+    }
 
-        foreach (var client in _clients.Values)
+    private async Task ProcessBroadcastQueueAsync(CancellationToken cancellationToken)
+    {
+        try
         {
-            _ = client.SendFrameAsync(frame);
+            await foreach (var (type, sessionId, data) in _broadcastQueue.Reader.ReadAllAsync(cancellationToken))
+            {
+                var frame = new IpcFrame(type, sessionId, data);
+                foreach (var client in _clients.Values)
+                {
+                    await client.SendFrameAsync(frame).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on shutdown
         }
     }
 
@@ -97,6 +113,7 @@ public sealed class SidecarServer : IAsyncDisposable
         }
         _disposed = true;
 
+        _broadcastQueue.Writer.Complete();
         _cts.Cancel();
 
         foreach (var client in _clients.Values)

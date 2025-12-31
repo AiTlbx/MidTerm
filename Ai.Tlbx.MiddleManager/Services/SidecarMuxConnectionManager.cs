@@ -42,8 +42,8 @@ public sealed class SidecarMuxConnectionManager
     private async Task BroadcastFrameAsync(byte[] frame)
     {
         var deadClients = new List<string>();
-        var sendTasks = new List<Task<(string clientId, bool success)>>();
 
+        // Sequential sends to preserve ordering across all clients
         foreach (var (clientId, client) in _clients)
         {
             if (client.WebSocket.State != WebSocketState.Open)
@@ -52,37 +52,19 @@ public sealed class SidecarMuxConnectionManager
                 continue;
             }
 
-            sendTasks.Add(SendToClientAsync(clientId, client, frame));
-        }
-
-        if (sendTasks.Count > 0)
-        {
-            var results = await Task.WhenAll(sendTasks);
-            foreach (var (clientId, success) in results)
+            try
             {
-                if (!success)
-                {
-                    deadClients.Add(clientId);
-                }
+                await client.SendAsync(frame).ConfigureAwait(false);
+            }
+            catch
+            {
+                deadClients.Add(clientId);
             }
         }
 
         foreach (var id in deadClients)
         {
             _clients.TryRemove(id, out _);
-        }
-    }
-
-    private static async Task<(string clientId, bool success)> SendToClientAsync(string clientId, MuxClient client, byte[] frame)
-    {
-        try
-        {
-            await client.SendAsync(frame);
-            return (clientId, true);
-        }
-        catch
-        {
-            return (clientId, false);
         }
     }
 

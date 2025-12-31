@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Ai.Tlbx.MiddleManager.Ipc;
 using Ai.Tlbx.MiddleManager.Models;
 using Ai.Tlbx.MiddleManager.Settings;
@@ -17,6 +18,9 @@ public sealed class SidecarSessionManager : IDisposable
     private readonly ShellRegistry _shellRegistry;
     private readonly SettingsService _settingsService;
     private readonly SidecarClient _sidecarClient;
+    private readonly Channel<(string sessionId, byte[] data)> _outputQueue =
+        Channel.CreateUnbounded<(string, byte[])>();
+    private readonly CancellationTokenSource _outputCts = new();
     private SidecarMuxConnectionManager? _muxManager;
     private bool _disposed;
 
@@ -44,6 +48,7 @@ public sealed class SidecarSessionManager : IDisposable
     public void SetMuxManager(SidecarMuxConnectionManager muxManager)
     {
         _muxManager = muxManager;
+        _ = ProcessOutputQueueAsync(_outputCts.Token);
     }
 
     public async Task SyncSessionsAsync(CancellationToken cancellationToken = default)
@@ -182,9 +187,25 @@ public sealed class SidecarSessionManager : IDisposable
 
     private void HandleSidecarOutput(string sessionId, ReadOnlyMemory<byte> data)
     {
-        if (_muxManager is not null)
+        // Enqueue for sequential processing - guarantees in-order delivery to WebSocket clients
+        _outputQueue.Writer.TryWrite((sessionId, data.ToArray()));
+    }
+
+    private async Task ProcessOutputQueueAsync(CancellationToken cancellationToken)
+    {
+        try
         {
-            _ = _muxManager.BroadcastTerminalOutputAsync(sessionId, data);
+            await foreach (var (sessionId, data) in _outputQueue.Reader.ReadAllAsync(cancellationToken))
+            {
+                if (_muxManager is not null)
+                {
+                    await _muxManager.BroadcastTerminalOutputAsync(sessionId, data).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on shutdown
         }
     }
 
@@ -290,6 +311,10 @@ public sealed class SidecarSessionManager : IDisposable
             return;
         }
         _disposed = true;
+
+        _outputQueue.Writer.Complete();
+        _outputCts.Cancel();
+        _outputCts.Dispose();
 
         _sidecarClient.OnOutput -= HandleSidecarOutput;
         _sidecarClient.OnStateChanged -= HandleSidecarStateChange;
