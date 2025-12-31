@@ -91,19 +91,18 @@ public sealed class ConHostSessionManager : IAsyncDisposable
     {
         var sessionId = Guid.NewGuid().ToString("N")[..8];
 
-        if (OperatingSystem.IsWindows())
+#if WINDOWS
+#pragma warning disable CA1416 // Platform compatibility - already guarded by #if WINDOWS
+        if (!ConHostSpawner.SpawnConHost(sessionId, shellType, workingDirectory, cols, rows, out _))
         {
-            if (!ConHostSpawner.SpawnConHost(sessionId, shellType, workingDirectory, cols, rows, out _))
-            {
-                return null;
-            }
-        }
-        else
-        {
-            // TODO: Unix spawner
-            Console.WriteLine("[ConHostSessionManager] Unix spawner not implemented");
             return null;
         }
+#pragma warning restore CA1416
+#else
+        // TODO: Unix spawner
+        Console.WriteLine("[ConHostSessionManager] Unix spawner not implemented");
+        return null;
+#endif
 
         // Wait for pipe to become available
         await Task.Delay(500, ct).ConfigureAwait(false);
