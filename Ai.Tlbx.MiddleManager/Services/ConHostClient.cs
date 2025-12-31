@@ -34,10 +34,7 @@ public sealed class ConHostClient : IAsyncDisposable
         {
             _pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
             await _pipe.ConnectAsync(timeoutMs, ct).ConfigureAwait(false);
-
-            _readCts = new CancellationTokenSource();
-            _readTask = ReadLoopAsync(_readCts.Token);
-
+            // Don't start ReadLoopAsync here - wait until after initial handshake (GetInfoAsync)
             return true;
         }
         catch (Exception ex)
@@ -47,6 +44,13 @@ public sealed class ConHostClient : IAsyncDisposable
             _pipe = null;
             return false;
         }
+    }
+
+    public void StartReadLoop()
+    {
+        if (_readTask is not null) return;
+        _readCts = new CancellationTokenSource();
+        _readTask = ReadLoopAsync(_readCts.Token);
     }
 
     public async Task<SessionInfo?> GetInfoAsync(CancellationToken ct = default)

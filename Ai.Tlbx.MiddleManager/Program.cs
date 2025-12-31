@@ -248,13 +248,8 @@ public class Program
             {
                 Healthy = true,
                 Mode = mode,
-                HostConnected = true,
-                HostError = null,
                 SessionCount = sessionCount,
                 Version = version,
-                IpcTransport = null,
-                IpcEndpoint = null,
-                LastHeartbeatMs = null,
                 WebProcessId = Environment.ProcessId,
                 UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
                 Platform = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux"
@@ -741,12 +736,10 @@ public class Program
                 }
 
                 var sessionList = conHostManager?.GetSessionList() ?? directManager!.GetSessionList();
-                var hostConnected = true;
                 var state = new StateUpdate
                 {
                     Sessions = sessionList,
-                    Update = lastUpdate,
-                    HostConnected = hostConnected
+                    Update = lastUpdate
                 };
                 var json = JsonSerializer.Serialize(state, AppJsonContext.Default.StateUpdate);
                 var bytes = Encoding.UTF8.GetBytes(json);

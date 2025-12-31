@@ -75,7 +75,6 @@
     var muxReconnectTimer = null;
     var muxReconnectDelay = 1000;
     var muxWsConnected = false;
-    var hostConnected = true;
 
     // Per-session terminal state: { terminal, fitAddon, container, serverCols, serverRows }
     var sessionTerminals = new Map();
@@ -182,11 +181,6 @@
                 var sessionList = data.sessions && data.sessions.sessions ? data.sessions.sessions : [];
                 handleStateUpdate(sessionList);
                 handleUpdateInfo(data.update);
-                var newHostConnected = data.hostConnected !== false;
-                if (newHostConnected !== hostConnected) {
-                    hostConnected = newHostConnected;
-                    updateHostStatus();
-                }
             } catch (e) {
                 console.error('Error parsing state:', e);
             }
@@ -579,43 +573,11 @@
     }
 
     function updateHostStatus() {
-        var indicator = document.getElementById('host-status');
-        var newTerminalBtn = document.getElementById('btn-new-session');
-        var emptyStateBtn = document.querySelector('.empty-state button');
-
-        if (indicator) {
-            if (hostConnected) {
-                indicator.className = 'host-status connected';
-                indicator.textContent = '';
-            } else {
-                indicator.className = 'host-status disconnected';
-                indicator.innerHTML = '<strong>Host Disconnected</strong> — Terminal sessions unavailable. The mm-host process may not be running.';
-            }
-        }
-
-        // Disable/enable New Terminal buttons
-        if (newTerminalBtn) {
-            newTerminalBtn.disabled = !hostConnected;
-            newTerminalBtn.title = hostConnected ? '' : 'Host disconnected';
-        }
-        if (emptyStateBtn) {
-            emptyStateBtn.disabled = !hostConnected;
-        }
+        // No-op: Host connection tracking removed (always connected in con-host mode)
     }
 
     function checkSystemHealth() {
-        fetch('/api/health')
-            .then(function(response) { return response.json(); })
-            .then(function(health) {
-                console.log('System health:', health);
-                if (health.mode === 'sidecar' && !health.hostConnected) {
-                    hostConnected = false;
-                    updateHostStatus();
-                }
-            })
-            .catch(function(err) {
-                console.error('Health check failed:', err);
-            });
+        // No-op: Host health check removed (always connected in con-host mode)
     }
 
     function fetchSystemStatus() {
@@ -627,13 +589,7 @@
             .then(function(health) {
                 var statusClass = health.healthy ? 'status-healthy' : 'status-error';
                 var statusText = health.healthy ? 'Healthy' : 'Unhealthy';
-                var hostStatus = health.hostConnected ? 'Connected' : 'Disconnected';
-                var hostClass = health.hostConnected ? 'status-ok' : 'status-error';
-
                 var uptimeStr = formatUptime(health.uptimeSeconds);
-                var heartbeatStr = health.lastHeartbeatMs != null
-                    ? (health.lastHeartbeatMs < 1000 ? health.lastHeartbeatMs + 'ms ago' : Math.floor(health.lastHeartbeatMs / 1000) + 's ago')
-                    : 'N/A';
 
                 container.innerHTML =
                     '<div class="status-grid">' +
@@ -646,20 +602,12 @@
                             '<span class="status-value">' + health.mode + '</span>' +
                         '</div>' +
                         '<div class="status-item">' +
-                            '<span class="status-label">PTY Host</span>' +
-                            '<span class="status-value ' + hostClass + '">' + hostStatus + '</span>' +
-                        '</div>' +
-                        '<div class="status-item">' +
                             '<span class="status-label">Sessions</span>' +
                             '<span class="status-value">' + health.sessionCount + '</span>' +
                         '</div>' +
                         '<div class="status-item">' +
                             '<span class="status-label">Uptime</span>' +
                             '<span class="status-value">' + uptimeStr + '</span>' +
-                        '</div>' +
-                        '<div class="status-item">' +
-                            '<span class="status-label">Last Heartbeat</span>' +
-                            '<span class="status-value">' + heartbeatStr + '</span>' +
                         '</div>' +
                     '</div>' +
                     '<div class="status-details">' +
@@ -668,19 +616,10 @@
                             '<span class="detail-value">' + health.platform + '</span>' +
                         '</div>' +
                         '<div class="status-detail-row">' +
-                            '<span class="detail-label">IPC Transport</span>' +
-                            '<span class="detail-value">' + (health.ipcTransport || 'N/A') + '</span>' +
-                        '</div>' +
-                        '<div class="status-detail-row">' +
-                            '<span class="detail-label">IPC Endpoint</span>' +
-                            '<span class="detail-value"><code>' + (health.ipcEndpoint || 'N/A') + '</code></span>' +
-                        '</div>' +
-                        '<div class="status-detail-row">' +
-                            '<span class="detail-label">Web Process ID</span>' +
+                            '<span class="detail-label">Process ID</span>' +
                             '<span class="detail-value">' + health.webProcessId + '</span>' +
                         '</div>' +
-                    '</div>' +
-                    (health.hostError ? '<div class="status-error-msg">' + health.hostError + '</div>' : '');
+                    '</div>';
             })
             .catch(function(err) {
                 container.innerHTML = '<div class="status-error-msg">Failed to load system status: ' + err.message + '</div>';
@@ -1171,14 +1110,8 @@
 
     function populateVersionInfo(details) {
         var webEl = document.getElementById('version-web');
-        var ptyEl = document.getElementById('version-pty');
-
-        if (details) {
-            if (webEl) webEl.textContent = details.web || '-';
-            if (ptyEl) ptyEl.textContent = details.pty || '-';
-        } else {
-            if (webEl) webEl.textContent = '-';
-            if (ptyEl) ptyEl.textContent = '-';
+        if (webEl) {
+            webEl.textContent = details?.web || '-';
         }
     }
 

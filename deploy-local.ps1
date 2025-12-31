@@ -52,12 +52,9 @@ if ($LASTEXITCODE -ne 0) { Write-Host "  mm-con-host build failed" -ForegroundCo
 Write-Host "  Built mm-con-host.exe ($newVersion)" -ForegroundColor Gray
 
 Write-Host "Stopping service..." -ForegroundColor Yellow
-Stop-Service -Name MiddleManager -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-
-# Kill any remaining processes
-Get-Process -Name 'mm-host','mm' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 1
+Stop-Service -Name MiddleManager -Force -NoWait -ErrorAction SilentlyContinue
+Get-Process -Name 'mm-host','mm','mm-con-host' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
 
 Write-Host "Copying new binaries..." -ForegroundColor Yellow
 $srcHost = "$repoRoot\Ai.Tlbx.MiddleManager.Host\bin\Release\net10.0\win-x64\publish\mm-host.exe"

@@ -122,22 +122,20 @@ function Install-MiddleManager
         if ($existingService)
         {
             Write-Host "Stopping existing service..." -ForegroundColor Gray
-            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 1
-
-            # Kill any lingering processes that might hold file locks
-            Write-Host "Stopping any running processes..." -ForegroundColor Gray
+            # Don't wait for graceful shutdown - immediately kill processes
+            Stop-Service -Name $ServiceName -Force -NoWait -ErrorAction SilentlyContinue
             Get-Process -Name "mm-host", "mm-con-host", "mm" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 1
+            Start-Sleep -Milliseconds 500
         }
 
         # Migration: remove old MiddleManagerHost service from v2.1.x
         if ($oldHostService)
         {
             Write-Host "Migrating from old two-service architecture..." -ForegroundColor Yellow
-            Stop-Service -Name $OldHostServiceName -Force -ErrorAction SilentlyContinue
+            Stop-Service -Name $OldHostServiceName -Force -NoWait -ErrorAction SilentlyContinue
+            Get-Process -Name "mm-host" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             sc.exe delete $OldHostServiceName | Out-Null
-            Start-Sleep -Seconds 2
+            Start-Sleep -Milliseconds 500
         }
     }
     else
@@ -285,14 +283,11 @@ function Install-AsService
     if ($existingService)
     {
         Write-Host "Removing existing service..." -ForegroundColor Gray
-        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-
-        # Kill any lingering processes
+        Stop-Service -Name $ServiceName -Force -NoWait -ErrorAction SilentlyContinue
         Get-Process -Name "mm-host", "mm-con-host", "mm" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 1
-
+        Start-Sleep -Milliseconds 500
         sc.exe delete $ServiceName | Out-Null
-        Start-Sleep -Seconds 1
+        Start-Sleep -Milliseconds 500
     }
 
     # Create service that runs mm.exe --service

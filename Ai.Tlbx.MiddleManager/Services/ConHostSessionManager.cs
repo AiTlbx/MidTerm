@@ -63,6 +63,7 @@ public sealed class ConHostSessionManager : IAsyncDisposable
                     if (info is not null)
                     {
                         SubscribeToClient(client);
+                        client.StartReadLoop();
                         _clients[sessionId] = client;
                         _sessionCache[sessionId] = info;
                         Console.WriteLine($"[ConHostSessionManager] Reconnected to session {sessionId}");
@@ -135,7 +136,9 @@ public sealed class ConHostSessionManager : IAsyncDisposable
             return null;
         }
 
+        // Start read loop after handshake completes (avoids race condition with GetInfoAsync)
         SubscribeToClient(client);
+        client.StartReadLoop();
         _clients[sessionId] = client;
         _sessionCache[sessionId] = info;
 
