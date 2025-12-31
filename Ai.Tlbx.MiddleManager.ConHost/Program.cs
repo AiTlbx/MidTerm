@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MiddleManager.ConHost;
 
 public static class Program
 {
-    public const string Version = "2.6.9";
+    public const string Version = "2.6.10";
 
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -135,11 +135,20 @@ public static class Program
     {
         try
         {
-            // Subscribe to output events
+            // Wait for GetInfo handshake before subscribing to output events
+            // This prevents Output messages from being sent before the client is ready
+            var handshakeComplete = false;
+
             void OnOutput(ReadOnlyMemory<byte> data)
             {
                 try
                 {
+                    if (!handshakeComplete)
+                    {
+                        // Buffer output until handshake completes - client isn't ready yet
+                        return;
+                    }
+
                     if (pipe.IsConnected)
                     {
                         Log($"Sending output: {data.Length} bytes");
@@ -175,7 +184,7 @@ public static class Program
 
             try
             {
-                await ProcessMessagesAsync(session, pipe, ct).ConfigureAwait(false);
+                await ProcessMessagesAsync(session, pipe, ct, () => handshakeComplete = true).ConfigureAwait(false);
             }
             finally
             {
@@ -194,7 +203,7 @@ public static class Program
         }
     }
 
-    private static async Task ProcessMessagesAsync(TerminalSession session, NamedPipeServerStream pipe, CancellationToken ct)
+    private static async Task ProcessMessagesAsync(TerminalSession session, NamedPipeServerStream pipe, CancellationToken ct, Action? onHandshakeComplete = null)
     {
         var headerBuffer = new byte[ConHostProtocol.HeaderSize];
         var payloadBuffer = new byte[ConHostProtocol.MaxPayloadSize];
@@ -255,6 +264,8 @@ public static class Program
                     var info = session.GetInfo();
                     var infoMsg = ConHostProtocol.CreateInfoResponse(info);
                     await pipe.WriteAsync(infoMsg, ct).ConfigureAwait(false);
+                    // Signal that handshake is complete - safe to start sending output
+                    onHandshakeComplete?.Invoke();
                     break;
 
                 case ConHostMessageType.Input:
