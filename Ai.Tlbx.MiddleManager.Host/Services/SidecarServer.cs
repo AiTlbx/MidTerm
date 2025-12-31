@@ -323,12 +323,14 @@ internal sealed class ClientHandler : IAsyncDisposable
 
     private async Task HandleInputAsync(IpcFrame frame)
     {
+        Write($"IPC: Received input for session {frame.SessionId}, {frame.Payload.Length} bytes");
         await _sessionManager.SendInputAsync(frame.SessionId, frame.Payload).ConfigureAwait(false);
     }
 
     private void HandleResize(IpcFrame frame)
     {
         var (cols, rows) = SidecarProtocol.ParseResizePayload(frame.Payload.Span);
+        Write($"IPC: Resize session {frame.SessionId} to {cols}x{rows}");
         _sessionManager.ResizeSession(frame.SessionId, cols, rows);
     }
 

@@ -222,11 +222,14 @@ public sealed class TerminalSession : IDisposable
 
         try
         {
+            Log.Write($"Session {Id}: Writing {data.Length} bytes to PTY input");
             await _connection.WriterStream.WriteAsync(data).ConfigureAwait(false);
             await _connection.WriterStream.FlushAsync().ConfigureAwait(false);
+            Log.Write($"Session {Id}: Input write+flush complete");
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Write($"Session {Id}: Input write failed: {ex.Message}");
         }
     }
 
