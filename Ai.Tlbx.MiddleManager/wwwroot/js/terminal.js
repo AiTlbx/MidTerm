@@ -1150,6 +1150,7 @@
         setElementChecked('setting-copy-on-select', settings.copyOnSelect === true);
         setElementChecked('setting-right-click-paste', settings.rightClickPaste !== false);
         setElementValue('setting-run-as-user', settings.runAsUser || '');
+        setElementChecked('setting-debug-logging', settings.debugLogging === true);
     }
 
     function setElementValue(id, value) {
@@ -1185,7 +1186,8 @@
             bellStyle: getElementValue('setting-bell-style', 'notification'),
             copyOnSelect: getElementChecked('setting-copy-on-select'),
             rightClickPaste: getElementChecked('setting-right-click-paste'),
-            runAsUser: runAsUserValue || null
+            runAsUser: runAsUserValue || null,
+            debugLogging: getElementChecked('setting-debug-logging')
         };
 
         // Persist theme to cookie for flash-free page load
