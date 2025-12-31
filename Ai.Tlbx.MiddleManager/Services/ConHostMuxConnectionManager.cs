@@ -33,6 +33,10 @@ public sealed class ConHostMuxConnectionManager
     {
         await foreach (var (sessionId, data) in _outputQueue.Reader.ReadAllAsync(ct))
         {
+            if (data.Length < 50)
+            {
+                DebugLogger.Log($"[WS-OUTPUT] {sessionId}: {BitConverter.ToString(data)}");
+            }
             var frame = MuxProtocol.CreateOutputFrame(sessionId, data);
             foreach (var client in _clients.Values)
             {

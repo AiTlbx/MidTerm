@@ -466,6 +466,9 @@
             }
 
             if (type === MUX_TYPE_OUTPUT) {
+                if (payload.length < 50) {
+                    console.log('[OUTPUT] Received:', Array.from(payload).map(function(b) { return b.toString(16).padStart(2, '0'); }).join(' '));
+                }
                 var state = sessionTerminals.get(sessionId);
                 if (state) {
                     state.terminal.write(payload);
@@ -489,6 +492,7 @@
         if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
         var payload = new TextEncoder().encode(data);
+        console.log('[INPUT] Sending:', Array.from(payload).map(function(b) { return b.toString(16).padStart(2, '0'); }).join(' '));
         var frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
         frame[0] = MUX_TYPE_INPUT;
         encodeSessionId(frame, 1, sessionId);

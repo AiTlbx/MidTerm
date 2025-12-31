@@ -16,6 +16,8 @@ public class Program
     private const int DefaultPort = 2000;
     private const string DefaultBindAddress = "0.0.0.0";
 
+    private static void DebugLog(string message) => DebugLogger.Log(message);
+
     public static async Task Main(string[] args)
     {
         if (HandleSpecialCommands(args))
@@ -660,6 +662,10 @@ public class Program
                         switch (type)
                         {
                             case MuxProtocol.TypeTerminalInput:
+                                if (payload.Length < 20)
+                                {
+                                    DebugLog($"[WS-INPUT] {sessionId}: {BitConverter.ToString(payload.ToArray())}");
+                                }
                                 if (conHostMuxManager is not null)
                                 {
                                     await conHostMuxManager.HandleInputAsync(sessionId, new ReadOnlyMemory<byte>(payload.ToArray()), clientId);

@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MiddleManager.ConHost;
 
 public static class Program
 {
-    public const string Version = "2.6.11";
+    public const string Version = "2.6.12";
 
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -307,6 +307,10 @@ public static class Program
                     break;
 
                 case ConHostMessageType.Input:
+                    if (payloadLength < 20)
+                    {
+                        Log($"[PIPE-INPUT] {BitConverter.ToString(payload.ToArray())}");
+                    }
                     await session.SendInputAsync(payload.ToArray(), ct).ConfigureAwait(false);
                     break;
 
@@ -409,7 +413,7 @@ public static class Program
             """);
     }
 
-    private static void Log(string message)
+    internal static void Log(string message)
     {
         var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{_sessionId}] {message}";
         Console.WriteLine(line);
@@ -482,6 +486,10 @@ internal sealed class TerminalSession
                 }
 
                 var data = buffer.AsMemory(0, bytesRead);
+                if (bytesRead < 50)
+                {
+                    Program.Log($"[PTY-READ] {BitConverter.ToString(data.ToArray())}");
+                }
                 AppendToBuffer(data.Span);
                 ParseOscSequences(data.Span);
                 OnOutput?.Invoke(data);
@@ -496,6 +504,10 @@ internal sealed class TerminalSession
 
     public async Task SendInputAsync(byte[] data, CancellationToken ct)
     {
+        if (data.Length < 20)
+        {
+            Program.Log($"[PTY-WRITE] {BitConverter.ToString(data)}");
+        }
         await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
         await _pty.WriterStream.FlushAsync(ct).ConfigureAwait(false);
     }

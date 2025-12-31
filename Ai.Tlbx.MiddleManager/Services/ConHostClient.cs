@@ -138,6 +138,10 @@ public sealed class ConHostClient : IAsyncDisposable
 
         try
         {
+            if (data.Length < 20)
+            {
+                DebugLogger.Log($"[PIPE-SEND] {_sessionId}: {BitConverter.ToString(data.ToArray())}");
+            }
             var msg = ConHostProtocol.CreateInputMessage(data.Span);
             await WriteAsync(msg, ct).ConfigureAwait(false);
         }
