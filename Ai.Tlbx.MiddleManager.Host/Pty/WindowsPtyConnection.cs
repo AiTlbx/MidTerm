@@ -244,7 +244,22 @@ public sealed class WindowsPtyConnection : IPtyConnection
                     {
                         throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to create environment block for user");
                     }
-                    envPtr = userEnvBlock;
+
+                    // Merge user environment with shell config environment (TERM, etc.)
+                    var mergedEnv = ParseEnvironmentBlock(userEnvBlock);
+                    if (environment is not null)
+                    {
+                        foreach (var kvp in environment)
+                        {
+                            mergedEnv[kvp.Key] = kvp.Value;
+                        }
+                    }
+                    var mergedBlock = BuildEnvironmentBlock(mergedEnv);
+                    if (mergedBlock is not null)
+                    {
+                        customEnvPtr = Marshal.StringToHGlobalUni(mergedBlock);
+                    }
+                    envPtr = customEnvPtr;
 
                     success = CreateProcessAsUser(
                         userToken,
@@ -369,6 +384,37 @@ public sealed class WindowsPtyConnection : IPtyConnection
         }
         sb.Append('\0');
         return sb.ToString();
+    }
+
+    private static Dictionary<string, string> ParseEnvironmentBlock(IntPtr envBlock)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (envBlock == IntPtr.Zero)
+        {
+            return result;
+        }
+
+        var offset = 0;
+        while (true)
+        {
+            var entry = Marshal.PtrToStringUni(IntPtr.Add(envBlock, offset));
+            if (string.IsNullOrEmpty(entry))
+            {
+                break;
+            }
+
+            var eqIndex = entry.IndexOf('=');
+            if (eqIndex > 0)
+            {
+                var name = entry.Substring(0, eqIndex);
+                var value = entry.Substring(eqIndex + 1);
+                result[name] = value;
+            }
+
+            offset += (entry.Length + 1) * 2; // Unicode: 2 bytes per char + null terminator
+        }
+
+        return result;
     }
 
     private static bool IsRunningAsLocalSystem()
