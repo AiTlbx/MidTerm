@@ -30,6 +30,8 @@ $versionJsonPath = "$PSScriptRoot\version.json"
 $webCsprojPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager\Ai.Tlbx.MiddleManager.csproj"
 $hostCsprojPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager.Host\Ai.Tlbx.MiddleManager.Host.csproj"
 $hostProgramPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager.Host\Program.cs"
+$conHostCsprojPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager.ConHost\Ai.Tlbx.MiddleManager.ConHost.csproj"
+$conHostProgramPath = "$PSScriptRoot\Ai.Tlbx.MiddleManager.ConHost\Program.cs"
 
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
@@ -73,7 +75,20 @@ Write-Host "  Updated: Ai.Tlbx.MiddleManager.Host.csproj" -ForegroundColor Gray
 $content = Get-Content $hostProgramPath -Raw
 $content = $content -replace 'public const string Version = "\d+\.\d+\.\d+"', "public const string Version = `"$newVersion`""
 Set-Content $hostProgramPath $content -NoNewline
-Write-Host "  Updated: Program.cs" -ForegroundColor Gray
+Write-Host "  Updated: Ai.Tlbx.MiddleManager.Host\Program.cs" -ForegroundColor Gray
+
+# Update ConHost csproj
+$content = Get-Content $conHostCsprojPath -Raw
+$content = $content -replace "<Version>\d+\.\d+\.\d+</Version>", "<Version>$newVersion</Version>"
+$content = $content -replace "<FileVersion>\d+\.\d+\.\d+\.\d+</FileVersion>", "<FileVersion>$newVersion.0</FileVersion>"
+Set-Content $conHostCsprojPath $content -NoNewline
+Write-Host "  Updated: Ai.Tlbx.MiddleManager.ConHost.csproj" -ForegroundColor Gray
+
+# Update ConHost Program.cs
+$content = Get-Content $conHostProgramPath -Raw
+$content = $content -replace 'public const string Version = "\d+\.\d+\.\d+"', "public const string Version = `"$newVersion`""
+Set-Content $conHostProgramPath $content -NoNewline
+Write-Host "  Updated: Ai.Tlbx.MiddleManager.ConHost\Program.cs" -ForegroundColor Gray
 
 # Git operations
 Write-Host ""
