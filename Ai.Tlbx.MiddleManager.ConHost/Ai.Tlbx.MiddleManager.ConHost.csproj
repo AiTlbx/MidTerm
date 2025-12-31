@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>mm-con-host</AssemblyName>
+    <RootNamespace>Ai.Tlbx.MiddleManager.ConHost</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+
+    <Version>2.5.10</Version>
+    <FileVersion>2.5.10.0</FileVersion>
+  </PropertyGroup>
+
+  <!-- Link PTY implementation from Host project -->
+  <ItemGroup>
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Pty\IPtyConnection.cs" Link="Pty\IPtyConnection.cs" />
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Pty\WindowsPtyConnection.cs" Link="Pty\WindowsPtyConnection.cs" />
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Pty\UnixPtyConnection.cs" Link="Pty\UnixPtyConnection.cs" />
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Pty\ConPtyNative.cs" Link="Pty\ConPtyNative.cs" />
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Pty\PtyConnectionFactory.cs" Link="Pty\PtyConnectionFactory.cs" />
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Shells\ShellType.cs" Link="Shells\ShellType.cs" />
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Shells\ShellConfigurations.cs" Link="Shells\ShellConfigurations.cs" />
+    <Compile Include="..\Ai.Tlbx.MiddleManager.Host\Shells\ShellRegistry.cs" Link="Shells\ShellRegistry.cs" />
+  </ItemGroup>
+
+  <!-- Windows-specific -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+</Project>

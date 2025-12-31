@@ -15,6 +15,9 @@ public static class Log
     private static readonly string LogPath = Path.Combine(LogDir, "mm-host.log");
     private static readonly object Lock = new();
 
+    // Set to true to enable verbose input logging (useful for debugging)
+    public static bool InputLoggingEnabled { get; set; } = false;
+
     public static void Write(string message)
     {
         var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
@@ -29,11 +32,19 @@ public static class Log
         }
         catch { }
     }
+
+    public static void WriteInput(string message)
+    {
+        if (InputLoggingEnabled)
+        {
+            Write(message);
+        }
+    }
 }
 
 public static class Program
 {
-    public const string Version = "2.5.10";
+    public const string Version = "2.6.0";
 
     public static async Task<int> Main(string[] args)
     {

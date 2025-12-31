@@ -2,7 +2,6 @@ using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
-using Ai.Tlbx.MiddleManager.Ipc;
 using Ai.Tlbx.MiddleManager.Models;
 using Ai.Tlbx.MiddleManager.Services;
 using Ai.Tlbx.MiddleManager.Settings;
@@ -24,7 +23,7 @@ public class Program
             return;
         }
 
-        var (port, bindAddress, useSidecar, wasSpawned) = ParseCommandLineArgs(args);
+        var (port, bindAddress, useConHost) = ParseCommandLineArgs(args);
         var builder = CreateBuilder(args);
         var app = builder.Build();
         var version = GetVersion();
@@ -32,57 +31,47 @@ public class Program
         ConfigureStaticFiles(app);
 
         var settingsService = app.Services.GetRequiredService<SettingsService>();
-        var shellRegistry = app.Services.GetRequiredService<ShellRegistry>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
 
-        SidecarSessionManager? sidecarSessionManager = null;
-        SidecarMuxConnectionManager? sidecarMuxManager = null;
-        SidecarLifecycle? sidecarLifecycle = null;
+        // Con-host mode: mm.exe spawns mm-con-host per session (service mode)
+        ConHostSessionManager? conHostSessionManager = null;
+        ConHostMuxConnectionManager? conHostMuxManager = null;
 
-        if (useSidecar)
-        {
-            sidecarLifecycle = new SidecarLifecycle(settingsService, wasSpawned);
-            if (await sidecarLifecycle.StartAndConnectAsync())
-            {
-                sidecarSessionManager = new SidecarSessionManager(shellRegistry, settingsService, sidecarLifecycle.Client);
-                sidecarMuxManager = new SidecarMuxConnectionManager(sidecarSessionManager);
-                sidecarSessionManager.SetMuxManager(sidecarMuxManager);
-                await sidecarSessionManager.SyncSessionsAsync();
-                Console.WriteLine("Running in sidecar mode (sessions persist across restarts)");
-            }
-            else if (wasSpawned)
-            {
-                Console.WriteLine("Error: Could not connect to parent mm-host. Exiting.");
-                return;
-            }
-            else
-            {
-                Console.WriteLine("Warning: Could not connect to mm-host, falling back to direct mode");
-                await sidecarLifecycle.DisposeAsync();
-                sidecarLifecycle = null;
-            }
-        }
-
+        // Direct mode: mm.exe creates PTY directly (standalone mode)
         SessionManager? directSessionManager = null;
         MuxConnectionManager? directMuxManager = null;
 
-        if (sidecarSessionManager is null)
+        string modeDescription;
+
+        if (useConHost)
+        {
+            conHostSessionManager = new ConHostSessionManager();
+            conHostMuxManager = new ConHostMuxConnectionManager(conHostSessionManager);
+            await conHostSessionManager.DiscoverExistingSessionsAsync();
+            modeDescription = "Service (sessions persist, one process per terminal)";
+        }
+        else
         {
             directSessionManager = app.Services.GetRequiredService<SessionManager>();
             directMuxManager = new MuxConnectionManager(directSessionManager);
             directSessionManager.SetMuxManager(directMuxManager);
+            modeDescription = "Direct (sessions lost on restart)";
         }
 
-        MapApiEndpoints(app, sidecarSessionManager, directSessionManager, updateService, version);
-        MapWebSocketMiddleware(app, sidecarSessionManager, directSessionManager, sidecarMuxManager, directMuxManager, updateService);
+        MapApiEndpoints(app, conHostSessionManager, directSessionManager, updateService, version);
+        MapWebSocketMiddleware(app, conHostSessionManager, directSessionManager, conHostMuxManager, directMuxManager, updateService);
 
-        PrintWelcomeBanner(port, bindAddress, settingsService, version, sidecarSessionManager is not null);
+        PrintWelcomeBanner(port, bindAddress, settingsService, version, modeDescription);
         RunWithPortErrorHandling(app, port, bindAddress);
 
         // Cleanup
-        if (sidecarLifecycle is not null)
+        if (conHostMuxManager is not null)
         {
-            await sidecarLifecycle.DisposeAsync();
+            await conHostMuxManager.DisposeAsync();
+        }
+        if (conHostSessionManager is not null)
+        {
+            await conHostSessionManager.DisposeAsync();
         }
     }
 
@@ -145,12 +134,11 @@ public class Program
         return false;
     }
 
-    private static (int port, string bindAddress, bool useSidecar, bool wasSpawned) ParseCommandLineArgs(string[] args)
+    private static (int port, string bindAddress, bool useConHost) ParseCommandLineArgs(string[] args)
     {
         var port = DefaultPort;
         var bindAddress = DefaultBindAddress;
-        var useSidecar = !args.Contains("--no-sidecar");
-        var wasSpawned = args.Contains("--spawned");
+        var useConHost = args.Contains("--service");
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -166,7 +154,7 @@ public class Program
             }
         }
 
-        return (port, bindAddress, useSidecar, wasSpawned);
+        return (port, bindAddress, useConHost);
     }
 
     private static WebApplicationBuilder CreateBuilder(string[] args)
@@ -236,46 +224,35 @@ public class Program
 
     private static void MapApiEndpoints(
         WebApplication app,
-        SidecarSessionManager? sidecarManager,
+        ConHostSessionManager? conHostManager,
         SessionManager? directManager,
         UpdateService updateService,
         string version)
     {
-        var shellRegistry = sidecarManager?.ShellRegistry ?? directManager!.ShellRegistry;
-        var settingsService = sidecarManager?.SettingsService ?? directManager!.SettingsService;
+        var shellRegistry = directManager?.ShellRegistry ?? app.Services.GetRequiredService<ShellRegistry>();
+        var settingsService = directManager?.SettingsService ?? app.Services.GetRequiredService<SettingsService>();
 
         app.MapGet("/api/version", () => Results.Text(version));
 
         app.MapGet("/api/health", () =>
         {
-            var isSidecarMode = sidecarManager is not null;
-            var isConnected = sidecarManager?.IsConnected ?? true;
-            var isHealthy = sidecarManager?.IsHealthy ?? true;
-            var sessionCount = sidecarManager?.GetSessionList().Sessions?.Count
+            var isConHostMode = conHostManager is not null;
+            var sessionCount = conHostManager?.GetAllSessions().Count
                 ?? directManager?.GetSessionList().Sessions?.Count ?? 0;
 
-            var client = sidecarManager?.SidecarClient;
-            string? hostError = null;
-            if (isSidecarMode && !isConnected)
-            {
-                hostError = "Cannot connect to mm-host process";
-            }
-            else if (isSidecarMode && !isHealthy)
-            {
-                hostError = "PTY host not responding (no heartbeat)";
-            }
+            var mode = isConHostMode ? "service" : "direct";
 
             var health = new SystemHealth
             {
-                Healthy = !isSidecarMode || isHealthy,
-                Mode = isSidecarMode ? "sidecar" : "direct",
-                HostConnected = isHealthy,
-                HostError = hostError,
+                Healthy = true,
+                Mode = mode,
+                HostConnected = true,
+                HostError = null,
                 SessionCount = sessionCount,
                 Version = version,
-                IpcTransport = client?.TransportType,
-                IpcEndpoint = client?.Endpoint,
-                LastHeartbeatMs = client?.LastHeartbeatAgoMs,
+                IpcTransport = null,
+                IpcEndpoint = null,
+                LastHeartbeatMs = null,
                 WebProcessId = Environment.ProcessId,
                 UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
                 Platform = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux"
@@ -374,8 +351,28 @@ public class Program
 
         app.MapGet("/api/sessions", () =>
         {
-            var list = sidecarManager?.GetSessionList() ?? directManager!.GetSessionList();
-            return Results.Json(list, AppJsonContext.Default.SessionListDto);
+            if (conHostManager is not null)
+            {
+                var sessions = conHostManager.GetAllSessions();
+                var list = new SessionListDto
+                {
+                    Sessions = sessions.Select(s => new SessionInfoDto
+                    {
+                        Id = s.Id,
+                        Pid = s.Pid,
+                        CreatedAt = s.CreatedAt,
+                        IsRunning = s.IsRunning,
+                        ExitCode = s.ExitCode,
+                        CurrentWorkingDirectory = s.CurrentWorkingDirectory,
+                        Cols = s.Cols,
+                        Rows = s.Rows,
+                        ShellType = s.ShellType,
+                        Name = s.Name
+                    }).ToList()
+                };
+                return Results.Json(list, AppJsonContext.Default.SessionListDto);
+            }
+            return Results.Json(directManager!.GetSessionList(), AppJsonContext.Default.SessionListDto);
         });
 
         app.MapPost("/api/sessions", async (CreateSessionRequest? request) =>
@@ -389,26 +386,25 @@ public class Program
                 shellType = parsed;
             }
 
-            if (sidecarManager is not null)
+            if (conHostManager is not null)
             {
-                var snapshot = await sidecarManager.CreateSessionAsync(cols, rows, shellType);
-                if (snapshot is null)
+                var sessionInfo = await conHostManager.CreateSessionAsync(shellType?.ToString(), cols, rows, request?.WorkingDirectory);
+                if (sessionInfo is null)
                 {
                     return Results.Problem("Failed to create session");
                 }
                 var info = new SessionInfoDto
                 {
-                    Id = snapshot.Id,
-                    Pid = snapshot.Pid,
-                    CreatedAt = snapshot.CreatedAt,
-                    IsRunning = snapshot.IsRunning,
-                    ExitCode = snapshot.ExitCode,
-                    CurrentWorkingDirectory = snapshot.CurrentWorkingDirectory,
-                    Cols = snapshot.Cols,
-                    Rows = snapshot.Rows,
-                    ShellType = snapshot.ShellType,
-                    Name = snapshot.Name,
-                    LastActiveViewerId = null
+                    Id = sessionInfo.Id,
+                    Pid = sessionInfo.Pid,
+                    CreatedAt = sessionInfo.CreatedAt,
+                    IsRunning = sessionInfo.IsRunning,
+                    ExitCode = sessionInfo.ExitCode,
+                    CurrentWorkingDirectory = sessionInfo.CurrentWorkingDirectory,
+                    Cols = sessionInfo.Cols,
+                    Rows = sessionInfo.Rows,
+                    ShellType = sessionInfo.ShellType,
+                    Name = sessionInfo.Name
                 };
                 return Results.Json(info, AppJsonContext.Default.SessionInfoDto);
             }
@@ -435,9 +431,9 @@ public class Program
 
         app.MapDelete("/api/sessions/{id}", async (string id) =>
         {
-            if (sidecarManager is not null)
+            if (conHostManager is not null)
             {
-                await sidecarManager.CloseSessionAsync(id);
+                await conHostManager.CloseSessionAsync(id);
             }
             else
             {
@@ -448,14 +444,14 @@ public class Program
 
         app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request) =>
         {
-            if (sidecarManager is not null)
+            if (conHostManager is not null)
             {
-                var session = sidecarManager.GetSession(id);
+                var session = conHostManager.GetSession(id);
                 if (session is null)
                 {
                     return Results.NotFound();
                 }
-                await sidecarManager.ResizeAsync(id, request.Cols, request.Rows);
+                await conHostManager.ResizeSessionAsync(id, request.Cols, request.Rows);
                 return Results.Json(new ResizeResponse
                 {
                     Accepted = true,
@@ -482,14 +478,14 @@ public class Program
 
         app.MapGet("/api/sessions/{id}/buffer", async (string id) =>
         {
-            if (sidecarManager is not null)
+            if (conHostManager is not null)
             {
-                var session = sidecarManager.GetSession(id);
+                var session = conHostManager.GetSession(id);
                 if (session is null)
                 {
                     return Results.NotFound();
                 }
-                var buffer = await sidecarManager.GetBufferAsync(id);
+                var buffer = await conHostManager.GetBufferAsync(id);
                 return Results.Bytes(buffer ?? []);
             }
             else
@@ -503,12 +499,15 @@ public class Program
             }
         });
 
-        app.MapPut("/api/sessions/{id}/name", (string id, RenameSessionRequest request) =>
+        app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request) =>
         {
-            if (sidecarManager is not null)
+            if (conHostManager is not null)
             {
-                // TODO: Implement rename via sidecar
-                return Results.NotFound();
+                if (!await conHostManager.SetSessionNameAsync(id, request.Name))
+                {
+                    return Results.NotFound();
+                }
+                return Results.Ok();
             }
             else
             {
@@ -523,9 +522,9 @@ public class Program
 
     private static void MapWebSocketMiddleware(
         WebApplication app,
-        SidecarSessionManager? sidecarManager,
+        ConHostSessionManager? conHostManager,
         SessionManager? directManager,
-        SidecarMuxConnectionManager? sidecarMuxManager,
+        ConHostMuxConnectionManager? conHostMuxManager,
         MuxConnectionManager? directMuxManager,
         UpdateService updateService)
     {
@@ -547,13 +546,13 @@ public class Program
 
             if (path == "/ws/state")
             {
-                await HandleStateWebSocketAsync(context, sidecarManager, directManager, updateService);
+                await HandleStateWebSocketAsync(context, conHostManager, directManager, updateService);
                 return;
             }
 
             if (path == "/ws/mux")
             {
-                await HandleMuxWebSocketAsync(context, sidecarManager, directManager, sidecarMuxManager, directMuxManager);
+                await HandleMuxWebSocketAsync(context, conHostManager, directManager, conHostMuxManager, directMuxManager);
                 return;
             }
 
@@ -584,18 +583,18 @@ public class Program
 
     private static async Task HandleMuxWebSocketAsync(
         HttpContext context,
-        SidecarSessionManager? sidecarManager,
+        ConHostSessionManager? conHostManager,
         SessionManager? directManager,
-        SidecarMuxConnectionManager? sidecarMuxManager,
+        ConHostMuxConnectionManager? conHostMuxManager,
         MuxConnectionManager? directMuxManager)
     {
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         var clientId = Guid.NewGuid().ToString("N");
 
         MuxClient client;
-        if (sidecarMuxManager is not null)
+        if (conHostMuxManager is not null)
         {
-            client = sidecarMuxManager.AddClient(clientId, ws);
+            client = conHostMuxManager.AddClient(clientId, ws);
         }
         else
         {
@@ -611,12 +610,12 @@ public class Program
             await client.SendAsync(initFrame);
 
             // Send initial buffer for existing sessions
-            if (sidecarManager is not null)
+            if (conHostManager is not null)
             {
-                var sessionList = sidecarManager.GetSessionList();
-                foreach (var sessionInfo in sessionList.Sessions)
+                var sessions = conHostManager.GetAllSessions();
+                foreach (var sessionInfo in sessions)
                 {
-                    var buffer = await sidecarManager.GetBufferAsync(sessionInfo.Id);
+                    var buffer = await conHostManager.GetBufferAsync(sessionInfo.Id);
                     if (buffer is not null && buffer.Length > 0)
                     {
                         var frame = MuxProtocol.CreateOutputFrame(sessionInfo.Id, buffer);
@@ -664,9 +663,9 @@ public class Program
                         switch (type)
                         {
                             case MuxProtocol.TypeTerminalInput:
-                                if (sidecarMuxManager is not null)
+                                if (conHostMuxManager is not null)
                                 {
-                                    await sidecarMuxManager.HandleInputAsync(sessionId, new ReadOnlyMemory<byte>(payload.ToArray()), clientId);
+                                    await conHostMuxManager.HandleInputAsync(sessionId, new ReadOnlyMemory<byte>(payload.ToArray()), clientId);
                                 }
                                 else
                                 {
@@ -676,9 +675,9 @@ public class Program
 
                             case MuxProtocol.TypeResize:
                                 var (cols, rows) = MuxProtocol.ParseResizePayload(payload);
-                                if (sidecarMuxManager is not null)
+                                if (conHostMuxManager is not null)
                                 {
-                                    await sidecarMuxManager.HandleResizeAsync(sessionId, cols, rows, clientId);
+                                    await conHostMuxManager.HandleResizeAsync(sessionId, cols, rows, clientId);
                                 }
                                 else
                                 {
@@ -692,9 +691,9 @@ public class Program
         }
         finally
         {
-            if (sidecarMuxManager is not null)
+            if (conHostMuxManager is not null)
             {
-                sidecarMuxManager.RemoveClient(clientId);
+                conHostMuxManager.RemoveClient(clientId);
             }
             else
             {
@@ -716,7 +715,7 @@ public class Program
 
     private static async Task HandleStateWebSocketAsync(
         HttpContext context,
-        SidecarSessionManager? sidecarManager,
+        ConHostSessionManager? conHostManager,
         SessionManager? directManager,
         UpdateService updateService)
     {
@@ -739,8 +738,8 @@ public class Program
                     return;
                 }
 
-                var sessionList = sidecarManager?.GetSessionList() ?? directManager!.GetSessionList();
-                var hostConnected = sidecarManager?.IsConnected ?? true;
+                var sessionList = conHostManager?.GetSessionList() ?? directManager!.GetSessionList();
+                var hostConnected = true;
                 var state = new StateUpdate
                 {
                     Sessions = sessionList,
@@ -769,9 +768,9 @@ public class Program
         }
 
         string sessionListenerId;
-        if (sidecarManager is not null)
+        if (conHostManager is not null)
         {
-            sessionListenerId = sidecarManager.AddStateListener(OnStateChange);
+            sessionListenerId = conHostManager.AddStateListener(OnStateChange);
         }
         else
         {
@@ -803,9 +802,9 @@ public class Program
         }
         finally
         {
-            if (sidecarManager is not null)
+            if (conHostManager is not null)
             {
-                sidecarManager.RemoveStateListener(sessionListenerId);
+                conHostManager.RemoveStateListener(sessionListenerId);
             }
             else
             {
@@ -827,7 +826,7 @@ public class Program
         }
     }
 
-    private static void PrintWelcomeBanner(int port, string bindAddress, SettingsService settingsService, string version, bool sidecarMode)
+    private static void PrintWelcomeBanner(int port, string bindAddress, SettingsService settingsService, string version, string modeDescription)
     {
         var settings = settingsService.Load();
 
@@ -856,16 +855,9 @@ public class Program
         Console.WriteLine($"  Platform: {platform}");
         Console.WriteLine($"  Shell:    {settings.DefaultShell}");
         Console.Write($"  Mode:     ");
-        if (sidecarMode)
-        {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("Sidecar (sessions persist across restarts)");
-            Console.ResetColor();
-        }
-        else
-        {
-            Console.WriteLine("Direct (sessions lost on restart)");
-        }
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine(modeDescription);
+        Console.ResetColor();
         Console.WriteLine();
         Console.WriteLine($"  Listening on http://{bindAddress}:{port}");
         Console.WriteLine();

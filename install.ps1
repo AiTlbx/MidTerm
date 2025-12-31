@@ -18,7 +18,8 @@ $Publisher = "AiTlbx"
 $RepoOwner = "AiTlbx"
 $RepoName = "MiddleManager"
 $WebBinaryName = "mm.exe"
-$HostBinaryName = "mm-host.exe"
+$ConHostBinaryName = "mm-con-host.exe"
+$LegacyHostBinaryName = "mm-host.exe"
 $AssetPattern = "mm-win-x64.zip"
 
 function Write-Header
@@ -126,7 +127,7 @@ function Install-MiddleManager
 
             # Kill any lingering processes that might hold file locks
             Write-Host "Stopping any running processes..." -ForegroundColor Gray
-            Get-Process -Name "mm-host", "mm" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process -Name "mm-host", "mm-con-host", "mm" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 1
         }
 
@@ -162,11 +163,11 @@ function Install-MiddleManager
     if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force }
     Expand-Archive -Path $tempZip -DestinationPath $tempExtract
 
-    # Copy both binaries
+    # Copy binaries
     $sourceWebBinary = Join-Path $tempExtract $WebBinaryName
-    $sourceHostBinary = Join-Path $tempExtract $HostBinaryName
+    $sourceConHostBinary = Join-Path $tempExtract $ConHostBinaryName
     $destWebBinary = Join-Path $installDir $WebBinaryName
-    $destHostBinary = Join-Path $installDir $HostBinaryName
+    $destConHostBinary = Join-Path $installDir $ConHostBinaryName
 
     Write-Host "Installing binaries..." -ForegroundColor Gray
     try
@@ -181,19 +182,27 @@ function Install-MiddleManager
         throw
     }
 
-    if (Test-Path $sourceHostBinary)
+    if (Test-Path $sourceConHostBinary)
     {
         try
         {
-            Copy-Item $sourceHostBinary $destHostBinary -Force -ErrorAction Stop
-            Write-Host "  Installed: $HostBinaryName" -ForegroundColor Gray
+            Copy-Item $sourceConHostBinary $destConHostBinary -Force -ErrorAction Stop
+            Write-Host "  Installed: $ConHostBinaryName" -ForegroundColor Gray
         }
         catch
         {
-            Write-Host "  Failed to copy $HostBinaryName - file may be locked" -ForegroundColor Red
+            Write-Host "  Failed to copy $ConHostBinaryName - file may be locked" -ForegroundColor Red
             Write-Host "  Error: $_" -ForegroundColor Red
             throw
         }
+    }
+
+    # Remove legacy mm-host.exe if present from previous installs
+    $legacyHostPath = Join-Path $installDir $LegacyHostBinaryName
+    if (Test-Path $legacyHostPath)
+    {
+        Remove-Item $legacyHostPath -Force -ErrorAction SilentlyContinue
+        Write-Host "  Removed legacy: $LegacyHostBinaryName" -ForegroundColor Gray
     }
 
     # Copy version manifest
@@ -224,17 +233,13 @@ function Install-MiddleManager
         Write-Host ""
         Write-Host "Process Status:" -ForegroundColor Cyan
         $serviceStatus = (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue).Status
-        $mmHostProc = Get-Process -Name "mm-host" -ErrorAction SilentlyContinue
         $mmProc = Get-Process -Name "mm" -ErrorAction SilentlyContinue
 
         if ($serviceStatus -eq "Running") { Write-Host "  Service    : Running" -ForegroundColor Green }
         else { Write-Host "  Service    : $serviceStatus" -ForegroundColor Red }
 
-        if ($mmHostProc) { Write-Host "  mm-host    : Running (PID $($mmHostProc.Id))" -ForegroundColor Green }
-        else { Write-Host "  mm-host    : Not running" -ForegroundColor Red }
-
         if ($mmProc) { Write-Host "  mm (web)   : Running (PID $($mmProc.Id))" -ForegroundColor Green }
-        else { Write-Host "  mm (web)   : Not running" -ForegroundColor Yellow; Write-Host "               (mm-host spawns mm.exe - may take a moment)" -ForegroundColor Gray }
+        else { Write-Host "  mm (web)   : Starting..." -ForegroundColor Yellow }
 
         # Check health endpoint
         try
@@ -273,7 +278,7 @@ function Install-AsService
         [string]$Version
     )
 
-    $hostBinaryPath = Join-Path $InstallDir $HostBinaryName
+    $webBinaryPath = Join-Path $InstallDir $WebBinaryName
 
     # Remove existing service if present
     $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -283,17 +288,17 @@ function Install-AsService
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
 
         # Kill any lingering processes
-        Get-Process -Name "mm-host", "mm" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process -Name "mm-host", "mm-con-host", "mm" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
 
         sc.exe delete $ServiceName | Out-Null
         Start-Sleep -Seconds 1
     }
 
-    # Create single service that runs mm-host.exe --launcher
-    # Launcher spawns mm-host as user (for correct ConPTY session), which then spawns mm.exe
+    # Create service that runs mm.exe --service
+    # mm.exe spawns mm-con-host per terminal session (for correct ConPTY in user session)
     Write-Host "Creating MiddleManager service..." -ForegroundColor Gray
-    $binPathWithService = "`"$hostBinaryPath`" --launcher"
+    $binPathWithService = "`"$webBinaryPath`" --service"
     sc.exe create $ServiceName binPath= $binPathWithService start= auto DisplayName= "$DisplayName" | Out-Null
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
 
@@ -358,7 +363,7 @@ function Register-Uninstall
         Publisher = $Publisher
         InstallLocation = $InstallDir
         UninstallString = "pwsh -ExecutionPolicy Bypass -File `"$uninstallScript`""
-        DisplayIcon = Join-Path $InstallDir $HostBinaryName
+        DisplayIcon = Join-Path $InstallDir $WebBinaryName
         NoModify = 1
         NoRepair = 1
     }

@@ -9,6 +9,7 @@ env:
   DOTNET_VERSION: '10.0.x'
   WEB_PROJECT: Ai.Tlbx.MiddleManager/Ai.Tlbx.MiddleManager.csproj
   HOST_PROJECT: Ai.Tlbx.MiddleManager.Host/Ai.Tlbx.MiddleManager.Host.csproj
+  CONHOST_PROJECT: Ai.Tlbx.MiddleManager.ConHost/Ai.Tlbx.MiddleManager.ConHost.csproj
 
 jobs:
   build:
@@ -41,6 +42,10 @@ jobs:
       - name: Publish PTY Host (mm-host)
         run: dotnet publish ${{ env.HOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
 
+      - name: Publish ConHost (mm-con-host) - Windows only
+        if: matrix.rid == 'win-x64'
+        run: dotnet publish ${{ env.CONHOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
+
       - name: Create staging directory
         shell: bash
         run: mkdir -p staging
@@ -51,6 +56,7 @@ jobs:
         run: |
           cp Ai.Tlbx.MiddleManager/bin/Release/net10.0/${{ matrix.rid }}/publish/mm.exe staging/
           cp Ai.Tlbx.MiddleManager.Host/bin/Release/net10.0/${{ matrix.rid }}/publish/mm-host.exe staging/
+          cp Ai.Tlbx.MiddleManager.ConHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mm-con-host.exe staging/
           cp version.json staging/
 
       - name: Stage binaries (Unix)
@@ -87,8 +93,8 @@ jobs:
       - name: Package artifacts
         run: |
           cd artifacts
-          # Windows
-          cd win-x64 && zip ../mm-win-x64.zip mm.exe mm-host.exe version.json && cd ..
+          # Windows (includes mm-con-host for new architecture)
+          cd win-x64 && zip ../mm-win-x64.zip mm.exe mm-host.exe mm-con-host.exe version.json && cd ..
           # macOS
           cd osx-arm64 && tar -czvf ../mm-osx-arm64.tar.gz mm mm-host version.json && cd ..
           cd osx-x64 && tar -czvf ../mm-osx-x64.tar.gz mm mm-host version.json && cd ..
