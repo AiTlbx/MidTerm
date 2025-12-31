@@ -4,6 +4,31 @@ using Ai.Tlbx.MiddleManager.Ipc;
 
 namespace Ai.Tlbx.MiddleManager.Services;
 
+internal static class SidecarLog
+{
+    private static readonly string LogDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "MiddleManager",
+        "logs");
+
+    private static readonly string LogPath = Path.Combine(LogDir, "mm-client.log");
+    private static readonly object Lock = new();
+
+    public static void Write(string message)
+    {
+        var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+        try
+        {
+            lock (Lock)
+            {
+                Directory.CreateDirectory(LogDir);
+                File.AppendAllText(LogPath, line + Environment.NewLine);
+            }
+        }
+        catch { }
+    }
+}
+
 public sealed class SidecarClient : IAsyncDisposable
 {
     private const int PingTimeoutMs = 15_000;
@@ -45,7 +70,7 @@ public sealed class SidecarClient : IAsyncDisposable
     // Diagnostic properties for machine room
     public string TransportType => _transport?.GetType().Name ?? "None";
     public string Endpoint => OperatingSystem.IsWindows()
-        ? @"\\.\pipe\MiddleManager"
+        ? @"\\.\pipe\middlemanager-host"
         : "/tmp/middlemanager.sock";
     public long? LastHeartbeatAgoMs => _lastPingTicks > 0
         ? (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPingTicks)) / TimeSpan.TicksPerMillisecond
@@ -120,14 +145,16 @@ public sealed class SidecarClient : IAsyncDisposable
 
     private async Task ReadLoopAsync(CancellationToken cancellationToken)
     {
+        SidecarLog.Write("ReadLoopAsync started");
         try
         {
             while (!cancellationToken.IsCancellationRequested && _transport?.IsConnected == true)
             {
                 var elapsed = DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPingTicks);
-                if (TimeSpan.FromTicks(elapsed).TotalMilliseconds > PingTimeoutMs)
+                var elapsedMs = TimeSpan.FromTicks(elapsed).TotalMilliseconds;
+                if (elapsedMs > PingTimeoutMs)
                 {
-                    Console.WriteLine("Host heartbeat timeout, disconnecting");
+                    SidecarLog.Write($"Host heartbeat timeout ({elapsedMs:F0}ms > {PingTimeoutMs}ms), disconnecting");
                     break;
                 }
 
@@ -145,20 +172,25 @@ public sealed class SidecarClient : IAsyncDisposable
 
                 if (frame is null)
                 {
+                    SidecarLog.Write("Received null frame, disconnecting");
                     break;
                 }
 
+                SidecarLog.Write($"Received frame type: {frame.Value.Type}");
                 await HandleFrameAsync(frame.Value).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
+            SidecarLog.Write("ReadLoopAsync cancelled");
         }
-        catch
+        catch (Exception ex)
         {
+            SidecarLog.Write($"ReadLoopAsync error: {ex.Message}");
         }
         finally
         {
+            SidecarLog.Write("ReadLoopAsync exiting");
             var wasConnected = Interlocked.Exchange(ref _connected, 0) == 1;
             if (wasConnected)
             {
@@ -166,6 +198,7 @@ public sealed class SidecarClient : IAsyncDisposable
 
                 if (_autoReconnect && !_disposed)
                 {
+                    SidecarLog.Write("Starting auto-reconnect");
                     _ = ReconnectLoopAsync();
                 }
             }
@@ -235,8 +268,10 @@ public sealed class SidecarClient : IAsyncDisposable
                 break;
 
             case IpcMessageType.Ping:
+                SidecarLog.Write("Received Ping, updating heartbeat timestamp");
                 Interlocked.Exchange(ref _lastPingTicks, DateTime.UtcNow.Ticks);
                 await WriteFrameAsync(new IpcFrame(IpcMessageType.Pong)).ConfigureAwait(false);
+                SidecarLog.Write("Sent Pong");
                 break;
 
             case IpcMessageType.Pong:
@@ -269,7 +304,7 @@ public sealed class SidecarClient : IAsyncDisposable
             return null;
         }
 
-        var tcs = new TaskCompletionSource<IpcFrame>();
+        var tcs = new TaskCompletionSource<IpcFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
         var requestId = Guid.NewGuid().ToString("N")[..8];
         _pendingRequests[requestId] = tcs;
 
@@ -301,39 +336,18 @@ public sealed class SidecarClient : IAsyncDisposable
 
     public async Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        if (!IsConnected)
-        {
-            return;
-        }
-
-        await _transport!.WriteFrameAsync(
-            new IpcFrame(IpcMessageType.CloseSession, sessionId),
-            cancellationToken).ConfigureAwait(false);
+        await WriteFrameAsync(new IpcFrame(IpcMessageType.CloseSession, sessionId)).ConfigureAwait(false);
     }
 
     public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
-        if (!IsConnected)
-        {
-            return;
-        }
-
-        await _transport!.WriteFrameAsync(
-            new IpcFrame(IpcMessageType.Input, sessionId, data),
-            cancellationToken).ConfigureAwait(false);
+        await WriteFrameAsync(new IpcFrame(IpcMessageType.Input, sessionId, data)).ConfigureAwait(false);
     }
 
     public async Task ResizeAsync(string sessionId, int cols, int rows, CancellationToken cancellationToken = default)
     {
-        if (!IsConnected)
-        {
-            return;
-        }
-
         var payload = SidecarProtocol.CreateResizePayload(cols, rows);
-        await _transport!.WriteFrameAsync(
-            new IpcFrame(IpcMessageType.Resize, sessionId, payload),
-            cancellationToken).ConfigureAwait(false);
+        await WriteFrameAsync(new IpcFrame(IpcMessageType.Resize, sessionId, payload)).ConfigureAwait(false);
     }
 
     public async Task<List<SessionSnapshot>> ListSessionsAsync(CancellationToken cancellationToken = default)
@@ -343,7 +357,7 @@ public sealed class SidecarClient : IAsyncDisposable
             return [];
         }
 
-        var tcs = new TaskCompletionSource<IpcFrame>();
+        var tcs = new TaskCompletionSource<IpcFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingRequests[string.Empty] = tcs;
 
         try
@@ -371,7 +385,7 @@ public sealed class SidecarClient : IAsyncDisposable
             return null;
         }
 
-        var tcs = new TaskCompletionSource<IpcFrame>();
+        var tcs = new TaskCompletionSource<IpcFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingRequests[sessionId] = tcs;
 
         try

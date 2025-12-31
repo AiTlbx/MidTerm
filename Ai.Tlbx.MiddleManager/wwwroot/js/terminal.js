@@ -79,6 +79,8 @@
 
     // Per-session terminal state: { terminal, fitAddon, container, serverCols, serverRows }
     var sessionTerminals = new Map();
+    // Track sessions created in this browser session (skip buffer fetch for these)
+    var newlyCreatedSessions = new Set();
 
     // ========================================================================
     // DOM Element References
@@ -208,7 +210,7 @@
         sessionTerminals.forEach(function(_, id) {
             if (!newIds.has(id)) {
                 destroyTerminalForSession(id);
-                sessionNames.delete(id);
+                newlyCreatedSessions.delete(id);
             }
         });
 
@@ -767,7 +769,7 @@
         };
 
         sessionTerminals.set(sessionId, state);
-        fetchAndWriteBuffer(sessionId, terminal);
+        // Buffer fetch is deferred to selectSession after fit/resize
         return state;
     }
 
@@ -809,9 +811,48 @@
     // ========================================================================
 
     function createSession() {
-        fetch('/api/sessions', { method: 'POST' })
+        // Measure dimensions using explicit pixel sizes from container
+        var rect = terminalsArea.getBoundingClientRect();
+        var cols = 120;
+        var rows = 30;
+
+        // Only measure if container has valid dimensions
+        if (rect.width > 100 && rect.height > 100) {
+            var tempContainer = document.createElement('div');
+            tempContainer.style.cssText = 'position:absolute;left:-9999px;width:' + Math.floor(rect.width) + 'px;height:' + Math.floor(rect.height) + 'px;';
+            document.body.appendChild(tempContainer);
+
+            try {
+                var tempTerminal = new Terminal(getTerminalOptions());
+                var tempFitAddon = new FitAddon.FitAddon();
+                tempTerminal.loadAddon(tempFitAddon);
+                tempTerminal.open(tempContainer);
+                tempFitAddon.fit();
+
+                if (tempTerminal.cols > 10 && tempTerminal.rows > 5) {
+                    cols = tempTerminal.cols;
+                    rows = tempTerminal.rows;
+                }
+
+                tempTerminal.dispose();
+            } catch (e) {
+                console.warn('Dimension measurement failed:', e);
+            }
+
+            tempContainer.remove();
+        }
+
+        console.log('Creating session with dimensions:', cols, 'x', rows, '(container:', Math.floor(rect.width), 'x', Math.floor(rect.height), 'px)');
+
+        fetch('/api/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ Cols: cols, Rows: rows })
+        })
             .then(function(r) { return r.json(); })
             .then(function(session) {
+                // Mark as newly created - skip buffer fetch since WebSocket will send all output
+                newlyCreatedSessions.add(session.id);
                 selectSession(session.id);
                 closeSidebar();
             })
@@ -833,12 +874,19 @@
         activeSessionId = sessionId;
 
         var state = createTerminalForSession(sessionId);
+        var isNewTerminal = state.serverCols === 0; // Never been fitted before
         state.container.classList.remove('hidden');
 
         requestAnimationFrame(function() {
             state.fitAddon.fit();
             sendResize(sessionId, state.terminal);
             state.terminal.focus();
+
+            // Fetch buffer for existing sessions only (not newly created ones)
+            // Newly created sessions get all output via WebSocket
+            if (isNewTerminal && !newlyCreatedSessions.has(sessionId)) {
+                fetchAndWriteBuffer(sessionId, state.terminal);
+            }
         });
 
         renderSessionList();

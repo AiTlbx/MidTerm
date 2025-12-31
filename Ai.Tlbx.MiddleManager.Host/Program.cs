@@ -5,9 +5,35 @@ using Microsoft.Extensions.Hosting;
 
 namespace Ai.Tlbx.MiddleManager.Host;
 
+public static class Log
+{
+    private static readonly string LogDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "MiddleManager",
+        "logs");
+
+    private static readonly string LogPath = Path.Combine(LogDir, "mm-host.log");
+    private static readonly object Lock = new();
+
+    public static void Write(string message)
+    {
+        var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+        Console.WriteLine(line);
+        try
+        {
+            lock (Lock)
+            {
+                Directory.CreateDirectory(LogDir);
+                File.AppendAllText(LogPath, line + Environment.NewLine);
+            }
+        }
+        catch { }
+    }
+}
+
 public static class Program
 {
-    public const string Version = "2.2.6";
+    public const string Version = "2.2.16";
 
     public static async Task<int> Main(string[] args)
     {
@@ -26,7 +52,7 @@ public static class Program
         var isServiceMode = args.Contains("--service");
         var (port, bindAddress) = ParseArgs(args);
 
-        Console.WriteLine($"mm-host {Version} starting{(isServiceMode ? " (service mode)" : "")}...");
+        Log.Write($"mm-host {Version} starting{(isServiceMode ? " (service mode)" : "")}...");
 
         try
         {
@@ -51,7 +77,7 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Fatal error: {ex.Message}");
+            Log.Write($"Fatal error: {ex.Message}");
             return 1;
         }
     }
@@ -158,7 +184,7 @@ public sealed class SidecarHostedService : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        Console.WriteLine("Shutting down...");
+        Log.Write("Shutting down...");
 
         if (_supervisor is not null)
         {

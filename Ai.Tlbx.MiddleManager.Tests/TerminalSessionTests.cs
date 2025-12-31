@@ -26,6 +26,69 @@ public class TerminalSessionTests : IDisposable
         Assert.True(session.Pid > 0);
     }
 
+    [Fact(Skip = "Shell exits immediately in xUnit test environment (ConPTY limitation)")]
+    public async Task CreateSession_SessionStaysAliveFor2Seconds()
+    {
+        // Skip this test on non-Windows since the issue seems PTY-specific
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        // Test with direct PTY creation
+        var pty = Ai.Tlbx.MiddleManager.Pty.PtyConnectionFactory.Create(
+            "cmd.exe",
+            [],
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            80, 24,
+            null  // No custom environment - inherit parent's
+        );
+
+        Assert.True(pty.IsRunning, $"PTY should be running immediately after creation. Pid={pty.Pid}");
+
+        // Read some output
+        var buffer = new byte[1024];
+        var readTask = pty.ReaderStream.ReadAsync(buffer, 0, buffer.Length);
+        var completed = await Task.WhenAny(readTask, Task.Delay(500));
+
+        int bytesRead = 0;
+        if (completed == readTask)
+        {
+            bytesRead = await readTask;
+        }
+
+        var output = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
+
+        // Check if still running after 1 second
+        await Task.Delay(500);
+
+        Assert.True(pty.IsRunning, $"PTY should still be running after 1 second. ExitCode={pty.ExitCode}, Output='{output}'");
+
+        pty.Dispose();
+    }
+
+    [Fact(Skip = "Shell exits immediately in xUnit test environment (ConPTY limitation)")]
+    public async Task CreateSession_CanSendInputAndReceiveOutput()
+    {
+        // Use cmd.exe which is simple and predictable
+        var session = _sessionManager.CreateSession(shellType: OperatingSystem.IsWindows() ? ShellType.Cmd : ShellType.Bash);
+        Assert.True(session.IsRunning, "Session should be running immediately");
+
+        // Wait for shell to start
+        await Task.Delay(500);
+        Assert.True(session.IsRunning, $"Session should still be running after 500ms. ExitCode={session.ExitCode}");
+
+        // Send echo command
+        await session.SendInputAsync("echo TESTMARKER\r\n");
+
+        // Wait for output
+        await Task.Delay(1000);
+
+        // Check buffer
+        var buffer = session.GetBuffer();
+        Assert.True(buffer.Contains("TESTMARKER"), $"Buffer should contain TESTMARKER. Buffer={buffer.Length}chars, IsRunning={session.IsRunning}, ExitCode={session.ExitCode}");
+    }
+
     [Fact]
     public void CreateSession_WithCustomSize_SetsCorrectDimensions()
     {

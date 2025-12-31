@@ -190,7 +190,16 @@ public sealed class SidecarSessionManager : IDisposable
 
     private void HandleSidecarStateChange(SessionSnapshot snapshot)
     {
-        _sessions[snapshot.Id] = snapshot;
+        // When a session is deleted, mm-host sends a snapshot with IsRunning=false and empty ShellType
+        // In this case, we should remove the session from our cache
+        if (!snapshot.IsRunning && string.IsNullOrEmpty(snapshot.ShellType))
+        {
+            _sessions.TryRemove(snapshot.Id, out _);
+        }
+        else
+        {
+            _sessions[snapshot.Id] = snapshot;
+        }
         NotifyStateChange();
     }
 
@@ -214,14 +223,64 @@ public sealed class SidecarSessionManager : IDisposable
             return settings.DefaultWorkingDirectory;
         }
 
+        // When running as a service (SYSTEM), Environment.GetFolderPath returns SYSTEM's profile.
+        // Try to get the profile for RunAsUser if specified.
+        if (!string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            var userProfile = GetUserProfileDirectory(settings.RunAsUser);
+            if (!string.IsNullOrEmpty(userProfile) && Directory.Exists(userProfile))
+            {
+                return userProfile;
+            }
+        }
+
         try
         {
-            return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!string.IsNullOrEmpty(profile) && Directory.Exists(profile))
+            {
+                return profile;
+            }
         }
         catch
         {
-            return Environment.CurrentDirectory;
         }
+
+        return Environment.CurrentDirectory;
+    }
+
+    private static string? GetUserProfileDirectory(string username)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // On Windows, user profiles are typically at C:\Users\{username}
+            var usersDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "..", "..", "Users");
+            usersDir = Path.GetFullPath(usersDir);
+            var userDir = Path.Combine(usersDir, username);
+            if (Directory.Exists(userDir))
+            {
+                return userDir;
+            }
+
+            // Fallback: try SystemDrive\Users\{username}
+            var systemDrive = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:";
+            userDir = Path.Combine(systemDrive, "Users", username);
+            if (Directory.Exists(userDir))
+            {
+                return userDir;
+            }
+        }
+        else
+        {
+            // On Unix, user profiles are typically at /home/{username}
+            var userDir = Path.Combine("/home", username);
+            if (Directory.Exists(userDir))
+            {
+                return userDir;
+            }
+        }
+
+        return null;
     }
 
     public void Dispose()

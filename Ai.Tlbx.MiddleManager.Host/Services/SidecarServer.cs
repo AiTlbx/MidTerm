@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Ai.Tlbx.MiddleManager.Host.Ipc;
+using static Ai.Tlbx.MiddleManager.Host.Log;
 
 namespace Ai.Tlbx.MiddleManager.Host.Services;
 
@@ -24,7 +25,7 @@ public sealed class SidecarServer : IAsyncDisposable
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         await _server.StartAsync(cancellationToken).ConfigureAwait(false);
-        Console.WriteLine($"mm-host listening on {IpcServerFactory.GetEndpointDescription()}");
+        Write($"mm-host listening on {IpcServerFactory.GetEndpointDescription()}");
 
         _ = AcceptLoopAsync(_cts.Token);
     }
@@ -35,10 +36,10 @@ public sealed class SidecarServer : IAsyncDisposable
         {
             try
             {
-                Console.WriteLine("Waiting for client connection...");
+                Write("Waiting for client connection...");
                 var transport = await _server.AcceptAsync(cancellationToken).ConfigureAwait(false);
                 var clientId = Interlocked.Increment(ref _nextClientId);
-                Console.WriteLine($"Client {clientId} connected");
+                Write($"Client {clientId} connected");
                 var handler = new ClientHandler(clientId, transport, _sessionManager, RemoveClient);
                 _clients[clientId] = handler;
                 _ = handler.RunAsync(cancellationToken);
@@ -49,7 +50,7 @@ public sealed class SidecarServer : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Accept error: {ex.Message}");
+                Write($"Accept error: {ex.Message}");
                 await Task.Delay(100, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -138,7 +139,7 @@ internal sealed class ClientHandler : IAsyncDisposable
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        Console.WriteLine($"Client {_clientId} RunAsync started");
+        Write($"Client {_clientId} RunAsync started");
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _heartbeatCts.Token);
         var linkedToken = linkedCts.Token;
 
@@ -151,25 +152,25 @@ internal sealed class ClientHandler : IAsyncDisposable
                 var frame = await _transport.ReadFrameAsync(linkedToken).ConfigureAwait(false);
                 if (frame is null)
                 {
-                    Console.WriteLine($"Client {_clientId} received null frame, disconnecting");
+                    Write($"Client {_clientId} received null frame, disconnecting");
                     break;
                 }
 
-                Console.WriteLine($"Client {_clientId} received frame type: {frame.Value.Type}");
+                Write($"Client {_clientId} received frame type: {frame.Value.Type}");
                 await HandleFrameAsync(frame.Value, linkedToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine($"Client {_clientId} cancelled");
+            Write($"Client {_clientId} cancelled");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Client {_clientId} error: {ex.Message}");
+            Write($"Client {_clientId} error: {ex.Message}");
         }
         finally
         {
-            Console.WriteLine($"Client {_clientId} disconnected");
+            Write($"Client {_clientId} disconnected");
             _onDisconnect(_clientId);
             await DisposeAsync().ConfigureAwait(false);
         }
@@ -177,23 +178,23 @@ internal sealed class ClientHandler : IAsyncDisposable
 
     private async Task HeartbeatLoopAsync(CancellationToken cancellationToken)
     {
-        Console.WriteLine($"Client {_clientId} heartbeat loop started");
+        Write($"Client {_clientId} heartbeat loop started");
         try
         {
             await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Client {_clientId} heartbeat loop: initial delay complete, starting pings");
+            Write($"Client {_clientId} heartbeat loop: initial delay complete, starting pings");
 
             while (!cancellationToken.IsCancellationRequested && _transport.IsConnected)
             {
                 try
                 {
-                    Console.WriteLine($"Client {_clientId} sending Ping");
+                    Write($"Client {_clientId} sending Ping");
                     await SendFrameAsync(new IpcFrame(IpcMessageType.Ping)).ConfigureAwait(false);
-                    Console.WriteLine($"Client {_clientId} Ping sent successfully");
+                    Write($"Client {_clientId} Ping sent successfully");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Client {_clientId} heartbeat send failed: {ex.Message}");
+                    Write($"Client {_clientId} heartbeat send failed: {ex.Message}");
                     break;
                 }
 
@@ -202,7 +203,7 @@ internal sealed class ClientHandler : IAsyncDisposable
                 var elapsed = DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastPongTicks);
                 if (TimeSpan.FromTicks(elapsed).TotalMilliseconds > PingIntervalMs + PongTimeoutMs)
                 {
-                    Console.WriteLine($"Client {_clientId} heartbeat timeout (no Pong received), closing connection");
+                    Write($"Client {_clientId} heartbeat timeout (no Pong received), closing connection");
                     _heartbeatCts.Cancel();
                     break;
                 }
@@ -213,15 +214,15 @@ internal sealed class ClientHandler : IAsyncDisposable
                     await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
                 }
             }
-            Console.WriteLine($"Client {_clientId} heartbeat loop exiting (cancelled={cancellationToken.IsCancellationRequested}, connected={_transport.IsConnected})");
+            Write($"Client {_clientId} heartbeat loop exiting (cancelled={cancellationToken.IsCancellationRequested}, connected={_transport.IsConnected})");
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine($"Client {_clientId} heartbeat loop cancelled");
+            Write($"Client {_clientId} heartbeat loop cancelled");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Client {_clientId} heartbeat loop error: {ex.Message}");
+            Write($"Client {_clientId} heartbeat loop error: {ex.Message}");
         }
     }
 
@@ -288,12 +289,13 @@ internal sealed class ClientHandler : IAsyncDisposable
             var request = SidecarProtocol.ParseCreateSessionPayload(frame.Payload.Span);
             var session = _sessionManager.CreateSession(request);
             var payload = SidecarProtocol.CreateSessionCreatedPayload(session.ToSnapshot());
-            await SendFrameAsync(new IpcFrame(IpcMessageType.SessionCreated, session.Id, payload)).ConfigureAwait(false);
+            // Use frame.SessionId (the requestId) for correlation, not session.Id
+            await SendFrameAsync(new IpcFrame(IpcMessageType.SessionCreated, frame.SessionId, payload)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             var error = SidecarProtocol.CreateErrorPayload(ex.Message);
-            await SendFrameAsync(new IpcFrame(IpcMessageType.Error, string.Empty, error)).ConfigureAwait(false);
+            await SendFrameAsync(new IpcFrame(IpcMessageType.Error, frame.SessionId, error)).ConfigureAwait(false);
         }
     }
 

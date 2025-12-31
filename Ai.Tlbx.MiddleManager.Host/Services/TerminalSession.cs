@@ -123,7 +123,10 @@ public sealed class TerminalSession : IDisposable
                 AppendToBuffer(data.Span);
                 ParseOscSequences(data.Span);
 
-                OnOutput?.Invoke(Id, data);
+                // Must copy data before invoking event because the buffer is reused
+                // and fire-and-forget async sends would read corrupted data
+                var dataCopy = data.ToArray();
+                OnOutput?.Invoke(Id, dataCopy);
             }
         }
         catch

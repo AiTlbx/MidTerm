@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using static Ai.Tlbx.MiddleManager.Host.Log;
 
 namespace Ai.Tlbx.MiddleManager.Host.Services;
 
@@ -31,7 +32,7 @@ public sealed class WebServerSupervisor : IAsyncDisposable
 
                 if (_webProcess is null)
                 {
-                    Console.WriteLine("Failed to spawn mm.exe, retrying in 5 seconds...");
+                    Write("Failed to spawn mm.exe, retrying in 5 seconds...");
                     await Task.Delay(5000, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
@@ -45,11 +46,11 @@ public sealed class WebServerSupervisor : IAsyncDisposable
 
                 var exitCode = _webProcess.ExitCode;
                 var runtime = DateTime.UtcNow - _lastStart;
-                Console.WriteLine($"mm.exe exited with code {exitCode} after {runtime.TotalSeconds:F1}s");
+                Write($"mm.exe exited with code {exitCode} after {runtime.TotalSeconds:F1}s");
 
                 _restartCount++;
                 var delay = CalculateBackoffDelay();
-                Console.WriteLine($"Restarting mm.exe in {delay}ms (attempt {_restartCount})...");
+                Write($"Restarting mm.exe in {delay}ms (attempt {_restartCount})...");
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -58,7 +59,7 @@ public sealed class WebServerSupervisor : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Supervisor error: {ex.Message}");
+                Write($"Supervisor error: {ex.Message}");
                 await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -71,7 +72,7 @@ public sealed class WebServerSupervisor : IAsyncDisposable
         var webServerPath = GetWebServerPath();
         if (string.IsNullOrEmpty(webServerPath) || !File.Exists(webServerPath))
         {
-            Console.WriteLine($"mm.exe not found at: {webServerPath}");
+            Write($"mm.exe not found at: {webServerPath}");
             return;
         }
 
@@ -93,13 +94,13 @@ public sealed class WebServerSupervisor : IAsyncDisposable
             if (_webProcess is not null)
             {
                 _lastStart = DateTime.UtcNow;
-                Console.WriteLine($"Spawned mm.exe (PID: {_webProcess.Id}) on port {_port}");
+                Write($"Spawned mm.exe (PID: {_webProcess.Id}) on port {_port}");
                 StartStableCheck();
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to start mm.exe: {ex.Message}");
+            Write($"Failed to start mm.exe: {ex.Message}");
             _webProcess = null;
         }
     }
@@ -144,7 +145,7 @@ public sealed class WebServerSupervisor : IAsyncDisposable
                 {
                     if (_restartCount > 0)
                     {
-                        Console.WriteLine($"mm.exe stable for {StableRunDurationMs / 1000}s, resetting restart counter");
+                        Write($"mm.exe stable for {StableRunDurationMs / 1000}s, resetting restart counter");
                     }
                     _restartCount = 0;
                 }
@@ -188,7 +189,7 @@ public sealed class WebServerSupervisor : IAsyncDisposable
             return;
         }
 
-        Console.WriteLine("Stopping mm.exe...");
+        Write("Stopping mm.exe...");
         try
         {
             _webProcess.Kill(entireProcessTree: true);
@@ -196,7 +197,7 @@ public sealed class WebServerSupervisor : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error stopping mm.exe: {ex.Message}");
+            Write($"Error stopping mm.exe: {ex.Message}");
         }
     }
 
