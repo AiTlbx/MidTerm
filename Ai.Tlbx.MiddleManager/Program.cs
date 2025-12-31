@@ -25,6 +25,9 @@ public class Program
             return;
         }
 
+        // Clear old debug logs on startup for clean signal
+        DebugLogger.ClearLogs();
+
         var (port, bindAddress, useConHost) = ParseCommandLineArgs(args);
         var builder = CreateBuilder(args);
         var app = builder.Build();
