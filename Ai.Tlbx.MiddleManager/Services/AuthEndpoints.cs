@@ -55,7 +55,7 @@ public static class AuthEndpoints
 
     public static void MapAuthEndpoints(WebApplication app, SettingsService settingsService, AuthService authService)
     {
-        app.MapPost("/api/auth/login", async (HttpContext ctx) =>
+        app.MapPost("/api/auth/login", (LoginRequest request, HttpContext ctx) =>
         {
             var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
@@ -68,20 +68,7 @@ public static class AuthEndpoints
                     statusCode: 429);
             }
 
-            LoginRequest? request;
-            try
-            {
-                request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.LoginRequest);
-            }
-            catch
-            {
-                return Results.Json(
-                    new AuthResponse { Success = false, Error = "Invalid request" },
-                    AppJsonContext.Default.AuthResponse,
-                    statusCode: 400);
-            }
-
-            if (request is null || string.IsNullOrEmpty(request.Password))
+            if (string.IsNullOrEmpty(request.Password))
             {
                 return Results.Json(
                     new AuthResponse { Success = false, Error = "Password required" },
@@ -112,22 +99,9 @@ public static class AuthEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/auth/change-password", async (HttpContext ctx) =>
+        app.MapPost("/api/auth/change-password", (ChangePasswordRequest request, HttpContext ctx) =>
         {
-            ChangePasswordRequest? request;
-            try
-            {
-                request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.ChangePasswordRequest);
-            }
-            catch
-            {
-                return Results.Json(
-                    new AuthResponse { Success = false, Error = "Invalid request" },
-                    AppJsonContext.Default.AuthResponse,
-                    statusCode: 400);
-            }
-
-            if (request is null || string.IsNullOrEmpty(request.NewPassword))
+            if (string.IsNullOrEmpty(request.NewPassword))
             {
                 return Results.Json(
                     new AuthResponse { Success = false, Error = "New password required" },
