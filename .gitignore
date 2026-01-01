@@ -83,3 +83,4 @@ coverage*.info
 
 # Claude Code
 .claude/
+nul
