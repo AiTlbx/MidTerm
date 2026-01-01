@@ -406,6 +406,7 @@
 
                 handleUpdateInfo(update);
 
+                var applyBtn = document.getElementById('btn-apply-update');
                 if (statusEl) {
                     statusEl.classList.remove('hidden');
                     if (update && update.available) {
@@ -417,9 +418,11 @@
                             msg += ' (sessions will restart)';
                         }
                         statusEl.textContent = msg;
+                        if (applyBtn) applyBtn.classList.remove('hidden');
                     } else {
                         statusEl.className = 'update-status update-status-current';
                         statusEl.textContent = 'You are running the latest version';
+                        if (applyBtn) applyBtn.classList.add('hidden');
                     }
                 }
             })
@@ -1474,6 +1477,7 @@
 
         // About & Updates
         bindClick('btn-check-updates', checkForUpdates);
+        bindClick('btn-apply-update', applyUpdate);
         bindClick('btn-show-changelog', showChangelog);
         bindClick('btn-close-changelog', closeChangelog);
         var changelogBackdrop = document.querySelector('#changelog-modal .modal-backdrop');

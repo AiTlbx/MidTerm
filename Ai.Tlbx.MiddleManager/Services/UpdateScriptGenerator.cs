@@ -24,11 +24,15 @@ public static class UpdateScriptGenerator
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? currentBinaryPath;
         var newWebBinaryPath = Path.Combine(extractedDir, "mm.exe");
         var newHostBinaryPath = Path.Combine(extractedDir, "mm-host.exe");
+        var newConHostBinaryPath = Path.Combine(extractedDir, "mm-con-host.exe");
+        var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentHostBinaryPath = Path.Combine(installDir, "mm-host.exe");
+        var currentConHostBinaryPath = Path.Combine(installDir, "mm-con-host.exe");
+        var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mm-update-{Guid.NewGuid():N}.ps1");
 
         var script = $@"
-# MiddleManager Update Script (v2.0+ with sidecar)
+# MiddleManager Update Script (v3.0+ with ConHost)
 $ErrorActionPreference = 'SilentlyContinue'
 
 # Wait for main process to exit
@@ -51,11 +55,13 @@ if ($hostService) {{
 # Kill any remaining mm.exe and mm-con-host processes (orphaned sessions)
 Get-Process -Name 'mm' -ErrorAction SilentlyContinue | Stop-Process -Force
 Get-Process -Name 'mm-con-host' -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name 'mm-host' -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
 
 # Backup current binaries
 $webBinary = '{currentBinaryPath}'
 $hostBinary = '{currentHostBinaryPath}'
+$conHostBinary = '{currentConHostBinaryPath}'
 
 if (Test-Path $webBinary) {{
     Copy-Item $webBinary ($webBinary + '.bak') -Force
@@ -63,14 +69,26 @@ if (Test-Path $webBinary) {{
 if (Test-Path $hostBinary) {{
     Copy-Item $hostBinary ($hostBinary + '.bak') -Force
 }}
+if (Test-Path $conHostBinary) {{
+    Copy-Item $conHostBinary ($conHostBinary + '.bak') -Force
+}}
 
 # Copy new binaries
 $newWebBinary = '{newWebBinaryPath}'
 $newHostBinary = '{newHostBinaryPath}'
+$newConHostBinary = '{newConHostBinaryPath}'
+$newVersionJson = '{newVersionJsonPath}'
+$currentVersionJson = '{currentVersionJsonPath}'
 
 Copy-Item $newWebBinary $webBinary -Force
 if (Test-Path $newHostBinary) {{
     Copy-Item $newHostBinary $hostBinary -Force
+}}
+if (Test-Path $newConHostBinary) {{
+    Copy-Item $newConHostBinary $conHostBinary -Force
+}}
+if (Test-Path $newVersionJson) {{
+    Copy-Item $newVersionJson $currentVersionJson -Force
 }}
 
 # Start host service first (if it exists)
@@ -91,6 +109,7 @@ if ($webService) {{
 Start-Sleep -Seconds 2
 Remove-Item ($webBinary + '.bak') -Force -ErrorAction SilentlyContinue
 Remove-Item ($hostBinary + '.bak') -Force -ErrorAction SilentlyContinue
+Remove-Item ($conHostBinary + '.bak') -Force -ErrorAction SilentlyContinue
 Remove-Item -Path '{extractedDir}' -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 ";
@@ -104,7 +123,9 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? "/usr/local/bin";
         var newWebBinaryPath = Path.Combine(extractedDir, "mm");
         var newHostBinaryPath = Path.Combine(extractedDir, "mm-host");
+        var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentHostBinaryPath = Path.Combine(installDir, "mm-host");
+        var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mm-update-{Guid.NewGuid():N}.sh");
 
         var isMacOs = OperatingSystem.IsMacOS();
@@ -153,6 +174,8 @@ fi
 # Copy new binaries
 NEW_WEB_BINARY='{newWebBinaryPath}'
 NEW_HOST_BINARY='{newHostBinaryPath}'
+NEW_VERSION_JSON='{newVersionJsonPath}'
+CURRENT_VERSION_JSON='{currentVersionJsonPath}'
 
 cp ""$NEW_WEB_BINARY"" ""$WEB_BINARY""
 chmod +x ""$WEB_BINARY""
@@ -160,6 +183,10 @@ chmod +x ""$WEB_BINARY""
 if [ -f ""$NEW_HOST_BINARY"" ]; then
     cp ""$NEW_HOST_BINARY"" ""$HOST_BINARY""
     chmod +x ""$HOST_BINARY""
+fi
+
+if [ -f ""$NEW_VERSION_JSON"" ]; then
+    cp ""$NEW_VERSION_JSON"" ""$CURRENT_VERSION_JSON""
 fi
 
 # Start host service first
