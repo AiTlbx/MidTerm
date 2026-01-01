@@ -235,8 +235,9 @@ public sealed class ConHostClient : IAsyncDisposable
             var response = await SendRequestAsync(msg, ConHostMessageType.CloseAck, ct).ConfigureAwait(false);
             return response is not null;
         }
-        catch
+        catch (Exception ex)
         {
+            DebugLogger.LogException($"ConHostClient.CloseAsync({_sessionId})", ex);
             return true; // Session closing anyway
         }
     }
@@ -378,13 +379,13 @@ public sealed class ConHostClient : IAsyncDisposable
             catch (IOException ex)
             {
                 Log($"Read error: {ex.Message}");
-                DebugLogger.Log($"[PIPE-ERR] {_sessionId}: IOException - {ex.Message}");
+                DebugLogger.LogException($"ConHostClient.ReadLoop({_sessionId})", ex);
                 HandleDisconnect();
             }
             catch (Exception ex)
             {
                 Log($"Unexpected read error: {ex.Message}");
-                DebugLogger.Log($"[PIPE-ERR] {_sessionId}: {ex.GetType().Name} - {ex.Message}");
+                DebugLogger.LogException($"ConHostClient.ReadLoop({_sessionId})", ex);
                 HandleDisconnect();
             }
         }
@@ -404,7 +405,7 @@ public sealed class ConHostClient : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    Log($"OnOutput handler error: {ex.Message}");
+                    DebugLogger.LogException($"ConHostClient.OnOutput({_sessionId})", ex);
                 }
                 break;
 
@@ -415,7 +416,7 @@ public sealed class ConHostClient : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    Log($"OnStateChanged handler error: {ex.Message}");
+                    DebugLogger.LogException($"ConHostClient.OnStateChanged({_sessionId})", ex);
                 }
                 break;
 
@@ -489,12 +490,14 @@ public sealed class ConHostClient : IAsyncDisposable
             catch (Exception ex)
             {
                 Log($"Reconnect failed: {ex.Message}");
+                DebugLogger.LogException($"ConHostClient.Reconnect({_sessionId}) attempt {_reconnectAttempts}", ex);
             }
         }
 
         if (_reconnectAttempts >= MaxReconnectAttempts)
         {
             Log("Max reconnect attempts reached, giving up");
+            DebugLogger.LogError($"ConHostClient.Reconnect({_sessionId})", $"Max reconnect attempts ({MaxReconnectAttempts}) reached, giving up");
             OnStateChanged?.Invoke(_sessionId);
         }
     }
@@ -556,12 +559,14 @@ public sealed class ConHostClient : IAsyncDisposable
 
         if (_readTask is not null)
         {
-            try { await _readTask.ConfigureAwait(false); } catch { }
+            try { await _readTask.ConfigureAwait(false); }
+            catch (Exception ex) { DebugLogger.LogException($"ConHostClient.Dispose.ReadTask({_sessionId})", ex); }
         }
 
         if (_reconnectTask is not null)
         {
-            try { await _reconnectTask.ConfigureAwait(false); } catch { }
+            try { await _reconnectTask.ConfigureAwait(false); }
+            catch (Exception ex) { DebugLogger.LogException($"ConHostClient.Dispose.ReconnectTask({_sessionId})", ex); }
         }
 
         _cts?.Dispose();

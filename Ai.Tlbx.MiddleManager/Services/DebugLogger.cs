@@ -7,6 +7,8 @@ public static class DebugLogger
         "MiddleManager", "logs");
 
     private static readonly string LogPath = Path.Combine(LogDir, "mm-debug.log");
+    private static readonly string ExceptionLogPath = Path.Combine(LogDir, "mm-exceptions.log");
+    private static readonly object _exceptionLock = new();
 
     public static bool Enabled { get; set; } = false;
 
@@ -33,6 +35,50 @@ public static class DebugLogger
         {
             Directory.CreateDirectory(LogDir);
             File.AppendAllText(LogPath, $"[{DateTime.Now:HH:mm:ss.fff}] {message}{Environment.NewLine}");
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Logs an exception to a dedicated exception log file. Always enabled regardless of debug mode.
+    /// </summary>
+    public static void LogException(string context, Exception ex)
+    {
+        try
+        {
+            Directory.CreateDirectory(LogDir);
+            var entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{context}] {ex.GetType().Name}: {ex.Message}{Environment.NewLine}" +
+                        $"  StackTrace: {ex.StackTrace}{Environment.NewLine}";
+
+            if (ex.InnerException is not null)
+            {
+                entry += $"  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}{Environment.NewLine}";
+            }
+
+            entry += Environment.NewLine;
+
+            lock (_exceptionLock)
+            {
+                File.AppendAllText(ExceptionLogPath, entry);
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Logs an error message to the exception log. Always enabled regardless of debug mode.
+    /// </summary>
+    public static void LogError(string context, string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(LogDir);
+            var entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{context}] ERROR: {message}{Environment.NewLine}";
+
+            lock (_exceptionLock)
+            {
+                File.AppendAllText(ExceptionLogPath, entry);
+            }
         }
         catch { }
     }

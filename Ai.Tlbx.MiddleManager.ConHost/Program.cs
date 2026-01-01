@@ -140,6 +140,7 @@ public static class Program
             catch (Exception ex)
             {
                 Log($"Accept error: {ex.Message}");
+                LogException("AcceptClients", ex);
                 await Task.Delay(100, ct).ConfigureAwait(false);
             }
         }
@@ -189,6 +190,7 @@ public static class Program
                 catch (Exception ex)
                 {
                     Log($"Output write failed: {ex.Message}");
+                    LogException("OnOutput.Write", ex);
                 }
             }
 
@@ -206,7 +208,7 @@ public static class Program
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { LogException("OnStateChange", ex); }
             }
 
             void OnHandshakeComplete()
@@ -238,6 +240,7 @@ public static class Program
                             catch (Exception ex)
                             {
                                 Log($"Buffered output write failed: {ex.Message}");
+                                LogException("OnHandshakeComplete.BufferedWrite", ex);
                             }
                         }
                         pendingOutput.Clear();
@@ -266,10 +269,12 @@ public static class Program
         catch (Exception ex)
         {
             Log($"Client handler error: {ex.Message}");
+            LogException("HandleClient", ex);
         }
         finally
         {
-            try { pipe.Dispose(); } catch { }
+            try { pipe.Dispose(); }
+            catch (Exception disposeEx) { LogException("HandleClient.PipeDispose", disposeEx); }
             Log("Client disconnected");
         }
     }
@@ -473,6 +478,9 @@ public static class Program
             """);
     }
 
+    private static readonly string ExceptionLogPath = Path.Combine(LogDir, "mm-con-host-exceptions.log");
+    private static readonly object _exceptionLock = new();
+
     internal static void Log(string message)
     {
         var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{_sessionId}] {message}";
@@ -489,6 +497,29 @@ public static class Program
     {
         if (!_debugEnabled) return;
         Log(message);
+    }
+
+    internal static void LogException(string context, Exception ex)
+    {
+        try
+        {
+            Directory.CreateDirectory(LogDir);
+            var entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{_sessionId}] [{context}] {ex.GetType().Name}: {ex.Message}{Environment.NewLine}" +
+                        $"  StackTrace: {ex.StackTrace}{Environment.NewLine}";
+
+            if (ex.InnerException is not null)
+            {
+                entry += $"  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}{Environment.NewLine}";
+            }
+
+            entry += Environment.NewLine;
+
+            lock (_exceptionLock)
+            {
+                File.AppendAllText(ExceptionLogPath, entry);
+            }
+        }
+        catch { }
     }
 
     private sealed record SessionConfig(string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows, bool Debug);
@@ -541,8 +572,9 @@ internal sealed class TerminalSession
                 {
                     break;
                 }
-                catch (IOException)
+                catch (IOException ex)
                 {
+                    Program.LogException("TerminalSession.ReadLoop", ex);
                     break;
                 }
 

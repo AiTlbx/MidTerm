@@ -42,6 +42,7 @@ public sealed class ConHostSessionManager : IAsyncDisposable
         catch (Exception ex)
         {
             Console.WriteLine($"[ConHostSessionManager] Pipe enumeration failed: {ex.Message}");
+            DebugLogger.LogException("ConHostSessionManager.DiscoverExisting.PipeEnum", ex);
             return;
         }
 
@@ -77,6 +78,7 @@ public sealed class ConHostSessionManager : IAsyncDisposable
             catch (Exception ex)
             {
                 Console.WriteLine($"[ConHostSessionManager] Failed to reconnect to {sessionId}: {ex.Message}");
+                DebugLogger.LogException($"ConHostSessionManager.DiscoverExisting.Reconnect({sessionId})", ex);
             }
         }
 
@@ -271,7 +273,8 @@ public sealed class ConHostSessionManager : IAsyncDisposable
     {
         foreach (var listener in _stateListeners.Values)
         {
-            try { listener(); } catch { }
+            try { listener(); }
+            catch (Exception ex) { DebugLogger.LogException("ConHostSessionManager.NotifyStateChange", ex); }
         }
     }
 
@@ -312,7 +315,8 @@ public sealed class ConHostSessionManager : IAsyncDisposable
 
         foreach (var client in _clients.Values)
         {
-            try { await client.DisposeAsync().ConfigureAwait(false); } catch { }
+            try { await client.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception ex) { DebugLogger.LogException($"ConHostSessionManager.Dispose({client.SessionId})", ex); }
         }
 
         _clients.Clear();
@@ -331,6 +335,7 @@ public sealed class ConHostSessionManager : IAsyncDisposable
         catch (Exception ex)
         {
             Console.WriteLine($"[ConHostSessionManager] Failed to kill process {processId}: {ex.Message}");
+            DebugLogger.LogException($"ConHostSessionManager.KillProcess({processId})", ex);
         }
     }
 }
