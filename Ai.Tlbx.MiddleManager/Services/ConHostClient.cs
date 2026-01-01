@@ -13,6 +13,7 @@ public sealed class ConHostClient : IAsyncDisposable
     private readonly string _pipeName;
     private readonly object _pipeLock = new();
     private readonly object _responseLock = new();
+    private readonly SemaphoreSlim _writeLock = new(1, 1); // Serialize ALL pipe writes to prevent frame interleaving
     private readonly SemaphoreSlim _requestLock = new(1, 1); // Serialize requests to avoid response routing conflicts
 
     private NamedPipeClientStream? _pipe;
@@ -154,12 +155,25 @@ public sealed class ConHostClient : IAsyncDisposable
                 DebugLogger.Log($"[PIPE-SEND] {_sessionId}: {BitConverter.ToString(data.ToArray())}");
             }
             var msg = ConHostProtocol.CreateInputMessage(data.Span);
-            await WriteAsync(msg, ct).ConfigureAwait(false);
+            await WriteWithLockAsync(msg, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Log($"SendInput failed: {ex.Message}");
             TriggerReconnect();
+        }
+    }
+
+    private async Task WriteWithLockAsync(byte[] data, CancellationToken ct)
+    {
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await WriteAsync(data, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
         }
     }
 
@@ -257,7 +271,7 @@ public sealed class ConHostClient : IAsyncDisposable
 
             try
             {
-                await WriteAsync(request, ct).ConfigureAwait(false);
+                await WriteWithLockAsync(request, ct).ConfigureAwait(false);
 
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
@@ -570,6 +584,7 @@ public sealed class ConHostClient : IAsyncDisposable
         }
 
         _cts?.Dispose();
+        _writeLock.Dispose();
         _requestLock.Dispose();
 
         lock (_pipeLock)
