@@ -92,6 +92,7 @@
     var terminalsArea = null;
     var emptyState = null;
     var mobileTitle = null;
+    var topbarActions = null;
     var app = null;
     var sidebarOverlay = null;
     var settingsView = null;
@@ -118,6 +119,7 @@
         terminalsArea = document.querySelector('.terminals-area');
         emptyState = document.getElementById('empty-state');
         mobileTitle = document.getElementById('mobile-title');
+        topbarActions = document.getElementById('topbar-actions');
         app = document.getElementById('app');
         sidebarOverlay = document.getElementById('sidebar-overlay');
         settingsView = document.getElementById('settings-view');
@@ -1103,6 +1105,27 @@
 
         var session = sessions.find(function(s) { return s.id === activeSessionId; });
         mobileTitle.textContent = session ? getSessionDisplayName(session) : 'MiddleManager';
+
+        // Update topbar actions visibility
+        if (topbarActions) {
+            if (session) {
+                topbarActions.classList.remove('no-terminal');
+            } else {
+                topbarActions.classList.add('no-terminal');
+            }
+        }
+    }
+
+    function promptRenameSession(sessionId) {
+        var session = sessions.find(function(s) { return s.id === sessionId; });
+        if (!session) return;
+
+        var currentName = session.name || session.shellType;
+        var newName = prompt('Rename terminal:', currentName);
+
+        if (newName !== null) {
+            renameSession(sessionId, newName);
+        }
     }
 
     // ========================================================================
@@ -1337,6 +1360,17 @@
         if (sidebarOverlay) {
             sidebarOverlay.addEventListener('click', closeSidebar);
         }
+
+        // Mobile topbar actions
+        bindClick('btn-resize-mobile', function() {
+            if (activeSessionId) fitSessionToScreen(activeSessionId);
+        });
+        bindClick('btn-rename-mobile', function() {
+            if (activeSessionId) promptRenameSession(activeSessionId);
+        });
+        bindClick('btn-close-mobile', function() {
+            if (activeSessionId) deleteSession(activeSessionId);
+        });
 
         // Settings
         if (settingsBtn) {

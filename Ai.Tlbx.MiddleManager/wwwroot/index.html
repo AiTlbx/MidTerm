@@ -55,10 +55,15 @@
         <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
         <div class="main-content">
-            <header class="mobile-header">
-                <button class="hamburger-btn" id="btn-hamburger">☰</button>
-                <span class="mobile-title" id="mobile-title">MiddleManager</span>
-                <button class="add-session-btn mobile-add" id="btn-new-session-mobile" title="New Terminal">+</button>
+            <header class="mobile-topbar" id="mobile-topbar">
+                <button class="topbar-btn topbar-hamburger" id="btn-hamburger" title="Sessions">☰</button>
+                <div class="topbar-title" id="mobile-title">MiddleManager</div>
+                <div class="topbar-actions no-terminal" id="topbar-actions">
+                    <button class="topbar-btn topbar-action" id="btn-resize-mobile" title="Fit to screen">⤢</button>
+                    <button class="topbar-btn topbar-action" id="btn-rename-mobile" title="Rename">✏️</button>
+                    <button class="topbar-btn topbar-action topbar-close" id="btn-close-mobile" title="Close terminal">×</button>
+                    <button class="topbar-btn topbar-add" id="btn-new-session-mobile" title="New Terminal">+</button>
+                </div>
             </header>
 
             <div class="terminals-area">
