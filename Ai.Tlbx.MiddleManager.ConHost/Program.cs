@@ -14,6 +14,8 @@ public static class Program
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "MiddleManager", "logs");
 
+    private static readonly string StartTimestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss");
+
     private static string? _sessionId;
     private static string? _logPath;
     private static bool _debugEnabled;
@@ -40,7 +42,7 @@ public static class Program
         }
 
         _sessionId = config.SessionId;
-        _logPath = Path.Combine(LogDir, $"mm-con-{_sessionId}.log");
+        _logPath = Path.Combine(LogDir, $"mm-con-{_sessionId}-{StartTimestamp}.log");
         _debugEnabled = config.Debug;
 
         Log($"mm-con-host {Version} starting for session {config.SessionId}");
@@ -478,7 +480,7 @@ public static class Program
             """);
     }
 
-    private static readonly string ExceptionLogPath = Path.Combine(LogDir, "mm-con-host-exceptions.log");
+    private static readonly string ExceptionLogPath = Path.Combine(LogDir, $"mm-con-host-exceptions-{StartTimestamp}.log");
     private static readonly object _exceptionLock = new();
 
     internal static void Log(string message)

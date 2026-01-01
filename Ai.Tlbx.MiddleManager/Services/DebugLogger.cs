@@ -6,8 +6,9 @@ public static class DebugLogger
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "MiddleManager", "logs");
 
-    private static readonly string LogPath = Path.Combine(LogDir, "mm-debug.log");
-    private static readonly string ExceptionLogPath = Path.Combine(LogDir, "mm-exceptions.log");
+    private static readonly string StartTimestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss");
+    private static readonly string LogPath = Path.Combine(LogDir, $"mm-debug-{StartTimestamp}.log");
+    private static readonly string ExceptionLogPath = Path.Combine(LogDir, $"mm-exceptions-{StartTimestamp}.log");
     private static readonly object _exceptionLock = new();
 
     public static bool Enabled { get; set; } = false;
