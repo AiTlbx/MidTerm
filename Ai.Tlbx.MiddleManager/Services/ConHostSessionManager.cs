@@ -179,7 +179,7 @@ public sealed class ConHostSessionManager : IAsyncDisposable
                 Rows = s.Rows,
                 ShellType = s.ShellType,
                 Name = s.Name
-            }).ToList()
+            }).OrderBy(s => s.CreatedAt).ToList()
         };
     }
 

@@ -478,6 +478,19 @@ html, body {
         background-color: var(--btn-secondary);
     }
 
+    /* Ctrl+C button - orange accent for interrupt actions */
+    .topbar-ctrlc {
+        font-family: monospace;
+        font-weight: bold;
+        font-size: 13px;
+        color: var(--accent-orange);
+    }
+
+    .topbar-ctrlc:active {
+        background-color: var(--accent-orange);
+        color: var(--bg-primary);
+    }
+
     /* Close button - red accent */
     .topbar-close:active {
         background-color: var(--accent-red);

@@ -147,6 +147,31 @@
         fetchSettings();
         checkAuthStatus();
         requestNotificationPermission();
+
+        // Handle page visibility changes (mobile background/foreground)
+        setupVisibilityChangeHandler();
+    }
+
+    function setupVisibilityChangeHandler() {
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                // Page became visible - check WebSocket connections
+                if (!stateWsConnected || (stateWs && stateWs.readyState !== WebSocket.OPEN)) {
+                    stateReconnectDelay = 1000;
+                    clearTimeout(stateReconnectTimer);
+                    connectStateWebSocket();
+                }
+                if (!muxWsConnected || (muxWs && muxWs.readyState !== WebSocket.OPEN)) {
+                    muxReconnectDelay = 1000;
+                    clearTimeout(muxReconnectTimer);
+                    connectMuxWebSocket();
+                }
+                // Refresh buffer if already connected but may have missed output
+                if (muxWsConnected && activeSessionId) {
+                    setTimeout(refreshActiveTerminalBuffer, 200);
+                }
+            }
+        });
     }
 
     // ========================================================================
@@ -517,9 +542,15 @@
         muxWs.binaryType = 'arraybuffer';
 
         muxWs.onopen = function() {
+            var wasReconnect = muxReconnectDelay > 1000;
             muxReconnectDelay = 1000;
             muxWsConnected = true;
             updateConnectionStatus();
+
+            // On reconnect, refresh buffers to catch any missed output
+            if (wasReconnect) {
+                refreshActiveTerminalBuffer();
+            }
         };
 
         muxWs.onmessage = function(event) {
@@ -944,6 +975,16 @@
             });
     }
 
+    function refreshActiveTerminalBuffer() {
+        if (!activeSessionId) return;
+        var state = sessionTerminals.get(activeSessionId);
+        if (state && state.opened) {
+            // Clear and re-fetch the entire buffer to ensure consistency
+            state.terminal.clear();
+            fetchAndWriteBuffer(activeSessionId, state.terminal);
+        }
+    }
+
     function destroyTerminalForSession(sessionId) {
         var state = sessionTerminals.get(sessionId);
         if (!state) return;
@@ -1030,15 +1071,24 @@
         var sessionInfo = sessions.find(function(s) { return s.id === sessionId; });
         var state = createTerminalForSession(sessionId, sessionInfo);
         var isNewTerminal = state.serverCols === 0;
+        var isNewlyCreated = newlyCreatedSessions.has(sessionId);
         state.container.classList.remove('hidden');
 
         requestAnimationFrame(function() {
             state.terminal.focus();
 
-            // Fetch buffer for existing sessions only (not newly created ones)
-            // Newly created sessions get all output via WebSocket
-            if (isNewTerminal && !newlyCreatedSessions.has(sessionId)) {
-                fetchAndWriteBuffer(sessionId, state.terminal);
+            // Always fetch buffer to ensure we have all output
+            // For newly created sessions, delay slightly to let initial output accumulate
+            if (isNewTerminal) {
+                if (isNewlyCreated) {
+                    // Wait for shell prompt to be captured, then fetch buffer
+                    setTimeout(function() {
+                        fetchAndWriteBuffer(sessionId, state.terminal);
+                        newlyCreatedSessions.delete(sessionId);
+                    }, 300);
+                } else {
+                    fetchAndWriteBuffer(sessionId, state.terminal);
+                }
             }
         });
 
@@ -1461,6 +1511,9 @@
         }
 
         // Mobile topbar actions
+        bindClick('btn-ctrlc-mobile', function() {
+            if (activeSessionId) sendInput(activeSessionId, '\x03');
+        });
         bindClick('btn-resize-mobile', function() {
             if (activeSessionId) fitSessionToScreen(activeSessionId);
         });
