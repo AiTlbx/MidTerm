@@ -175,6 +175,7 @@ public static class AuthEndpoints
     {
         return path == "/login" ||
                path == "/login.html" ||
+               path == "/api/health" ||
                path.StartsWith("/api/auth/") ||
                path.StartsWith("/css/") ||
                path.StartsWith("/js/") ||
