@@ -18,6 +18,14 @@ public sealed class AuthService
     public AuthService(SettingsService settingsService)
     {
         _settingsService = settingsService;
+
+        // Ensure session secret exists on startup so cookies survive restarts
+        var settings = _settingsService.Load();
+        if (string.IsNullOrEmpty(settings.SessionSecret))
+        {
+            settings.SessionSecret = GenerateSessionSecret();
+            _settingsService.Save(settings);
+        }
     }
 
     public string HashPassword(string password)
