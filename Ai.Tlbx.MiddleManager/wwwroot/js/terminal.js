@@ -832,9 +832,35 @@
     // ========================================================================
 
     function createSession() {
-        // Use default dimensions from settings
+        // Measure optimal dimensions for current screen
+        var rect = terminalsArea.getBoundingClientRect();
         var cols = currentSettings.defaultCols || 120;
         var rows = currentSettings.defaultRows || 30;
+
+        if (rect.width > 100 && rect.height > 100) {
+            var tempContainer = document.createElement('div');
+            tempContainer.style.cssText = 'position:absolute;left:-9999px;width:' + Math.floor(rect.width) + 'px;height:' + Math.floor(rect.height) + 'px;';
+            document.body.appendChild(tempContainer);
+
+            try {
+                var tempTerminal = new Terminal(getTerminalOptions());
+                var tempFitAddon = new FitAddon.FitAddon();
+                tempTerminal.loadAddon(tempFitAddon);
+                tempTerminal.open(tempContainer);
+                tempFitAddon.fit();
+
+                if (tempTerminal.cols > 10 && tempTerminal.rows > 5) {
+                    cols = tempTerminal.cols;
+                    rows = tempTerminal.rows;
+                }
+
+                tempTerminal.dispose();
+            } catch (e) {
+                console.warn('Dimension measurement failed:', e);
+            }
+
+            tempContainer.remove();
+        }
 
         fetch('/api/sessions', {
             method: 'POST',

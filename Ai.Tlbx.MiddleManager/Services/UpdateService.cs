@@ -35,8 +35,12 @@ public sealed class UpdateService : IDisposable
 
     private static string GetCurrentVersion()
     {
-        return Assembly.GetExecutingAssembly()
+        var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
+
+        // Strip git hash suffix (e.g., "2.10.0+abc123" -> "2.10.0")
+        var plusIndex = version.IndexOf('+');
+        return plusIndex > 0 ? version[..plusIndex] : version;
     }
 
     private static VersionManifest GetInstalledManifest()
