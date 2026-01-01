@@ -80,6 +80,8 @@
     var sessionTerminals = new Map();
     // Track sessions created in this browser session (skip buffer fetch for these)
     var newlyCreatedSessions = new Set();
+    // Font loading promise - resolved when terminal font is ready
+    var fontsReadyPromise = null;
 
     // ========================================================================
     // DOM Element References
@@ -121,6 +123,9 @@
         settingsView = document.getElementById('settings-view');
         settingsBtn = document.getElementById('btn-settings');
 
+        // Preload terminal font for proper canvas rendering
+        fontsReadyPromise = preloadTerminalFont();
+
         // Connect to server
         connectStateWebSocket();
         connectMuxWebSocket();
@@ -138,6 +143,28 @@
         fetchSettings();
         checkAuthStatus();
         requestNotificationPermission();
+    }
+
+    // ========================================================================
+    // Font Loading
+    // ========================================================================
+
+    function preloadTerminalFont() {
+        // Use CSS Font Loading API to ensure fonts are ready before canvas rendering
+        // This prevents xterm.js from measuring the wrong font on first render
+        var fontFamily = "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace";
+
+        // Try to load the font explicitly, with a timeout fallback
+        return Promise.race([
+            document.fonts.ready.then(function() {
+                // Try to trigger font load by checking if preferred font is available
+                return document.fonts.load('14px ' + fontFamily).catch(function() {});
+            }),
+            new Promise(function(resolve) {
+                // Fallback timeout - don't block forever if font loading is slow
+                setTimeout(resolve, 1000);
+            })
+        ]);
     }
 
     // ========================================================================
@@ -178,7 +205,6 @@
         stateWs = new WebSocket(protocol + '//' + location.host + '/ws/state');
 
         stateWs.onopen = function() {
-            console.log('State WebSocket connected');
             stateReconnectDelay = 1000;
             stateWsConnected = true;
             updateConnectionStatus();
@@ -196,7 +222,6 @@
         };
 
         stateWs.onclose = function() {
-            console.log('State WebSocket closed, reconnecting...');
             stateWsConnected = false;
             updateConnectionStatus();
             scheduleReconnect('state');
@@ -251,10 +276,6 @@
         updateInfo = update;
         renderUpdatePanel();
 
-        // Show notification when update first becomes available
-        if (update && update.available && !hadUpdate) {
-            console.log('Update available:', update.currentVersion, '->', update.latestVersion);
-        }
     }
 
     function renderUpdatePanel() {
@@ -478,7 +499,6 @@
         muxWs.binaryType = 'arraybuffer';
 
         muxWs.onopen = function() {
-            console.log('Mux WebSocket connected');
             muxReconnectDelay = 1000;
             muxWsConnected = true;
             updateConnectionStatus();
@@ -496,15 +516,11 @@
 
             if (type === MUX_TYPE_INIT) {
                 clientId = new TextDecoder().decode(payload);
-                console.log('Mux client ID:', clientId);
                 renderSessionList();
                 return;
             }
 
             if (type === MUX_TYPE_OUTPUT) {
-                if (payload.length < 50) {
-                    console.log('[OUTPUT] Received:', Array.from(payload).map(function(b) { return b.toString(16).padStart(2, '0'); }).join(' '));
-                }
                 var state = sessionTerminals.get(sessionId);
                 if (state) {
                     state.terminal.write(payload);
@@ -513,7 +529,6 @@
         };
 
         muxWs.onclose = function() {
-            console.log('Mux WebSocket closed, reconnecting...');
             muxWsConnected = false;
             updateConnectionStatus();
             scheduleReconnect('mux');
@@ -528,7 +543,6 @@
         if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
         var payload = new TextEncoder().encode(data);
-        console.log('[INPUT] Sending:', Array.from(payload).map(function(b) { return b.toString(16).padStart(2, '0'); }).join(' '));
         var frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
         frame[0] = MUX_TYPE_INPUT;
         encodeSessionId(frame, 1, sessionId);
@@ -689,10 +703,11 @@
         return {
             cursorBlink: currentSettings ? currentSettings.cursorBlink !== false : true,
             cursorStyle: (currentSettings && currentSettings.cursorStyle) || 'bar',
-            fontFamily: "'Cascadia Mono NF', Consolas, 'Courier New', monospace",
+            fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
             fontSize: fontSize,
             scrollback: (currentSettings && currentSettings.scrollbackLines) || 10000,
             allowProposedApi: true,
+            customGlyphs: true,
             theme: THEMES[themeName] || THEMES.dark
         };
     }
@@ -712,8 +727,31 @@
         var terminal = new Terminal(getTerminalOptions());
         var fitAddon = new FitAddon.FitAddon();
         terminal.loadAddon(fitAddon);
-        terminal.open(container);
 
+        var state = {
+            terminal: terminal,
+            fitAddon: fitAddon,
+            container: container,
+            serverCols: 0,
+            serverRows: 0,
+            opened: false
+        };
+
+        sessionTerminals.set(sessionId, state);
+
+        // Wait for fonts to be ready before opening terminal
+        // This ensures xterm.js measures the correct font for canvas rendering
+        (fontsReadyPromise || Promise.resolve()).then(function() {
+            if (!sessionTerminals.has(sessionId)) return; // Session was deleted
+            terminal.open(container);
+            state.opened = true;
+            setupTerminalEvents(sessionId, terminal, container);
+        });
+
+        return state;
+    }
+
+    function setupTerminalEvents(sessionId, terminal, container) {
         // Wire up events
         terminal.onData(function(data) {
             sendInput(sessionId, data);
@@ -781,18 +819,6 @@
                 }).catch(function() {});
             }
         });
-
-        var state = {
-            terminal: terminal,
-            fitAddon: fitAddon,
-            container: container,
-            serverCols: 0,
-            serverRows: 0
-        };
-
-        sessionTerminals.set(sessionId, state);
-        // Buffer fetch is deferred to selectSession after fit/resize
-        return state;
     }
 
     function fetchAndWriteBuffer(sessionId, terminal) {
@@ -856,7 +882,7 @@
 
                 tempTerminal.dispose();
             } catch (e) {
-                console.warn('Dimension measurement failed:', e);
+                // Silently use defaults if measurement fails
             }
 
             tempContainer.remove();
@@ -1389,6 +1415,14 @@
     function fitSessionToScreen(sessionId) {
         var state = sessionTerminals.get(sessionId);
         if (!state) return;
+
+        // Wait for terminal to be opened before fitting
+        if (!state.opened) {
+            (fontsReadyPromise || Promise.resolve()).then(function() {
+                fitSessionToScreen(sessionId);
+            });
+            return;
+        }
 
         // Ensure terminal is visible for accurate measurement
         var wasHidden = state.container.classList.contains('hidden');
