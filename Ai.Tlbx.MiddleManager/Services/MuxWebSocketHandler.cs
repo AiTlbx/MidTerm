@@ -89,10 +89,23 @@ public sealed class MuxWebSocketHandler
 
         while (ws.State == WebSocketState.Open)
         {
+            // Check if client needs resync (frames were dropped due to slow connection)
+            if (client.NeedsResync)
+            {
+                await client.PerformResyncAsync(SendResyncBuffersAsync);
+            }
+
             WebSocketReceiveResult result;
             try
             {
-                result = await ws.ReceiveAsync(receiveBuffer, CancellationToken.None);
+                // Timeout allows periodic resync check even if no input from client
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                result = await ws.ReceiveAsync(receiveBuffer, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Timeout - loop back to check resync
+                continue;
             }
             catch (WebSocketException)
             {
@@ -109,6 +122,16 @@ public sealed class MuxWebSocketHandler
                 await ProcessFrameAsync(new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count));
             }
         }
+    }
+
+    private async Task SendResyncBuffersAsync(MuxClient client)
+    {
+        // Send clear screen first so client resets terminal state
+        var clearFrame = MuxProtocol.CreateClearScreenFrame();
+        await client.SendAsync(clearFrame);
+
+        // Then send fresh buffer for each session
+        await SendInitialBuffersAsync(client);
     }
 
     private async Task ProcessFrameAsync(ReadOnlyMemory<byte> data)

@@ -18,6 +18,7 @@ namespace Ai.Tlbx.MiddleManager.Services
         public const byte TypeTerminalInput = 0x02;
         public const byte TypeResize = 0x03;
         public const byte TypeSessionState = 0x04;
+        public const byte TypeResync = 0x05; // Server -> Client: clear all terminals, buffer refresh follows
 
         public static byte[] CreateOutputFrame(string sessionId, int cols, int rows, ReadOnlySpan<byte> data)
         {
@@ -36,6 +37,18 @@ namespace Ai.Tlbx.MiddleManager.Services
             frame[0] = TypeSessionState;
             WriteSessionId(frame.AsSpan(1, 8), sessionId);
             frame[HeaderSize] = created ? (byte)1 : (byte)0;
+            return frame;
+        }
+
+        /// <summary>
+        /// Creates a resync frame that tells client to clear all terminals.
+        /// Buffer refresh will follow immediately after.
+        /// </summary>
+        public static byte[] CreateClearScreenFrame()
+        {
+            var frame = new byte[HeaderSize];
+            frame[0] = TypeResync;
+            // Session ID is all zeros (applies to all sessions)
             return frame;
         }
 

@@ -23,6 +23,7 @@
     var MUX_TYPE_OUTPUT = 0x01;  // Server -> Client: Terminal output (includes dimensions)
     var MUX_TYPE_INPUT  = 0x02;  // Client -> Server: Terminal input
     var MUX_TYPE_RESIZE = 0x03;  // Client -> Server: Terminal resize
+    var MUX_TYPE_RESYNC = 0x05;  // Server -> Client: Clear terminals, buffer refresh follows
     var MUX_TYPE_INIT   = 0xFF;  // Server -> Client: Client ID assignment
 
     /** Terminal color themes */
@@ -567,6 +568,20 @@
 
             if (type === MUX_TYPE_INIT) {
                 // Client ID received but no longer used for active viewer tracking
+                return;
+            }
+
+            if (type === MUX_TYPE_RESYNC) {
+                // Server is resyncing due to dropped frames - clear all terminals
+                // Fresh buffer content will follow immediately
+                console.log('[Resync] Clearing terminals for buffer refresh');
+                sessionTerminals.forEach(function(state) {
+                    if (state.opened) {
+                        state.terminal.clear();
+                    }
+                });
+                // Also clear any pending frames (they're stale)
+                pendingOutputFrames.clear();
                 return;
             }
 

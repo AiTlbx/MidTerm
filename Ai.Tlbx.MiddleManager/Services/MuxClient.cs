@@ -5,16 +5,19 @@ namespace Ai.Tlbx.MiddleManager.Services;
 
 public sealed class MuxClient : IAsyncDisposable
 {
-    private const int MaxQueuedFrames = 1000; // Drop frames beyond this to prevent memory growth
+    private const int MaxQueuedFrames = 500;
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<byte[]> _outputQueue;
+    private readonly Channel<byte[]> _pendingQueue; // Frames arriving during resync
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _outputProcessor;
-    private volatile bool _droppingFrames;
+    private volatile bool _needsResync;
+    private volatile bool _isResyncing;
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
+    public bool NeedsResync => _needsResync;
 
     public MuxClient(string id, WebSocket webSocket)
     {
@@ -26,6 +29,11 @@ public sealed class MuxClient : IAsyncDisposable
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest
         });
+        _pendingQueue = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
         _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
     }
 
@@ -34,20 +42,52 @@ public sealed class MuxClient : IAsyncDisposable
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
 
-        // Log once when we start dropping frames (queue full)
-        var wasFull = _outputQueue.Reader.Count >= MaxQueuedFrames - 1;
-        _outputQueue.Writer.TryWrite(frame);
+        // During resync, queue to pending (will be sent after buffer)
+        if (_isResyncing)
+        {
+            _pendingQueue.Writer.TryWrite(frame);
+            return;
+        }
 
-        if (wasFull && !_droppingFrames)
+        // Check if queue is full - if so, we're about to drop frames
+        var queueCount = _outputQueue.Reader.Count;
+        if (queueCount >= MaxQueuedFrames - 1 && !_needsResync)
         {
-            _droppingFrames = true;
-            DebugLogger.Log($"[MuxClient] {Id}: Queue full, dropping old frames (slow connection)");
+            _needsResync = true;
+            DebugLogger.Log($"[MuxClient] {Id}: Queue full ({queueCount}), flagged for resync");
         }
-        else if (!wasFull && _droppingFrames)
+
+        _outputQueue.Writer.TryWrite(frame);
+    }
+
+    public async Task PerformResyncAsync(Func<MuxClient, Task> sendBuffersAsync)
+    {
+        _isResyncing = true;
+        DebugLogger.Log($"[MuxClient] {Id}: Starting resync");
+
+        // Drain main queue (these frames are incomplete/corrupted due to drops)
+        var discarded = 0;
+        while (_outputQueue.Reader.TryRead(out _)) discarded++;
+        DebugLogger.Log($"[MuxClient] {Id}: Discarded {discarded} stale frames");
+
+        // Send fresh buffer content (complete, consistent state)
+        await sendBuffersAsync(this).ConfigureAwait(false);
+
+        // Send any frames that arrived during resync (these are NEW, after buffer snapshot)
+        var pending = 0;
+        while (_pendingQueue.Reader.TryRead(out var frame))
         {
-            _droppingFrames = false;
-            DebugLogger.Log($"[MuxClient] {Id}: Queue recovered");
+            await SendFrameAsync(frame).ConfigureAwait(false);
+            pending++;
         }
+        if (pending > 0)
+        {
+            DebugLogger.Log($"[MuxClient] {Id}: Sent {pending} pending frames");
+        }
+
+        _needsResync = false;
+        _isResyncing = false;
+        DebugLogger.Log($"[MuxClient] {Id}: Resync complete");
     }
 
     private async Task ProcessOutputQueueAsync(CancellationToken ct)
@@ -56,9 +96,11 @@ public sealed class MuxClient : IAsyncDisposable
         {
             await foreach (var frame in _outputQueue.Reader.ReadAllAsync(ct))
             {
+                // Skip sending if we need resync (frames are corrupted anyway)
+                if (_needsResync) continue;
+
                 if (WebSocket.State != WebSocketState.Open)
                 {
-                    // Connection closed, drain remaining frames silently
                     while (_outputQueue.Reader.TryRead(out _)) { }
                     break;
                 }
@@ -115,6 +157,7 @@ public sealed class MuxClient : IAsyncDisposable
     {
         _cts.Cancel();
         _outputQueue.Writer.Complete();
+        _pendingQueue.Writer.Complete();
 
         try
         {
