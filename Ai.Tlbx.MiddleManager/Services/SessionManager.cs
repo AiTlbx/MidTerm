@@ -49,12 +49,10 @@ public sealed class SessionManager : IDisposable
             settings.RunAsGid);
 
         session.OnStateChanged += () => NotifyStateChange();
-        session.OnOutput += async (sessionId, data) =>
+        session.OnOutput += (sessionId, data) =>
         {
-            if (_muxManager is not null)
-            {
-                await _muxManager.BroadcastTerminalOutputAsync(sessionId, data);
-            }
+            _muxManager?.BroadcastTerminalOutput(sessionId, data);
+            return Task.CompletedTask;
         };
 
         _sessions[session.Id] = session;

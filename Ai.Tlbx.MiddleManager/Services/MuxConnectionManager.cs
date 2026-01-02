@@ -22,71 +22,38 @@ public sealed class MuxConnectionManager
         return client;
     }
 
-    public void RemoveClient(string clientId)
+    public async Task RemoveClientAsync(string clientId)
     {
-        _clients.TryRemove(clientId, out _);
+        if (_clients.TryRemove(clientId, out var client))
+        {
+            await client.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
-    public async Task BroadcastTerminalOutputAsync(string sessionId, ReadOnlyMemory<byte> data)
+    public void BroadcastTerminalOutput(string sessionId, ReadOnlyMemory<byte> data)
     {
         var session = _sessionManager.GetSession(sessionId);
         var cols = session?.Cols ?? 80;
         var rows = session?.Rows ?? 24;
 
         var frame = MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data.Span);
-        await BroadcastFrameAsync(frame);
+        BroadcastFrame(frame);
     }
 
-    public async Task BroadcastSessionStateAsync(string sessionId, bool created)
+    public void BroadcastSessionState(string sessionId, bool created)
     {
         var frame = MuxProtocol.CreateStateFrame(sessionId, created);
-        await BroadcastFrameAsync(frame);
+        BroadcastFrame(frame);
     }
 
-    private async Task BroadcastFrameAsync(byte[] frame)
+    private void BroadcastFrame(byte[] frame)
     {
-        var deadClients = new List<string>();
-        var sendTasks = new List<Task<(string clientId, bool success)>>();
-
         foreach (var (clientId, client) in _clients)
         {
-            if (client.WebSocket.State != WebSocketState.Open)
+            if (client.WebSocket.State == WebSocketState.Open)
             {
-                deadClients.Add(clientId);
-                continue;
+                client.QueueOutput(frame);
             }
-
-            sendTasks.Add(SendToClientAsync(clientId, client, frame));
-        }
-
-        if (sendTasks.Count > 0)
-        {
-            var results = await Task.WhenAll(sendTasks);
-            foreach (var (clientId, success) in results)
-            {
-                if (!success)
-                {
-                    deadClients.Add(clientId);
-                }
-            }
-        }
-
-        foreach (var id in deadClients)
-        {
-            _clients.TryRemove(id, out _);
-        }
-    }
-
-    private static async Task<(string clientId, bool success)> SendToClientAsync(string clientId, MuxClient client, byte[] frame)
-    {
-        try
-        {
-            await client.SendAsync(frame);
-            return (clientId, true);
-        }
-        catch
-        {
-            return (clientId, false);
         }
     }
 

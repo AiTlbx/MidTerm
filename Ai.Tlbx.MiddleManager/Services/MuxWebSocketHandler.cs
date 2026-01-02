@@ -35,11 +35,11 @@ public sealed class MuxWebSocketHandler
         {
             await SendInitFrameAsync(client, clientId);
             await SendInitialBuffersAsync(client);
-            await ProcessMessagesAsync(ws, clientId);
+            await ProcessMessagesAsync(ws, clientId, client);
         }
         finally
         {
-            RemoveClient(clientId);
+            await RemoveClientAsync(clientId);
             await CloseWebSocketAsync(ws);
         }
     }
@@ -83,16 +83,32 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private async Task ProcessMessagesAsync(WebSocket ws, string clientId)
+    private async Task ProcessMessagesAsync(WebSocket ws, string clientId, MuxClient client)
     {
         var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
+        using var cts = new CancellationTokenSource();
 
         while (ws.State == WebSocketState.Open)
         {
+            // Check if client needs resync (queue backed up due to slow connection)
+            if (client.NeedsResync)
+            {
+                DebugLogger.Log($"[WS] {clientId}: Triggering resync due to queue backup");
+                await SendInitialBuffersAsync(client);
+                client.ClearResyncFlag();
+            }
+
             WebSocketReceiveResult result;
             try
             {
-                result = await ws.ReceiveAsync(receiveBuffer, CancellationToken.None);
+                // Use timeout to periodically check resync flag
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                result = await ws.ReceiveAsync(receiveBuffer, timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Timeout - loop back to check resync flag
+                continue;
             }
             catch (WebSocketException)
             {
@@ -150,15 +166,15 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private void RemoveClient(string clientId)
+    private async Task RemoveClientAsync(string clientId)
     {
         if (_conHostMuxManager is not null)
         {
-            _conHostMuxManager.RemoveClient(clientId);
+            await _conHostMuxManager.RemoveClientAsync(clientId);
         }
         else
         {
-            _directMuxManager!.RemoveClient(clientId);
+            await _directMuxManager!.RemoveClientAsync(clientId);
         }
     }
 

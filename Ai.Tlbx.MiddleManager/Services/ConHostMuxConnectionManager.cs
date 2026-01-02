@@ -41,32 +41,14 @@ public sealed class ConHostMuxConnectionManager
             // Use dimensions from the output event (embedded at capture time)
             var frame = MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data);
 
-            // Send to all clients in PARALLEL - one slow client must not block others
-            var sendTasks = new List<Task>();
+            // Queue to each client - non-blocking, each client has its own queue
             foreach (var client in _clients.Values)
             {
                 if (client.WebSocket.State == WebSocketState.Open)
                 {
-                    sendTasks.Add(SendToClientAsync(client, frame));
+                    client.QueueOutput(frame);
                 }
             }
-
-            if (sendTasks.Count > 0)
-            {
-                await Task.WhenAll(sendTasks).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static async Task SendToClientAsync(MuxClient client, byte[] frame)
-    {
-        try
-        {
-            await client.SendAsync(frame).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Client disconnected - ignore, it will be removed on next receive failure
         }
     }
 
@@ -77,9 +59,12 @@ public sealed class ConHostMuxConnectionManager
         return client;
     }
 
-    public void RemoveClient(string clientId)
+    public async Task RemoveClientAsync(string clientId)
     {
-        _clients.TryRemove(clientId, out _);
+        if (_clients.TryRemove(clientId, out var client))
+        {
+            await client.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     public async Task HandleInputAsync(string sessionId, ReadOnlyMemory<byte> data)
@@ -92,7 +77,7 @@ public sealed class ConHostMuxConnectionManager
         await _sessionManager.ResizeSessionAsync(sessionId, cols, rows).ConfigureAwait(false);
     }
 
-    public async Task BroadcastTerminalOutputAsync(string sessionId, ReadOnlyMemory<byte> data)
+    public void BroadcastTerminalOutput(string sessionId, ReadOnlyMemory<byte> data)
     {
         var sessionInfo = _sessionManager.GetSession(sessionId);
         var cols = sessionInfo?.Cols ?? 80;
@@ -100,19 +85,13 @@ public sealed class ConHostMuxConnectionManager
 
         var frame = MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data.Span);
 
-        // Send to all clients in PARALLEL
-        var sendTasks = new List<Task>();
+        // Queue to each client - non-blocking
         foreach (var client in _clients.Values)
         {
             if (client.WebSocket.State == WebSocketState.Open)
             {
-                sendTasks.Add(SendToClientAsync(client, frame));
+                client.QueueOutput(frame);
             }
-        }
-
-        if (sendTasks.Count > 0)
-        {
-            await Task.WhenAll(sendTasks).ConfigureAwait(false);
         }
     }
 
