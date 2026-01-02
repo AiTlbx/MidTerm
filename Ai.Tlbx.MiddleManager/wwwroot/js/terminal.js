@@ -29,10 +29,10 @@
     /** Terminal color themes */
     var THEMES = {
         dark: {
-            background: '#1A1B26',
+            background: '#16161E',
             foreground: '#C0CAF5',
             cursor: '#C0CAF5',
-            cursorAccent: '#1A1B26',
+            cursorAccent: '#16161E',
             selectionBackground: '#283457'
         },
         light: {

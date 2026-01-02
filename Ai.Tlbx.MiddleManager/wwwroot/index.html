@@ -27,11 +27,11 @@
     <div id="app" class="terminal-page">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <span>Sessions</span>
+                <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" title="Hide sidebar">◀</button>
+                <span class="sidebar-title">MiddleManager</span>
                 <div class="sidebar-header-buttons">
                     <button class="sidebar-btn" id="btn-settings" title="Settings">⚙</button>
                     <button class="sidebar-btn primary" id="btn-new-session" title="New Terminal">+</button>
-                    <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" title="Hide sidebar">◀</button>
                 </div>
             </div>
             <div class="session-list" id="session-list"></div>
@@ -48,7 +48,7 @@
                 </div>
                 <div class="network-list" id="network-list"></div>
                 <div class="footer-row">
-                    <span class="client-count" id="session-count">0 session(s)</span>
+                    <span class="footer-sessions">Sessions: <span id="session-count">0</span></span>
                     <span class="version" id="app-version"></span>
                 </div>
             </div>

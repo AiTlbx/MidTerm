@@ -4,8 +4,8 @@
 
 /* Tokyo Night Theme Variables */
 :root {
-    --bg-primary: #1A1B26;
-    --bg-sidebar: #16161E;
+    --bg-primary: #16161E;
+    --bg-sidebar: #1A1B26;
     --bg-input: #1F2029;
     --border-color: #101014;
     --text-primary: #C0CAF5;
@@ -41,8 +41,8 @@ html, body {
 
 /* Sidebar */
 .sidebar {
-    width: 200px;
-    min-width: 200px;
+    width: 230px;
+    min-width: 230px;
     background-color: var(--bg-sidebar);
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -52,13 +52,19 @@ html, body {
 .sidebar-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 12px 12px;
+    gap: 8px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--border-color);
-    font-size: 12px;
+}
+
+.sidebar-title {
+    flex: 1;
+    font-size: 14px;
     font-weight: 600;
-    text-transform: uppercase;
-    color: var(--accent-blue);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .add-session-btn {
