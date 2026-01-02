@@ -154,7 +154,12 @@ Settings stored in:
 
 ## Building from Source
 
-Requires [.NET 10 SDK](https://dotnet.microsoft.com/download).
+**Prerequisites:**
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [esbuild](https://esbuild.github.io/) — TypeScript bundler, must be in PATH
+  - Windows: `winget install esbuild` or download from [releases](https://github.com/evanw/esbuild/releases)
+  - macOS: `brew install esbuild`
+  - Linux: Download from [releases](https://github.com/evanw/esbuild/releases)
 
 ```bash
 git clone https://github.com/AiTlbx/MiddleManager.git

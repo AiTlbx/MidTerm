@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src/ts",
+    "baseUrl": "./src/ts"
+  },
+  "include": ["src/ts/**/*.ts"],
+  "exclude": ["node_modules", "dist", "wwwroot"]
+}

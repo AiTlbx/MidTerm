@@ -84,3 +84,8 @@ coverage*.info
 # Claude Code
 .claude/
 nul
+
+# TypeScript build output
+Ai.Tlbx.MiddleManager/wwwroot/js/terminal.min.js
+Ai.Tlbx.MiddleManager/wwwroot/js/terminal.min.js.map
+Ai.Tlbx.MiddleManager/dist/

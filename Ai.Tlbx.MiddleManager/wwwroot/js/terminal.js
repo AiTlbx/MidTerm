@@ -24,7 +24,6 @@
     var MUX_TYPE_INPUT  = 0x02;  // Client -> Server: Terminal input
     var MUX_TYPE_RESIZE = 0x03;  // Client -> Server: Terminal resize
     var MUX_TYPE_RESYNC = 0x05;  // Server -> Client: Clear terminals, buffer refresh follows
-    var MUX_TYPE_INIT   = 0xFF;  // Server -> Client: Client ID assignment
 
     /** Terminal color themes */
     var THEMES = {
@@ -575,11 +574,6 @@
             var sessionId = decodeSessionId(data, 1);
             var payload = data.slice(MUX_HEADER_SIZE);
 
-            if (type === MUX_TYPE_INIT) {
-                // Client ID received but no longer used for active viewer tracking
-                return;
-            }
-
             if (type === MUX_TYPE_RESYNC) {
                 // Server is resyncing due to dropped frames - clear all terminals
                 // Fresh buffer content will follow immediately
@@ -747,10 +741,6 @@
 
         indicator.className = 'connection-status ' + status;
         indicator.textContent = text;
-    }
-
-    function updateHostStatus() {
-        // No-op: Host connection tracking removed (always connected in con-host mode)
     }
 
     function checkSystemHealth() {
@@ -1810,12 +1800,6 @@
                 }).join('');
             })
             .catch(function() {});
-    }
-
-    function escapeHtml(text) {
-        var div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     // ========================================================================

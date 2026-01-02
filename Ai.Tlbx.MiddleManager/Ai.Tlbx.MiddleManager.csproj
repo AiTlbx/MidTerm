@@ -71,5 +71,30 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.1" />
   </ItemGroup>
 
+  <!-- TypeScript build configuration -->
+  <PropertyGroup>
+    <TypeScriptSourceDir>src\ts</TypeScriptSourceDir>
+    <TypeScriptOutFile>wwwroot\js\terminal.min.js</TypeScriptOutFile>
+  </PropertyGroup>
+
+  <!-- Debug build: with source map -->
+  <Target Name="CompileTypeScriptDebug" BeforeTargets="Build"
+          Condition="'$(Configuration)' == 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')"
+          Inputs="$(TypeScriptSourceDir)\**\*.ts"
+          Outputs="$(TypeScriptOutFile)">
+    <Exec Command="esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" />
+  </Target>
+
+  <!-- Release build: no source map, smallest size -->
+  <Target Name="CompileTypeScriptRelease" BeforeTargets="Build"
+          Condition="'$(Configuration)' != 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')"
+          Inputs="$(TypeScriptSourceDir)\**\*.ts"
+          Outputs="$(TypeScriptOutFile)">
+    <Exec Command="esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --outfile=$(TypeScriptOutFile) --target=es2020" />
+  </Target>
+
+  <Target Name="CleanTypeScript" AfterTargets="Clean">
+    <Delete Files="$(TypeScriptOutFile);$(TypeScriptOutFile).map" ContinueOnError="true" />
+  </Target>
 
 </Project>

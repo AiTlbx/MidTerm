@@ -65,10 +65,24 @@ Ai.Tlbx.MiddleManager/              Web Server (mm.exe)
 │   └── AppJsonContext.cs           AOT-safe JSON serialization
 ├── Settings/
 │   └── MiddleManagerSettings.cs    Settings model (auth, defaults, appearance)
+├── src/ts/                         TypeScript source (compiled by esbuild)
+│   ├── main.ts                     Entry point, initialization
+│   ├── types.ts                    Shared interfaces and types
+│   ├── constants.ts                Protocol constants, themes
+│   ├── state.ts                    Application state management
+│   ├── modules/
+│   │   ├── comms/                  WebSocket communication
+│   │   ├── terminal/               xterm.js lifecycle and scaling
+│   │   ├── sidebar/                Session list and collapse
+│   │   ├── settings/               Settings panel and persistence
+│   │   ├── auth/                   Authentication and password modal
+│   │   ├── theming/                Theme definitions
+│   │   └── updating/               Update checker and changelog
+│   └── utils/                      DOM helpers, cookies, debounce
 └── wwwroot/                        Static files (embedded)
     ├── index.html                  Main UI
     ├── login.html                  Login page
-    ├── js/terminal.js              Terminal logic, auth handling
+    ├── js/terminal.min.js          Compiled TypeScript (generated)
     └── css/app.css                 Styles
 
 Ai.Tlbx.MiddleManager.ConHost/      ConPTY Host (Windows only)
@@ -123,7 +137,7 @@ POST /api/update/apply            Download update and restart
 - **Manual resize** via sidebar button (⤢) fits terminal to current screen
 - Each terminal has independent dimensions
 
-## Code Style
+## Code Style (C#)
 
 - **Braces:** Allman (opening brace on new line)
 - **Indent:** 4 spaces
@@ -133,6 +147,42 @@ POST /api/update/apply            Download update and restart
 - **Namespaces:** File-scoped (`namespace Foo;`)
 - **Null checks:** `is null` / `is not null`
 - **Comments:** Minimal, only for complex logic
+
+## Code Style (TypeScript)
+
+When working with TypeScript files in `src/ts/`:
+
+- **Braces:** K&R / One True Brace Style (opening brace on same line)
+- **Indent:** 2 spaces (industry standard for TS/JS)
+- **Semicolons:** Required
+- **Quotes:** Single quotes for strings
+- **Naming:**
+  - `camelCase` for variables, functions, parameters
+  - `PascalCase` for types, interfaces, classes
+  - `SCREAMING_SNAKE_CASE` for constants
+  - No underscore prefix for private (use TypeScript `private` keyword)
+- **Types:** Always explicit return types on exported functions
+- **Null handling:** Use `strictNullChecks`, prefer `undefined` over `null`
+- **Comments:** JSDoc for exported functions, module header comment required
+
+Example:
+```typescript
+/**
+ * Terminal Manager Module
+ *
+ * Handles xterm.js terminal lifecycle, creation, destruction,
+ * and event binding for terminal sessions.
+ */
+
+import type { TerminalState, Session } from '../types';
+import { state } from '../state';
+
+const MAX_SCROLLBACK = 10000;
+
+export function createTerminal(sessionId: string, session: Session): TerminalState {
+  // Implementation
+}
+```
 
 ## Platform-Specific
 
