@@ -93,11 +93,7 @@ public sealed class MuxWebSocketHandler
             // Check if client needs resync (queue backed up due to slow connection)
             if (client.NeedsResync)
             {
-                DebugLogger.Log($"[WS] {clientId}: Triggering full resync due to queue backup");
-                client.PrepareForResync();
-                await SendInitialBuffersAsync(client);
-                client.ClearResyncFlag();
-                DebugLogger.Log($"[WS] {clientId}: Resync complete");
+                await client.PerformResyncAsync(SendInitialBuffersAsync);
             }
 
             WebSocketReceiveResult result;
