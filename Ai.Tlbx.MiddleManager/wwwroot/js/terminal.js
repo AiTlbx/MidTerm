@@ -67,6 +67,7 @@
     var currentSettings = null;     // User settings from server
     var settingsOpen = false;       // Settings panel visibility
     var sidebarOpen = false;        // Mobile sidebar visibility
+    var sidebarCollapsed = false;   // Desktop sidebar collapsed state
     var updateInfo = null;          // Available update info from server
 
     // WebSocket connections
@@ -102,6 +103,7 @@
     var sidebarOverlay = null;
     var settingsView = null;
     var settingsBtn = null;
+    var islandTitle = null;
 
     // ========================================================================
     // Initialization
@@ -129,6 +131,13 @@
         sidebarOverlay = document.getElementById('sidebar-overlay');
         settingsView = document.getElementById('settings-view');
         settingsBtn = document.getElementById('btn-settings');
+        islandTitle = document.getElementById('island-title');
+
+        // Restore sidebar collapsed state from cookie (desktop only)
+        if (getCookie('mm-sidebar-collapsed') === 'true' && window.innerWidth > 768) {
+            sidebarCollapsed = true;
+            if (app) app.classList.add('sidebar-collapsed');
+        }
 
         // Preload terminal font for proper canvas rendering
         fontsReadyPromise = preloadTerminalFont();
@@ -220,8 +229,8 @@
     function getClipboardStyle() {
         var setting = currentSettings && currentSettings.clipboardShortcuts || 'auto';
         if (setting !== 'auto') return setting;
-        var platform = navigator.platform || '';
-        return platform.startsWith('Win') ? 'windows' : 'unix';
+        var ua = navigator.userAgent || '';
+        return /Windows|Win32|Win64/i.test(ua) ? 'windows' : 'unix';
     }
 
     // ========================================================================
@@ -1299,6 +1308,9 @@
                 topbarActions.classList.add('no-terminal');
             }
         }
+
+        // Also update the desktop island title
+        updateIslandTitle();
     }
 
     function promptRenameSession(sessionId) {
@@ -1364,6 +1376,25 @@
     function closeSidebar() {
         sidebarOpen = false;
         if (app) app.classList.remove('sidebar-open');
+    }
+
+    function collapseSidebar() {
+        sidebarCollapsed = true;
+        if (app) app.classList.add('sidebar-collapsed');
+        setCookie('mm-sidebar-collapsed', 'true');
+        updateIslandTitle();
+    }
+
+    function expandSidebar() {
+        sidebarCollapsed = false;
+        if (app) app.classList.remove('sidebar-collapsed');
+        setCookie('mm-sidebar-collapsed', 'false');
+    }
+
+    function updateIslandTitle() {
+        if (!islandTitle) return;
+        var session = sessions.find(function(s) { return s.id === activeSessionId; });
+        islandTitle.textContent = session ? getSessionDisplayName(session) : 'MiddleManager';
     }
 
     function toggleSettings() {
@@ -1544,6 +1575,8 @@
 
         // Sidebar
         bindClick('btn-hamburger', toggleSidebar);
+        bindClick('btn-collapse-sidebar', collapseSidebar);
+        bindClick('btn-expand-sidebar', expandSidebar);
         if (sidebarOverlay) {
             sidebarOverlay.addEventListener('click', closeSidebar);
         }

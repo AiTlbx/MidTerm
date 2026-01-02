@@ -31,6 +31,7 @@
                 <div class="sidebar-header-buttons">
                     <button class="sidebar-btn" id="btn-settings" title="Settings">⚙</button>
                     <button class="sidebar-btn primary" id="btn-new-session" title="New Terminal">+</button>
+                    <button class="sidebar-btn sidebar-collapse-btn" id="btn-collapse-sidebar" title="Hide sidebar">◀</button>
                 </div>
             </div>
             <div class="session-list" id="session-list"></div>
@@ -53,6 +54,11 @@
             </div>
         </aside>
         <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+        <div class="sidebar-island" id="sidebar-island">
+            <button class="island-expand-btn" id="btn-expand-sidebar" title="Show sidebar">▶</button>
+            <span class="island-title" id="island-title">MiddleManager</span>
+        </div>
 
         <div class="main-content">
             <header class="mobile-topbar" id="mobile-topbar">

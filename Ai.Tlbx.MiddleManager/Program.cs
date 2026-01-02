@@ -337,9 +337,27 @@ public class Program
 
         app.MapGet("/api/networks", () =>
         {
+            static bool IsPhysicalOrVpn(string name)
+            {
+                // Always include VPN/Tailscale adapters
+                if (name.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("VPN", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                // Exclude known virtual adapters
+                if (name.Contains("VMware", StringComparison.OrdinalIgnoreCase) ||
+                    name.StartsWith("vEthernet", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("VirtualBox", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                return true;
+            }
+
             var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
                 .Where(ni => ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
-                             && ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                             && ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback
+                             && IsPhysicalOrVpn(ni.Name))
                 .SelectMany(ni => ni.GetIPProperties().UnicastAddresses
                     .Where(addr => addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                     .Select(addr => new NetworkInterfaceDto

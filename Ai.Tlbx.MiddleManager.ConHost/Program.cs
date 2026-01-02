@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MiddleManager.ConHost;
 
 public static class Program
 {
-    public const string Version = "3.4.4";
+    public const string Version = "3.4.5";
 
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),

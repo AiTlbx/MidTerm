@@ -349,6 +349,64 @@ html, body {
 }
 
 /* ============================================================================
+   Sidebar Collapse (Desktop only)
+   ============================================================================ */
+.sidebar-collapse-btn {
+    display: flex;
+}
+
+.sidebar-island {
+    display: none;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 100;
+    background-color: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 6px 12px 6px 6px;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.island-expand-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background-color: var(--btn-secondary);
+    color: var(--text-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.island-expand-btn:hover {
+    background-color: var(--btn-secondary-hover);
+}
+
+.island-title {
+    font-size: 13px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+/* Sidebar collapsed state (desktop) */
+.terminal-page.sidebar-collapsed .sidebar {
+    display: none;
+}
+
+.terminal-page.sidebar-collapsed .sidebar-island {
+    display: flex;
+}
+
+/* ============================================================================
    Mobile Topbar - hidden on desktop, visible on mobile
    ============================================================================ */
 .mobile-topbar {
@@ -364,6 +422,20 @@ html, body {
    Mobile Responsive Styles
    ============================================================================ */
 @media (max-width: 768px) {
+    /* Hide sidebar collapse feature on mobile */
+    .sidebar-collapse-btn {
+        display: none !important;
+    }
+
+    .sidebar-island {
+        display: none !important;
+    }
+
+    /* On mobile, ignore sidebar-collapsed class */
+    .terminal-page.sidebar-collapsed .sidebar {
+        display: flex;
+    }
+
     /* Hide desktop sidebar by default on mobile */
     .sidebar {
         position: fixed;
