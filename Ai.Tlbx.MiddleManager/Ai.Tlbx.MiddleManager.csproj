@@ -78,7 +78,7 @@
   </PropertyGroup>
 
   <!-- Debug build: with source map -->
-  <Target Name="CompileTypeScriptDebug" BeforeTargets="Build"
+  <Target Name="CompileTypeScriptDebug" BeforeTargets="Build;Publish"
           Condition="'$(Configuration)' == 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')"
           Inputs="$(TypeScriptSourceDir)\**\*.ts"
           Outputs="$(TypeScriptOutFile)">
@@ -86,7 +86,7 @@
   </Target>
 
   <!-- Release build: no source map, smallest size -->
-  <Target Name="CompileTypeScriptRelease" BeforeTargets="Build"
+  <Target Name="CompileTypeScriptRelease" BeforeTargets="Build;Publish"
           Condition="'$(Configuration)' != 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')"
           Inputs="$(TypeScriptSourceDir)\**\*.ts"
           Outputs="$(TypeScriptOutFile)">
