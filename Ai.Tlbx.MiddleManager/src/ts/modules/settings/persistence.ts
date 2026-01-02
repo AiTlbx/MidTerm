@@ -1,0 +1,223 @@
+/**
+ * Settings Persistence Module
+ *
+ * Handles loading, saving, and form binding for application settings.
+ * Communicates with the server API to persist settings changes.
+ */
+
+import type { Settings, ThemeName, TerminalState } from '../../types';
+import { THEMES } from '../../constants';
+import { currentSettings, setCurrentSettings, dom, sessionTerminals } from '../../state';
+import { setCookie } from '../../utils';
+
+/**
+ * Set the value of a form element by ID
+ */
+export function setElementValue(id: string, value: string | number): void {
+  const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+  if (el) el.value = String(value);
+}
+
+/**
+ * Set the checked state of a checkbox by ID
+ */
+export function setElementChecked(id: string, checked: boolean): void {
+  const el = document.getElementById(id) as HTMLInputElement | null;
+  if (el) el.checked = checked;
+}
+
+/**
+ * Get the value of a form element by ID
+ */
+export function getElementValue(id: string, defaultValue: string): string {
+  const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+  return el ? el.value : defaultValue;
+}
+
+/**
+ * Get the checked state of a checkbox by ID
+ */
+export function getElementChecked(id: string): boolean {
+  const el = document.getElementById(id) as HTMLInputElement | null;
+  return el ? el.checked : false;
+}
+
+/**
+ * Populate version info in the about section
+ */
+export function populateVersionInfo(version: string | null): void {
+  const webEl = document.getElementById('version-web');
+  if (webEl && version) {
+    const shortVersion = version.split(/[+-]/)[0].split('.').slice(0, 3).join('.');
+    webEl.textContent = 'v' + shortVersion;
+  }
+}
+
+/**
+ * Populate user dropdown for run-as-user selection
+ */
+export function populateUserDropdown(
+  users: Array<{ username: string }>,
+  selectedUser: string | null
+): void {
+  const select = document.getElementById('setting-run-as-user') as HTMLSelectElement | null;
+  if (!select) return;
+
+  select.innerHTML = '<option value="">Process Owner (default)</option>';
+
+  users.forEach((user) => {
+    const option = document.createElement('option');
+    option.value = user.username;
+    option.textContent = user.username;
+    if (user.username === selectedUser) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+}
+
+/**
+ * Populate the settings form with current settings
+ */
+export function populateSettingsForm(settings: Settings): void {
+  setElementValue('setting-default-shell', settings.defaultShell || 'Pwsh');
+  setElementValue('setting-working-dir', settings.defaultWorkingDirectory || '');
+  setElementValue('setting-font-size', settings.fontSize || 14);
+  setElementValue('setting-cursor-style', settings.cursorStyle || 'bar');
+  setElementChecked('setting-cursor-blink', settings.cursorBlink !== false);
+  setElementValue('setting-theme', settings.theme || 'dark');
+  setElementValue('setting-scrollback', settings.scrollbackLines || 10000);
+  setElementValue('setting-bell-style', settings.bellStyle || 'notification');
+  setElementChecked('setting-copy-on-select', settings.copyOnSelect === true);
+  setElementChecked('setting-right-click-paste', settings.rightClickPaste !== false);
+  setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts || 'auto');
+  setElementValue('setting-run-as-user', settings.runAsUser || '');
+  setElementChecked('setting-debug-logging', settings.debugLogging === true);
+}
+
+/**
+ * Fetch settings, users, and version from server and populate the form
+ */
+export async function fetchSettings(): Promise<void> {
+  try {
+    const [settings, users, version] = await Promise.all([
+      fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
+      fetch('/api/users')
+        .then((r) => r.json() as Promise<Array<{ username: string }>>)
+        .catch(() => [] as Array<{ username: string }>),
+      fetch('/api/version')
+        .then((r) => r.text())
+        .catch(() => null)
+    ]);
+
+    setCurrentSettings(settings);
+    populateUserDropdown(users, settings.runAsUser);
+    populateSettingsForm(settings);
+    populateVersionInfo(version);
+  } catch (e) {
+    console.error('Error fetching settings:', e);
+  }
+}
+
+/**
+ * Apply current settings to all open terminals
+ */
+function applySettingsToTerminals(): void {
+  if (!currentSettings) return;
+
+  const theme = THEMES[currentSettings.theme] || THEMES.dark;
+
+  sessionTerminals.forEach((state: TerminalState) => {
+    state.terminal.options.cursorBlink = currentSettings.cursorBlink;
+    state.terminal.options.cursorStyle = currentSettings.cursorStyle;
+    state.terminal.options.fontSize = currentSettings.fontSize;
+    state.terminal.options.theme = theme;
+  });
+}
+
+/**
+ * Save all settings to the server
+ */
+export function saveAllSettings(): void {
+  const runAsUserValue = getElementValue('setting-run-as-user', '');
+  const settings: Settings = {
+    defaultShell: getElementValue('setting-default-shell', 'Pwsh'),
+    defaultWorkingDirectory: getElementValue('setting-working-dir', ''),
+    fontSize: parseInt(getElementValue('setting-font-size', '14'), 10) || 14,
+    cursorStyle: getElementValue('setting-cursor-style', 'bar') as Settings['cursorStyle'],
+    cursorBlink: getElementChecked('setting-cursor-blink'),
+    theme: getElementValue('setting-theme', 'dark') as ThemeName,
+    scrollbackLines: parseInt(getElementValue('setting-scrollback', '10000'), 10) || 10000,
+    bellStyle: getElementValue('setting-bell-style', 'notification') as Settings['bellStyle'],
+    copyOnSelect: getElementChecked('setting-copy-on-select'),
+    rightClickPaste: getElementChecked('setting-right-click-paste'),
+    clipboardShortcuts: getElementValue(
+      'setting-clipboard-shortcuts',
+      'auto'
+    ) as Settings['clipboardShortcuts'],
+    runAsUser: runAsUserValue || null,
+    debugLogging: getElementChecked('setting-debug-logging')
+  };
+
+  setCookie('mm-theme', settings.theme);
+
+  fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings)
+  })
+    .then((r) => {
+      if (r.ok) {
+        setCurrentSettings(settings);
+        const theme = THEMES[settings.theme] || THEMES.dark;
+        document.documentElement.style.setProperty('--terminal-bg', theme.background);
+        applySettingsToTerminals();
+      }
+    })
+    .catch((e) => {
+      console.error('Error saving settings:', e);
+    });
+}
+
+/**
+ * Bind auto-save behavior to settings form elements
+ */
+export function bindSettingsAutoSave(): void {
+  const settingsView = dom.settingsView;
+  if (!settingsView) return;
+
+  settingsView.querySelectorAll('select, input[type="checkbox"]').forEach((el) => {
+    el.addEventListener('change', saveAllSettings);
+  });
+
+  settingsView.querySelectorAll('.text-input-wrapper').forEach((wrapper) => {
+    const input = wrapper.querySelector('input') as HTMLInputElement | null;
+    const saveBtn = wrapper.querySelector('.inline-save-btn') as HTMLButtonElement | null;
+    if (!input || !saveBtn) return;
+
+    let originalValue = '';
+
+    input.addEventListener('focus', () => {
+      originalValue = input.value;
+    });
+
+    input.addEventListener('input', () => {
+      wrapper.classList.toggle('unsaved', input.value !== originalValue);
+    });
+
+    saveBtn.addEventListener('click', () => {
+      saveAllSettings();
+      wrapper.classList.remove('unsaved');
+      originalValue = input.value;
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveAllSettings();
+        wrapper.classList.remove('unsaved');
+        originalValue = input.value;
+      }
+    });
+  });
+}

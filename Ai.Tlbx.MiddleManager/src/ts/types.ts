@@ -81,11 +81,15 @@ export interface AuthStatus {
 
 /** Update info from server */
 export interface UpdateInfo {
-  updateAvailable: boolean;
+  available: boolean;
   currentVersion: string;
   latestVersion: string;
   releaseUrl: string;
-  releaseNotes: string;
+  downloadUrl?: string;
+  assetName?: string;
+  releaseNotes?: string;
+  type: 'None' | 'WebOnly' | 'Full';
+  sessionsPreserved: boolean;
 }
 
 // =============================================================================
