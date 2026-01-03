@@ -226,22 +226,12 @@ function Write-ServiceSettings
         Move-Item -Path $settingsPath -Destination $oldSettingsPath -Force
     }
 
-    # Build the URL based on bind address
-    if ($BindAddress -eq "localhost")
-    {
-        $url = "http://localhost:$Port"
-    }
-    else
-    {
-        $url = "http://*:$Port"
-    }
-
     # Write minimal bootstrap settings - app will migrate user preferences from .old
+    # Note: port/bind are passed via service command line args, not settings.json
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
         authenticationEnabled = $true
-        url = $url
     }
 
     if ($PasswordHash)
@@ -253,7 +243,8 @@ function Write-ServiceSettings
     Set-Content -Path $settingsPath -Value $json -Encoding UTF8
 
     Write-Host "  Terminal user: $Username" -ForegroundColor Gray
-    Write-Host "  URL: $url" -ForegroundColor Gray
+    Write-Host "  Port: $Port" -ForegroundColor Gray
+    Write-Host "  Binding: $(if ($BindAddress -eq 'localhost') { 'localhost only' } else { 'all interfaces' })" -ForegroundColor Gray
     if ($PasswordHash) { Write-Host "  Password: configured" -ForegroundColor Gray }
 }
 
@@ -403,7 +394,7 @@ function Install-MidTerm
             Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
         }
 
-        Install-AsService -InstallDir $installDir -Version $Version
+        Install-AsService -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
 
         # Wait for mt.exe to spawn
         Start-Sleep -Seconds 2
@@ -454,7 +445,9 @@ function Install-AsService
 {
     param(
         [string]$InstallDir,
-        [string]$Version
+        [string]$Version,
+        [int]$Port = 2000,
+        [string]$BindAddress = "*"
     )
 
     $webBinaryPath = Join-Path $InstallDir $WebBinaryName
@@ -471,9 +464,12 @@ function Install-AsService
         Start-Sleep -Milliseconds 500
     }
 
-    # Create service - mt.exe spawns mmttyhost per terminal session
+    # Convert bind address for command line
+    $bindArg = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
+
+    # Create service - mt.exe spawns mthost per terminal session
     Write-Host "Creating MidTerm service..." -ForegroundColor Gray
-    $binPath = "`"$webBinaryPath`""
+    $binPath = "`"$webBinaryPath`" --port $Port --bind $bindArg"
     sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "$DisplayName" | Out-Null
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
 
