@@ -45,11 +45,12 @@
 
 /* Tokyo Night Theme Variables */
 :root {
-    --bg-primary: #16161E;
+    --bg-primary: #101014;
     --bg-sidebar: #1A1B26;
     --bg-input: #1F2029;
     --border-color: #101014;
     --text-primary: #C0CAF5;
+    --text-terminal: #DCDCF5;
     --text-secondary: #787C99;
     --text-muted: #565B73;
     --accent-blue: #7AA2F7;
@@ -156,6 +157,7 @@ html, body {
     cursor: pointer;
     border-left: 3px solid transparent;
     gap: 8px;
+    position: relative;
 }
 
 .session-item:hover {
@@ -231,10 +233,25 @@ html, body {
 }
 
 .session-actions {
+    position: absolute;
+    right: 8px;
     display: flex;
     align-items: center;
     gap: 2px;
-    flex-shrink: 0;
+    background: linear-gradient(to right, transparent, #1F2335 8px, #1F2335);
+    padding-left: 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+}
+
+.session-item:hover .session-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.session-item.active .session-actions {
+    background: linear-gradient(to right, transparent, #24283B 8px, #24283B);
 }
 
 .session-resize,
@@ -252,14 +269,6 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-
-.session-item:hover .session-resize,
-.session-item:hover .session-rename,
-.session-item:hover .session-close {
-    opacity: 1;
 }
 
 .session-resize:hover {
@@ -695,16 +704,17 @@ html, body {
         overflow: auto;
     }
 
-    /* Hide session action buttons in sidebar on mobile - they're in topbar */
+    /* On mobile: show only close button, always visible */
+    .session-actions {
+        opacity: 1;
+        pointer-events: auto;
+        background: none;
+        padding-left: 0;
+    }
+
     .session-actions .session-resize,
     .session-actions .session-rename {
         display: none;
-    }
-
-    /* Keep close button in sidebar visible */
-    .session-item:hover .session-close,
-    .session-item.active .session-close {
-        opacity: 1;
     }
 
     /* Larger session items for touch */

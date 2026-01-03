@@ -26,10 +26,10 @@ export const MUX_TYPE_RESYNC = 0x05;  // Server -> Client: Clear terminals, buff
 /** Terminal color themes */
 export const THEMES: Record<ThemeName, TerminalTheme> = {
   dark: {
-    background: '#16161E',
-    foreground: '#C0CAF5',
-    cursor: '#C0CAF5',
-    cursorAccent: '#16161E',
+    background: '#101014',
+    foreground: '#DCDCF5',
+    cursor: '#DCDCF5',
+    cursorAccent: '#101014',
     selectionBackground: '#283457'
   },
   light: {
