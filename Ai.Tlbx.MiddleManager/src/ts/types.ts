@@ -54,6 +54,7 @@ export interface Settings {
   defaultShell: string;
   defaultWorkingDirectory: string;
   fontSize: number;
+  fontFamily: string;
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   theme: ThemeName;

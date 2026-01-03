@@ -10,7 +10,7 @@ namespace Ai.Tlbx.MiddleManager.TtyHost;
 
 public static class Program
 {
-    public const string Version = "4.3.6";
+    public const string Version = "4.3.7";
 
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),

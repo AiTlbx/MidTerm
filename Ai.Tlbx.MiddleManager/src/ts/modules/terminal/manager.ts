@@ -79,11 +79,12 @@ export function getTerminalOptions(): object {
   const baseFontSize = currentSettings?.fontSize ?? 14;
   const fontSize = isMobile ? Math.max(baseFontSize - 2, 10) : baseFontSize;
   const themeName = currentSettings?.theme ?? 'dark';
+  const fontFamily = currentSettings?.fontFamily ?? 'Cascadia Code';
 
   const options: Record<string, unknown> = {
     cursorBlink: currentSettings?.cursorBlink ?? true,
     cursorStyle: currentSettings?.cursorStyle ?? 'bar',
-    fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
+    fontFamily: `'${fontFamily}', 'Cascadia Mono', Consolas, 'Courier New', monospace`,
     fontSize: fontSize,
     letterSpacing: 0,
     lineHeight: 1,

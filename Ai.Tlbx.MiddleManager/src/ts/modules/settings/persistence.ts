@@ -83,6 +83,7 @@ export function populateSettingsForm(settings: Settings): void {
   setElementValue('setting-default-shell', settings.defaultShell || 'Pwsh');
   setElementValue('setting-working-dir', settings.defaultWorkingDirectory || '');
   setElementValue('setting-font-size', settings.fontSize || 14);
+  setElementValue('setting-font-family', settings.fontFamily || 'Cascadia Code');
   setElementValue('setting-cursor-style', settings.cursorStyle || 'bar');
   setElementChecked('setting-cursor-blink', settings.cursorBlink !== false);
   setElementValue('setting-theme', settings.theme || 'dark');
@@ -117,6 +118,9 @@ export async function fetchSettings(): Promise<void> {
     populateUserDropdown(users, settings.runAsUser);
     populateSettingsForm(settings);
     populateVersionInfo(version);
+
+    // Apply settings to any terminals that were created before settings loaded
+    applySettingsToTerminals();
   } catch (e) {
     console.error('Error fetching settings:', e);
   }
@@ -129,14 +133,21 @@ function applySettingsToTerminals(): void {
   if (!currentSettings) return;
 
   const theme = THEMES[currentSettings.theme] || THEMES.dark;
+  const fontFamily = `'${currentSettings.fontFamily || 'Cascadia Code'}', 'Cascadia Mono', Consolas, 'Courier New', monospace`;
 
   sessionTerminals.forEach((state: TerminalState) => {
     state.terminal.options.cursorBlink = currentSettings.cursorBlink;
     state.terminal.options.cursorStyle = currentSettings.cursorStyle;
+    state.terminal.options.fontFamily = fontFamily;
     state.terminal.options.fontSize = currentSettings.fontSize;
     state.terminal.options.theme = theme;
     state.terminal.options.minimumContrastRatio = currentSettings.minimumContrastRatio;
     state.terminal.options.smoothScrollDuration = currentSettings.smoothScrolling ? 150 : 0;
+
+    // Trigger re-render after font changes
+    if (state.opened) {
+      state.fitAddon.fit();
+    }
   });
 }
 
@@ -149,6 +160,7 @@ export function saveAllSettings(): void {
     defaultShell: getElementValue('setting-default-shell', 'Pwsh'),
     defaultWorkingDirectory: getElementValue('setting-working-dir', ''),
     fontSize: parseInt(getElementValue('setting-font-size', '14'), 10) || 14,
+    fontFamily: getElementValue('setting-font-family', 'Cascadia Code'),
     cursorStyle: getElementValue('setting-cursor-style', 'bar') as Settings['cursorStyle'],
     cursorBlink: getElementChecked('setting-cursor-blink'),
     theme: getElementValue('setting-theme', 'dark') as ThemeName,

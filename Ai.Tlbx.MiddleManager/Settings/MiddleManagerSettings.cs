@@ -25,6 +25,7 @@ namespace Ai.Tlbx.MiddleManager.Settings
 
         // Terminal Appearance
         public int FontSize { get; set; } = 14;
+        public string FontFamily { get; set; } = "Cascadia Code";
         public string CursorStyle { get; set; } = "bar";
         public bool CursorBlink { get; set; } = true;
         public string Theme { get; set; } = "dark";
