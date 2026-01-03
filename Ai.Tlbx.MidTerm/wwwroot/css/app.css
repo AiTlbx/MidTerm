@@ -162,6 +162,26 @@ html, body {
 .session-list {
     flex: 1;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(122, 162, 247, 0.25) var(--bg-sidebar);
+}
+
+.session-list::-webkit-scrollbar {
+    width: 8px;
+    background: transparent;
+}
+
+.session-list::-webkit-scrollbar-track {
+    background: var(--bg-sidebar);
+}
+
+.session-list::-webkit-scrollbar-thumb {
+    background: rgba(122, 162, 247, 0.25);
+    border-radius: 4px;
+}
+
+.session-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(122, 162, 247, 0.4);
 }
 
 .session-item {

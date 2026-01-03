@@ -107,7 +107,7 @@ prompt_service_mode() {
     echo -e "      ${GREEN}- No special permissions needed${NC}"
     echo ""
 
-    read -p "  Your choice [1/2]: " choice
+    read -p "  Your choice [1/2]: " choice < /dev/tty
     case "$choice" in
         2)
             SERVICE_MODE=false
@@ -141,9 +141,9 @@ prompt_password() {
     local attempt=0
 
     while [ $attempt -lt $max_attempts ]; do
-        read -s -p "  Enter password: " password
+        read -s -p "  Enter password: " password < /dev/tty
         echo
-        read -s -p "  Confirm password: " confirm
+        read -s -p "  Confirm password: " confirm < /dev/tty
         echo
 
         if [ "$password" != "$confirm" ]; then
@@ -184,7 +184,7 @@ prompt_network_config() {
     echo ""
 
     # Port configuration
-    read -p "  Port number [2000]: " port_input
+    read -p "  Port number [2000]: " port_input < /dev/tty
     if [ -z "$port_input" ]; then
         PORT=2000
     elif [[ "$port_input" =~ ^[0-9]+$ ]] && [ "$port_input" -ge 1 ] && [ "$port_input" -le 65535 ]; then
@@ -205,7 +205,7 @@ prompt_network_config() {
     echo -e "      ${GREEN}- More secure, no network exposure${NC}"
     echo ""
 
-    read -p "  Your choice [1/2]: " bind_choice
+    read -p "  Your choice [1/2]: " bind_choice < /dev/tty
 
     if [ "$bind_choice" = "2" ]; then
         BIND_ADDRESS="127.0.0.1"
