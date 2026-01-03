@@ -19,7 +19,7 @@ import {
   sessions
 } from '../../state';
 import { getClipboardStyle } from '../../utils';
-import { applyTerminalScaling } from './scaling';
+import { applyTerminalScaling, fitSessionToScreen } from './scaling';
 
 declare const Terminal: any;
 declare const FitAddon: any;
@@ -190,11 +190,8 @@ export function createTerminalForSession(
     requestAnimationFrame(() => {
       if (!sessionTerminals.has(sessionId)) return; // Session was deleted
 
-      // Resize to server dimensions (not local fit) if known
-      if (state.serverCols > 0 && state.serverRows > 0) {
-        terminal.resize(state.serverCols, state.serverRows);
-        applyTerminalScaling(sessionId, state);
-      }
+      // Fit terminal to current viewport using actual measured cell dimensions
+      fitSessionToScreen(sessionId);
 
       setupTerminalEvents(sessionId, terminal, container);
     });

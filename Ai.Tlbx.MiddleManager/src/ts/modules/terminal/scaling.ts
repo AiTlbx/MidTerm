@@ -11,7 +11,6 @@ import {
   fontsReadyPromise,
   dom
 } from '../../state';
-import { debounce } from '../../utils';
 
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, terminal: any) => void = () => {};
@@ -102,16 +101,21 @@ export function applyTerminalScaling(sessionId: string, state: TerminalState): v
 }
 
 /**
+ * Recalculate scaling for all open terminals
+ */
+export function rescaleAllTerminals(): void {
+  sessionTerminals.forEach((state, sessionId) => {
+    if (state.opened) {
+      applyTerminalScaling(sessionId, state);
+    }
+  });
+}
+
+/**
  * Set up resize observer to recalculate scaling when window resizes
  */
 export function setupResizeObserver(): void {
-  window.addEventListener('resize', debounce(() => {
-    sessionTerminals.forEach((state, sessionId) => {
-      if (state.opened) {
-        applyTerminalScaling(sessionId, state);
-      }
-    });
-  }, 100));
+  window.addEventListener('resize', rescaleAllTerminals);
 }
 
 /**
