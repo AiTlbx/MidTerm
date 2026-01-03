@@ -44,8 +44,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install esbuild
-        run: npm install -g esbuild
+      - name: Install npm dependencies
+        run: npm ci
 
       - name: Publish Web Server (mt)
         run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true
