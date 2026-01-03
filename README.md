@@ -1,5 +1,3 @@
-<img src="docs/icon.png" width="80" align="left" style="margin-right: 16px">
-
 # MidTerm
 
 [![GitHub Release](https://img.shields.io/github/v/release/AiTlbx/MidTerm)](https://github.com/AiTlbx/MidTerm/releases/latest)

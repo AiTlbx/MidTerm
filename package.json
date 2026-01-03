@@ -1,0 +1,13 @@
+{
+  "name": "midterm",
+  "private": true,
+  "description": "Frontend build dependencies for MidTerm",
+  "scripts": {
+    "build": "esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
+    "build:dev": "esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=external --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
+    "watch": "esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --sourcemap=external --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020 --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

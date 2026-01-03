@@ -111,19 +111,22 @@ html, body {
 .sidebar-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    position: relative;
     padding: 10px 12px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .sidebar-title {
-    flex: 1;
     font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+.sidebar-collapse-btn {
+    position: absolute;
+    left: 12px;
 }
 
 .add-session-btn {
@@ -951,6 +954,8 @@ html, body {
 
 /* Sidebar header buttons */
 .sidebar-header-buttons {
+    position: absolute;
+    right: 12px;
     display: flex;
     gap: 6px;
 }
