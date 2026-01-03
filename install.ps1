@@ -6,6 +6,8 @@ param(
     [string]$RunAsUser,
     [string]$RunAsUserSid,
     [string]$PasswordHash,
+    [int]$Port = 2000,
+    [string]$BindAddress = "",
     [switch]$ServiceMode
 )
 
@@ -124,6 +126,61 @@ function Prompt-Password
     exit 1
 }
 
+function Prompt-NetworkConfig
+{
+    Write-Host ""
+    Write-Host "  Network Configuration:" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Port configuration
+    $portInput = Read-Host "  Port number [2000]"
+    if ([string]::IsNullOrWhiteSpace($portInput))
+    {
+        $port = 2000
+    }
+    else
+    {
+        $port = [int]$portInput
+        if ($port -lt 1 -or $port -gt 65535)
+        {
+            Write-Host "  Invalid port, using default 2000" -ForegroundColor Yellow
+            $port = 2000
+        }
+    }
+
+    Write-Host ""
+    Write-Host "  Network binding:" -ForegroundColor White
+    Write-Host "  [1] Accept connections from anywhere (default)" -ForegroundColor Cyan
+    Write-Host "      - Access from other devices on your network" -ForegroundColor Gray
+    Write-Host "      - Required for remote access" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  [2] Localhost only" -ForegroundColor Cyan
+    Write-Host "      - Only accessible from this computer" -ForegroundColor Gray
+    Write-Host "      - More secure, no network exposure" -ForegroundColor Green
+    Write-Host ""
+
+    $bindChoice = Read-Host "  Your choice [1/2]"
+
+    if ($bindChoice -eq "2")
+    {
+        $bindAddress = "localhost"
+        Write-Host "  Binding to localhost only" -ForegroundColor Gray
+    }
+    else
+    {
+        $bindAddress = "*"
+        Write-Host ""
+        Write-Host "  Security Warning:" -ForegroundColor Yellow
+        Write-Host "  MidTerm will accept connections from any device on your network." -ForegroundColor Yellow
+        Write-Host "  Ensure your password is strong and consider firewall rules." -ForegroundColor Yellow
+    }
+
+    return @{
+        Port = $port
+        BindAddress = $bindAddress
+    }
+}
+
 function Get-LatestRelease
 {
     Write-Host "Fetching latest release..." -ForegroundColor Gray
@@ -148,7 +205,9 @@ function Write-ServiceSettings
     param(
         [string]$Username,
         [string]$UserSid,
-        [string]$PasswordHash
+        [string]$PasswordHash,
+        [int]$Port = 2000,
+        [string]$BindAddress = "*"
     )
 
     $configDir = "$env:ProgramData\MidTerm"
@@ -167,11 +226,22 @@ function Write-ServiceSettings
         Move-Item -Path $settingsPath -Destination $oldSettingsPath -Force
     }
 
+    # Build the URL based on bind address
+    if ($BindAddress -eq "localhost")
+    {
+        $url = "http://localhost:$Port"
+    }
+    else
+    {
+        $url = "http://*:$Port"
+    }
+
     # Write minimal bootstrap settings - app will migrate user preferences from .old
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
         authenticationEnabled = $true
+        url = $url
     }
 
     if ($PasswordHash)
@@ -183,6 +253,7 @@ function Write-ServiceSettings
     Set-Content -Path $settingsPath -Value $json -Encoding UTF8
 
     Write-Host "  Terminal user: $Username" -ForegroundColor Gray
+    Write-Host "  URL: $url" -ForegroundColor Gray
     if ($PasswordHash) { Write-Host "  Password: configured" -ForegroundColor Gray }
 }
 
@@ -193,7 +264,9 @@ function Install-MidTerm
         [string]$Version,
         [string]$RunAsUser,
         [string]$RunAsUserSid,
-        [string]$PasswordHash
+        [string]$PasswordHash,
+        [int]$Port = 2000,
+        [string]$BindAddress = "*"
     )
 
     if ($AsService)
@@ -235,8 +308,8 @@ function Install-MidTerm
     }
 
     # Download and extract
-    $tempZip = Join-Path $env:TEMP "mm-download.zip"
-    $tempExtract = Join-Path $env:TEMP "mm-extract"
+    $tempZip = Join-Path $env:TEMP "mt-download.zip"
+    $tempExtract = Join-Path $env:TEMP "mt-extract"
 
     Write-Host "Downloading..." -ForegroundColor Gray
     $assetUrl = Get-AssetUrl -Release $script:release
@@ -327,7 +400,7 @@ function Install-MidTerm
         # Write settings with runAsUser info and password
         if ($RunAsUser -and $RunAsUserSid)
         {
-            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash
+            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
         }
 
         Install-AsService -InstallDir $installDir -Version $Version
@@ -344,13 +417,13 @@ function Install-MidTerm
         if ($serviceStatus -eq "Running") { Write-Host "  Service    : Running" -ForegroundColor Green }
         else { Write-Host "  Service    : $serviceStatus" -ForegroundColor Red }
 
-        if ($mmProc) { Write-Host "  mm (web)   : Running (PID $($mmProc.Id))" -ForegroundColor Green }
-        else { Write-Host "  mm (web)   : Starting..." -ForegroundColor Yellow }
+        if ($mmProc) { Write-Host "  mt (web)   : Running (PID $($mmProc.Id))" -ForegroundColor Green }
+        else { Write-Host "  mt (web)   : Starting..." -ForegroundColor Yellow }
 
         # Check health endpoint
         try
         {
-            $health = Invoke-RestMethod -Uri "http://localhost:2000/api/health" -TimeoutSec 5 -ErrorAction Stop
+            $health = Invoke-RestMethod -Uri "http://localhost:$Port/api/health" -TimeoutSec 5 -ErrorAction Stop
             Write-Host ""
             Write-Host "Health Check:" -ForegroundColor Cyan
             if ($health.healthy) { Write-Host "  Status     : Healthy" -ForegroundColor Green }
@@ -361,7 +434,7 @@ function Install-MidTerm
         {
             Write-Host ""
             Write-Host "Health Check:" -ForegroundColor Cyan
-            Write-Host "  Status     : Could not connect to http://localhost:2000" -ForegroundColor Yellow
+            Write-Host "  Status     : Could not connect to http://localhost:$Port" -ForegroundColor Yellow
         }
     }
     else
@@ -373,7 +446,7 @@ function Install-MidTerm
     Write-Host "Installation complete!" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Location: $installDir" -ForegroundColor Gray
-    Write-Host "  URL:      http://localhost:2000" -ForegroundColor Cyan
+    Write-Host "  URL:      http://localhost:$Port" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -556,7 +629,7 @@ if ($ServiceMode)
     $version = $script:release.tag_name -replace "^v", ""
     Write-Host "  Latest version: $version" -ForegroundColor White
     Write-Host ""
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
     exit
 }
 
@@ -610,6 +683,11 @@ if ($asService)
         $passwordHash = Prompt-Password -InstallDir $installDir
     }
 
+    # Prompt for network configuration
+    $networkConfig = Prompt-NetworkConfig
+    $port = $networkConfig.Port
+    $bindAddress = $networkConfig.BindAddress
+
     # Check if we need to elevate
     if (-not (Test-Administrator))
     {
@@ -617,7 +695,7 @@ if ($asService)
         Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
 
         # Download script to temp file and run elevated with parameters
-        $tempScript = Join-Path $env:TEMP "mm-install-elevated.ps1"
+        $tempScript = Join-Path $env:TEMP "mt-install-elevated.ps1"
         $scriptUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/install.ps1"
         Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript
 
@@ -630,6 +708,8 @@ if ($asService)
             "-RunAsUser", $currentUser.Name
             "-RunAsUserSid", $currentUser.Sid
             "-PasswordHash", $passwordHash
+            "-Port", $port
+            "-BindAddress", $bindAddress
         )
 
         Start-Process pwsh -ArgumentList $arguments -Verb RunAs -Wait
@@ -638,7 +718,7 @@ if ($asService)
     }
 
     # Already admin, proceed with install
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress
 }
 else
 {
