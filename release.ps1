@@ -9,9 +9,17 @@
 .PARAMETER Message
     What was done in this release (used in commit message)
 
+.PARAMETER PtyBreaking
+    Include this switch when mmttyhost changes are included. Without this switch,
+    only the web version is bumped, allowing terminals to survive the update.
+
 .EXAMPLE
-    .\release.ps1 -Bump patch -Message "Fix installer sc.exe quoting"
-    .\release.ps1 -Bump minor -Message "Add new terminal feature"
+    .\release.ps1 -Bump patch -Message "Fix UI bug"
+    # Web-only release - terminals survive the update
+
+.EXAMPLE
+    .\release.ps1 -Bump patch -Message "Fix PTY issue" -PtyBreaking
+    # Full release - terminals will be restarted
 #>
 
 param(
@@ -20,7 +28,9 @@ param(
     [string]$Bump,
 
     [Parameter(Mandatory=$true)]
-    [string]$Message
+    [string]$Message,
+
+    [switch]$PtyBreaking
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,11 +61,20 @@ switch ($Bump) {
 $newVersion = "$major.$minor.$patch"
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
+# Determine release type
+if ($PtyBreaking) {
+    Write-Host "Release type: FULL (mm + mmttyhost)" -ForegroundColor Yellow
+} else {
+    Write-Host "Release type: Web-only (mm only, sessions preserved)" -ForegroundColor Green
+}
+
 # Update version.json
 $versionJson.web = $newVersion
-$versionJson.pty = $newVersion
+if ($PtyBreaking) {
+    $versionJson.pty = $newVersion
+}
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
-Write-Host "  Updated: version.json" -ForegroundColor Gray
+Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray
 
 # Update web csproj (use flexible regex to handle version mismatch)
 $content = Get-Content $webCsprojPath -Raw
@@ -63,18 +82,23 @@ $content = $content -replace "<Version>\d+\.\d+\.\d+</Version>", "<Version>$newV
 Set-Content $webCsprojPath $content -NoNewline
 Write-Host "  Updated: Ai.Tlbx.MiddleManager.csproj" -ForegroundColor Gray
 
-# Update TtyHost csproj
-$content = Get-Content $ttyHostCsprojPath -Raw
-$content = $content -replace "<Version>\d+\.\d+\.\d+</Version>", "<Version>$newVersion</Version>"
-$content = $content -replace "<FileVersion>\d+\.\d+\.\d+\.\d+</FileVersion>", "<FileVersion>$newVersion.0</FileVersion>"
-Set-Content $ttyHostCsprojPath $content -NoNewline
-Write-Host "  Updated: Ai.Tlbx.MiddleManager.TtyHost.csproj" -ForegroundColor Gray
+# Update TtyHost files only for PTY-breaking changes
+if ($PtyBreaking) {
+    # Update TtyHost csproj
+    $content = Get-Content $ttyHostCsprojPath -Raw
+    $content = $content -replace "<Version>\d+\.\d+\.\d+</Version>", "<Version>$newVersion</Version>"
+    $content = $content -replace "<FileVersion>\d+\.\d+\.\d+\.\d+</FileVersion>", "<FileVersion>$newVersion.0</FileVersion>"
+    Set-Content $ttyHostCsprojPath $content -NoNewline
+    Write-Host "  Updated: Ai.Tlbx.MiddleManager.TtyHost.csproj" -ForegroundColor Gray
 
-# Update TtyHost Program.cs
-$content = Get-Content $ttyHostProgramPath -Raw
-$content = $content -replace 'public const string Version = "\d+\.\d+\.\d+"', "public const string Version = `"$newVersion`""
-Set-Content $ttyHostProgramPath $content -NoNewline
-Write-Host "  Updated: Ai.Tlbx.MiddleManager.TtyHost\Program.cs" -ForegroundColor Gray
+    # Update TtyHost Program.cs
+    $content = Get-Content $ttyHostProgramPath -Raw
+    $content = $content -replace 'public const string Version = "\d+\.\d+\.\d+"', "public const string Version = `"$newVersion`""
+    Set-Content $ttyHostProgramPath $content -NoNewline
+    Write-Host "  Updated: Ai.Tlbx.MiddleManager.TtyHost\Program.cs" -ForegroundColor Gray
+} else {
+    Write-Host "  Skipped: TtyHost files (web-only release)" -ForegroundColor DarkGray
+}
 
 # Git operations
 Write-Host ""

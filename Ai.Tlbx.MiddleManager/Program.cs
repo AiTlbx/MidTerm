@@ -142,7 +142,7 @@ public class Program
             }
 
             Console.WriteLine("Applying update...");
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath());
+            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), update.Type);
             UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
             Console.WriteLine("Update script started. Exiting...");
             updateService.Dispose();
@@ -323,7 +323,7 @@ public class Program
                 return Results.Problem("Failed to download update");
             }
 
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath());
+            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), update.Type);
 
             _ = Task.Run(async () =>
             {
