@@ -194,15 +194,17 @@ export function createTerminal(sessionId: string, session: Session): TerminalSta
 ## Release Process
 
 ```powershell
-.\release.ps1 -Bump patch -Message "Fix bug"
-.\release.ps1 -Bump minor -Message "Add feature"
-.\release.ps1 -Bump major -Message "Breaking change"
-
-# Add -PtyBreaking when mthost changes are included (terminals restart on update)
-.\release.ps1 -Bump patch -Message "Fix PTY issue" -PtyBreaking
+# -InfluencesTtyHost is MANDATORY - forces you to consider protocol/mthost impact
+.\release.ps1 -Bump patch -Message "Fix UI bug" -InfluencesTtyHost no
+.\release.ps1 -Bump minor -Message "Add feature" -InfluencesTtyHost no
+.\release.ps1 -Bump patch -Message "Fix PTY issue" -InfluencesTtyHost yes
 ```
 
-Without `-PtyBreaking`, only the web version is bumped (terminals survive the update). With `-PtyBreaking`, both web and pty versions are bumped together.
+`-InfluencesTtyHost yes` when: TtyHost code, Common/ code, mux protocol, or IPC changed
+`-InfluencesTtyHost no` when: Only frontend, CSS, REST API, or web-only C# changed
+
+With `no`: Only mt version bumped, terminals survive the update.
+With `yes`: Both mt and mthost versions bumped, terminals restart on update.
 
 ## Install System
 

@@ -9,16 +9,32 @@
 .PARAMETER Message
     What was done in this release (used in commit message)
 
-.PARAMETER PtyBreaking
-    Include this switch when mthost changes are included. Without this switch,
-    only the web version is bumped, allowing terminals to survive the update.
+.PARAMETER InfluencesTtyHost
+    MANDATORY: Does this release affect mthost or the protocol between mt and mthost?
+
+    Answer 'yes' if ANY of these are true:
+      - Changed Ai.Tlbx.MidTerm.TtyHost/ code
+      - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol code)
+      - Changed mux WebSocket binary protocol format
+      - Changed named pipe protocol between mt and mthost
+      - Changed session ID encoding/format
+      - Changed any IPC mechanism
+
+    Answer 'no' if ONLY these changed:
+      - TypeScript/frontend code
+      - CSS/HTML
+      - REST API endpoints (not used by mthost)
+      - Web-only C# code (endpoints, auth, settings)
+
+    When 'yes': Both mt and mthost versions bumped, terminals restart on update
+    When 'no':  Only mt version bumped, terminals survive the update
 
 .EXAMPLE
-    .\release.ps1 -Bump patch -Message "Fix UI bug"
+    .\release.ps1 -Bump patch -Message "Fix UI bug" -InfluencesTtyHost no
     # Web-only release - terminals survive the update
 
 .EXAMPLE
-    .\release.ps1 -Bump patch -Message "Fix PTY issue" -PtyBreaking
+    .\release.ps1 -Bump patch -Message "Fix PTY issue" -InfluencesTtyHost yes
     # Full release - terminals will be restarted
 #>
 
@@ -30,7 +46,9 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$Message,
 
-    [switch]$PtyBreaking
+    [Parameter(Mandatory=$true)]
+    [ValidateSet("yes", "no")]
+    [string]$InfluencesTtyHost
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,7 +80,8 @@ $newVersion = "$major.$minor.$patch"
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
 # Determine release type
-if ($PtyBreaking) {
+$isPtyBreaking = $InfluencesTtyHost -eq "yes"
+if ($isPtyBreaking) {
     Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
 } else {
     Write-Host "Release type: Web-only (mt only, sessions preserved)" -ForegroundColor Green
@@ -70,7 +89,7 @@ if ($PtyBreaking) {
 
 # Update version.json
 $versionJson.web = $newVersion
-if ($PtyBreaking) {
+if ($isPtyBreaking) {
     $versionJson.pty = $newVersion
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
@@ -83,7 +102,7 @@ Set-Content $webCsprojPath $content -NoNewline
 Write-Host "  Updated: Ai.Tlbx.MidTerm.csproj" -ForegroundColor Gray
 
 # Update TtyHost files only for PTY-breaking changes
-if ($PtyBreaking) {
+if ($isPtyBreaking) {
     # Update TtyHost csproj
     $content = Get-Content $ttyHostCsprojPath -Raw
     $content = $content -replace "<Version>\d+\.\d+\.\d+</Version>", "<Version>$newVersion</Version>"
