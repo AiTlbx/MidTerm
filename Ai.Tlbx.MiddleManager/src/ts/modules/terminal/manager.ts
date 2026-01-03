@@ -289,6 +289,12 @@ export function setupTerminalEvents(
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.type !== 'keydown') return true;
 
+    // Ctrl+Enter: Send LF (\n) instead of CR (\r) for TUI apps that use it for line breaks
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === 'Enter') {
+      sendInput(sessionId, '\n');
+      return false;
+    }
+
     const style = getClipboardStyle(currentSettings?.clipboardShortcuts ?? 'auto');
 
     if (style === 'windows') {
