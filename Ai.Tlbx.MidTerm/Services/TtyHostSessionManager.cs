@@ -17,15 +17,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
+    private readonly string? _runAsUser;
     private bool _disposed;
 
     public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
 
-    public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null)
+    public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null)
     {
         _expectedTtyHostVersion = expectedVersion ?? TtyHostSpawner.GetTtyHostVersion();
         _minCompatibleVersion = minCompatibleVersion ?? GetMinCompatibleVersionFromManifest();
+        _runAsUser = runAsUser;
     }
 
     private static string? GetMinCompatibleVersionFromManifest()
@@ -268,7 +270,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         var sessionId = Guid.NewGuid().ToString("N")[..8];
 
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, DebugLogger.Enabled, out var processId))
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, DebugLogger.Enabled, _runAsUser, out var processId))
         {
             return null;
         }

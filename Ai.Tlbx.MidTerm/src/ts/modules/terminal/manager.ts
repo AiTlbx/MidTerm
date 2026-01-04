@@ -259,9 +259,10 @@ export function writeOutputFrame(
       console.log(`[BPM] Session ${sessionId}: DISABLED`);
     }
 
-    // Debug: log any escape sequence containing "2004" to catch variants
-    if (text.includes('2004') && (text.includes('\x1b') || text.includes('\u001b'))) {
-      console.log(`[BPM-DEBUG] Found 2004 sequence in output:`, JSON.stringify(text.substring(0, 200)));
+    // Debug: log all CSI ? sequences to see what modes apps request
+    const csiMatch = text.match(/\x1b\[\?(\d+)[hl]/g);
+    if (csiMatch) {
+      console.log(`[CSI-DEBUG] Session ${sessionId}: ${csiMatch.join(', ')}`);
     }
   }
 

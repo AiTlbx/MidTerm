@@ -55,7 +55,7 @@ public class Program
         ConfigureStaticFiles(app);
 
         // Session manager - always uses ConHost (spawned subprocess per terminal)
-        var sessionManager = new TtyHostSessionManager();
+        var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser);
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
         await sessionManager.DiscoverExistingSessionsAsync();
 

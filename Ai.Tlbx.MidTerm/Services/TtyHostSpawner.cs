@@ -38,6 +38,7 @@ public static class TtyHostSpawner
         int cols,
         int rows,
         bool debug,
+        string? runAsUser,
         out int processId)
     {
         processId = 0;
@@ -54,7 +55,7 @@ public static class TtyHostSpawner
 #if WINDOWS
         return SpawnWindows(args, out processId);
 #else
-        return SpawnUnix(args, out processId);
+        return SpawnUnix(args, runAsUser, out processId);
 #endif
 #pragma warning restore CA1416
     }
@@ -78,22 +79,46 @@ public static class TtyHostSpawner
     }
 
 #if !WINDOWS
-    private static bool SpawnUnix(string args, out int processId)
+    private static bool SpawnUnix(string args, string? runAsUser, out int processId)
     {
         processId = 0;
 
         try
         {
-            var psi = new ProcessStartInfo
+            ProcessStartInfo psi;
+
+            // If running as root and runAsUser is configured, use sudo -u to drop privileges
+            var isRoot = Environment.GetEnvironmentVariable("USER") == "root" ||
+                         Environment.GetEnvironmentVariable("EUID") == "0" ||
+                         Environment.GetEnvironmentVariable("SUDO_USER") is not null;
+
+            if (isRoot && !string.IsNullOrEmpty(runAsUser))
             {
-                FileName = TtyHostPath,
-                Arguments = args,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardInput = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false
-            };
+                psi = new ProcessStartInfo
+                {
+                    FileName = "sudo",
+                    Arguments = $"-u {runAsUser} {TtyHostPath} {args}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = false,
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false
+                };
+                Console.WriteLine($"[TtyHostSpawner] Spawning as user: {runAsUser}");
+            }
+            else
+            {
+                psi = new ProcessStartInfo
+                {
+                    FileName = TtyHostPath,
+                    Arguments = args,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = false,
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false
+                };
+            }
 
             var process = Process.Start(psi);
             if (process is null)

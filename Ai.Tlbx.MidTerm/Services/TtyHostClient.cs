@@ -39,6 +39,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     private const int MaxReconnectAttempts = 10;
     private const int InitialReconnectDelayMs = 100;
     private const int MaxReconnectDelayMs = 5000;
+    private const int ReadTimeoutMs = 60000; // 60 seconds - detect stale connections after standby
 
     public string SessionId => _sessionId;
     public bool IsConnected
@@ -355,7 +356,28 @@ public sealed class TtyHostClient : IAsyncDisposable
                 var stream = _stream;
                 if (stream is null) continue;
 
-                var bytesRead = await stream.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
+                // Use timeout on read to detect stale connections after standby/resume
+                // If the pipe is broken, ReadAsync may hang forever without throwing
+                using var readTimeoutCts = new CancellationTokenSource(ReadTimeoutMs);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, readTimeoutCts.Token);
+
+                int bytesRead;
+                try
+                {
+                    bytesRead = await stream.ReadAsync(headerBuffer, linkedCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (readTimeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    // Read timed out - connection may be stale, verify with a ping
+                    Log($"Read timeout after {ReadTimeoutMs}ms - checking connection health");
+                    if (!await CheckConnectionHealthAsync(ct).ConfigureAwait(false))
+                    {
+                        Log("Connection health check failed - triggering reconnect");
+                        HandleDisconnect();
+                    }
+                    continue;
+                }
+
                 DebugLogger.Log($"[READ-LOOP] {_sessionId}: Read {bytesRead} bytes");
                 if (bytesRead == 0)
                 {
@@ -469,6 +491,29 @@ public sealed class TtyHostClient : IAsyncDisposable
             default:
                 Log($"Unknown message type: {msgType}");
                 break;
+        }
+    }
+
+    private async Task<bool> CheckConnectionHealthAsync(CancellationToken ct)
+    {
+        try
+        {
+            // Try to get info with a short timeout - if this fails, connection is dead
+            using var healthCts = new CancellationTokenSource(5000);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, healthCts.Token);
+
+            var msg = TtyHostProtocol.CreateInfoRequest();
+            await WriteWithLockAsync(msg, linkedCts.Token).ConfigureAwait(false);
+
+            // If write succeeded, connection is likely still alive
+            // (if pipe was broken, write would throw)
+            Log("Connection health check passed");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log($"Connection health check failed: {ex.Message}");
+            return false;
         }
     }
 
