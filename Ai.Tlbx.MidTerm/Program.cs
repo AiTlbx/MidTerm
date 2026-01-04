@@ -215,8 +215,12 @@ public class Program
 
     private static string GetVersion()
     {
-        return Assembly.GetExecutingAssembly()
+        var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
+
+        // Strip git hash suffix (e.g., "5.3.5+abc123" -> "5.3.5")
+        var plusIndex = version.IndexOf('+');
+        return plusIndex > 0 ? version[..plusIndex] : version;
     }
 
     private static void ConfigureStaticFiles(WebApplication app)
