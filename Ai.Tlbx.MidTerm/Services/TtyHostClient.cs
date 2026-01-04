@@ -43,6 +43,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     private Task? _readTask;
     private Task? _heartbeatTask;
     private Task? _reconnectTask;
+    private CancellationTokenSource? _readCancellation; // Allows heartbeat to unblock reads instantly
     private bool _disposed;
     private bool _intentionalDisconnect;
     private int _reconnectAttempts;
@@ -50,9 +51,9 @@ public sealed class TtyHostClient : IAsyncDisposable
 
     private TaskCompletionSource<(TtyHostMessageType type, byte[] payload)>? _pendingResponse;
 
-    private const int MaxReconnectAttempts = 10;
+    private const int MaxReconnectAttempts = int.MaxValue; // Never give up - terminal has precious unsaved data
     private const int InitialReconnectDelayMs = 100;
-    private const int MaxReconnectDelayMs = 5000;
+    private const int MaxReconnectDelayMs = 30000; // Cap at 30s between attempts
     private const int HeartbeatIntervalMs = 3000; // Check connection every 3 seconds
     private const int ReadTimeoutMs = 10000; // 10 seconds - shorter now that we have heartbeat
 
@@ -372,15 +373,25 @@ public sealed class TtyHostClient : IAsyncDisposable
                 var stream = _stream;
                 if (stream is null) continue;
 
+                // Create cancellation that heartbeat can use to unblock us immediately
+                _readCancellation?.Dispose();
+                _readCancellation = new CancellationTokenSource();
+
                 // Use timeout on read to detect stale connections after standby/resume
                 // If the pipe is broken, ReadAsync may hang forever without throwing
                 using var readTimeoutCts = new CancellationTokenSource(ReadTimeoutMs);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, readTimeoutCts.Token);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, readTimeoutCts.Token, _readCancellation.Token);
 
                 int bytesRead;
                 try
                 {
                     bytesRead = await stream.ReadAsync(headerBuffer, linkedCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (_readCancellation?.IsCancellationRequested == true && !ct.IsCancellationRequested)
+                {
+                    // Heartbeat cancelled us - reconnect is already triggered, just continue to pick up new stream
+                    Log("Read cancelled by heartbeat - reconnecting");
+                    continue;
                 }
                 catch (OperationCanceledException) when (readTimeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
                 {
@@ -556,7 +567,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                         {
                             var error = Marshal.GetLastWin32Error();
                             Log($"PeekNamedPipe failed (error {error}) - pipe is stale");
-                            HandleDisconnect();
+                            CancelReadAndReconnect();
                         }
                     }
                     catch (ObjectDisposedException)
@@ -575,12 +586,12 @@ public sealed class TtyHostClient : IAsyncDisposable
                         if (socket.Poll(0, SelectMode.SelectError))
                         {
                             Log("Socket poll detected error - connection stale");
-                            HandleDisconnect();
+                            CancelReadAndReconnect();
                         }
                     }
                     catch (SocketException)
                     {
-                        HandleDisconnect();
+                        CancelReadAndReconnect();
                     }
                     catch (ObjectDisposedException)
                     {
@@ -598,6 +609,13 @@ public sealed class TtyHostClient : IAsyncDisposable
                 DebugLogger.Log($"[HEARTBEAT] {_sessionId}: Error: {ex.Message}");
             }
         }
+    }
+
+    private void CancelReadAndReconnect()
+    {
+        // Cancel any pending read immediately so we can reconnect faster
+        try { _readCancellation?.Cancel(); } catch { }
+        HandleDisconnect();
     }
 
     private void HandleDisconnect()
@@ -751,6 +769,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
 
         _cts?.Dispose();
+        _readCancellation?.Dispose();
         _writeLock.Dispose();
         _requestLock.Dispose();
 
