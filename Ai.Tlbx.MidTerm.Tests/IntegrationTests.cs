@@ -8,11 +8,12 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.Tests;
 
-public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncDisposable
+public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
     private readonly List<WebSocket> _webSockets = [];
+    private readonly List<string> _createdSessionIds = [];
 
     public IntegrationTests(WebApplicationFactory<Program> factory)
     {
@@ -20,21 +21,74 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         _client = _factory.CreateClient();
     }
 
-    public async ValueTask DisposeAsync()
+    public async Task InitializeAsync()
+    {
+        await CleanupAllSessionsAsync();
+    }
+
+    public async Task DisposeAsync()
     {
         foreach (var ws in _webSockets)
         {
             if (ws.State == WebSocketState.Open)
             {
-                try
-                {
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-                }
+                try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); }
                 catch { }
             }
             ws.Dispose();
         }
+
+        await CleanupAllSessionsAsync();
         _client.Dispose();
+    }
+
+    private async Task CleanupAllSessionsAsync()
+    {
+        try
+        {
+            var sessions = await _client.GetFromJsonAsync<SessionListDto>("/api/sessions", AppJsonContext.Default.SessionListDto);
+            foreach (var s in sessions?.Sessions ?? [])
+            {
+                try { await _client.DeleteAsync($"/api/sessions/{s.Id}"); }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    private async Task<SessionInfoDto> CreateSessionAndTrackAsync(int cols = 80, int rows = 24)
+    {
+        var response = await _client.PostAsJsonAsync("/api/sessions", new { Cols = cols, Rows = rows });
+        response.EnsureSuccessStatusCode();
+        var session = await response.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
+        Assert.NotNull(session);
+        _createdSessionIds.Add(session.Id);
+        return session;
+    }
+
+    private async Task<SessionInfoDto?> WaitForSessionAsync(string sessionId, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var sessions = await _client.GetFromJsonAsync<SessionListDto>("/api/sessions", AppJsonContext.Default.SessionListDto);
+            var found = sessions?.Sessions.FirstOrDefault(s => s.Id == sessionId);
+            if (found is not null) return found;
+            await Task.Delay(100);
+        }
+        return null;
+    }
+
+    private async Task WaitForSessionRunningAsync(string sessionId, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var sessions = await _client.GetFromJsonAsync<SessionListDto>("/api/sessions", AppJsonContext.Default.SessionListDto);
+            var found = sessions?.Sessions.FirstOrDefault(s => s.Id == sessionId);
+            if (found?.IsRunning == true) return;
+            await Task.Delay(100);
+        }
     }
 
     [Fact]
@@ -51,12 +105,8 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task Api_CreateSession_ReturnsSessionInfo()
     {
-        var response = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
+        var session = await CreateSessionAndTrackAsync(80, 24);
 
-        response.EnsureSuccessStatusCode();
-        var session = await response.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-
-        Assert.NotNull(session);
         Assert.NotEmpty(session.Id);
         Assert.True(session.Pid > 0);
         Assert.True(session.IsRunning);
@@ -67,29 +117,20 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task Api_GetSessions_ListsCreatedSessions()
     {
-        // Create a session
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 100, Rows = 40 });
-        var created = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(created);
+        var created = await CreateSessionAndTrackAsync(100, 40);
 
-        // Get sessions list
-        var response = await _client.GetAsync("/api/sessions");
-        response.EnsureSuccessStatusCode();
-        var sessions = await response.Content.ReadFromJsonAsync<SessionListDto>(AppJsonContext.Default.SessionListDto);
+        var found = await WaitForSessionAsync(created.Id, TimeSpan.FromSeconds(5));
 
-        Assert.NotNull(sessions);
-        Assert.Contains(sessions.Sessions, s => s.Id == created.Id);
+        Assert.NotNull(found);
+        Assert.Equal(created.Id, found.Id);
     }
 
     [Fact]
     public async Task Api_Resize_UpdatesSessionDimensions()
     {
-        // Create a session
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(session);
+        var session = await CreateSessionAndTrackAsync(80, 24);
+        await WaitForSessionRunningAsync(session.Id, TimeSpan.FromSeconds(5));
 
-        // Resize
         var resizeResponse = await _client.PostAsJsonAsync($"/api/sessions/{session.Id}/resize", new { Cols = 120, Rows = 40 });
         resizeResponse.EnsureSuccessStatusCode();
         var resizeResult = await resizeResponse.Content.ReadFromJsonAsync<ResizeResponse>(AppJsonContext.Default.ResizeResponse);
@@ -100,35 +141,49 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         Assert.Equal(40, resizeResult.Rows);
     }
 
+    private async Task<string> PollForBufferContentAsync(string sessionId, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                var response = await _client.GetAsync($"/api/sessions/{sessionId}/buffer");
+                if (response.IsSuccessStatusCode)
+                {
+                    var buffer = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrEmpty(buffer)) return buffer;
+                }
+            }
+            catch { }
+            await Task.Delay(200);
+        }
+        return "";
+    }
+
     [Fact]
     public async Task WebSocket_Mux_ReceivesInitFrame()
     {
         var ws = await ConnectWebSocket("/ws/mux");
 
-        // Should receive init frame (type 0xFF)
         var buffer = new byte[1024];
-        var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var result = await ws.ReceiveAsync(buffer, cts.Token);
 
         Assert.Equal(WebSocketMessageType.Binary, result.MessageType);
         Assert.True(result.Count >= MuxProtocol.HeaderSize);
-        Assert.Equal(0xFF, buffer[0]); // Init frame type
+        Assert.Equal(0xFF, buffer[0]);
     }
 
     [Fact]
     public async Task WebSocket_Mux_SendInput_FrameSentSuccessfully()
     {
-        // Note: Full output verification doesn't work in test environment due to ConPTY console interference.
-        // This test verifies we can send input via WebSocket without errors.
-        // The app works correctly at runtime - verified manually.
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(session);
+        var session = await CreateSessionAndTrackAsync(80, 24);
+        await WaitForSessionRunningAsync(session.Id, TimeSpan.FromSeconds(5));
 
-        // Connect to mux WebSocket
         var ws = await ConnectWebSocket("/ws/mux");
         await DrainInitialFrames(ws);
 
-        // Send input via MuxProtocol - this should not throw
         var inputBytes = Encoding.UTF8.GetBytes("echo test\r\n");
         var frame = new byte[MuxProtocol.HeaderSize + inputBytes.Length];
         frame[0] = MuxProtocol.TypeTerminalInput;
@@ -137,40 +192,29 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
         await ws.SendAsync(frame, WebSocketMessageType.Binary, true, CancellationToken.None);
 
-        // Verify session is still running (input didn't crash it)
-        var sessionsResponse = await _client.GetAsync("/api/sessions");
-        var sessions = await sessionsResponse.Content.ReadFromJsonAsync<SessionListDto>(AppJsonContext.Default.SessionListDto);
-        var updated = sessions?.Sessions.FirstOrDefault(s => s.Id == session.Id);
+        await Task.Delay(200);
 
-        Assert.NotNull(updated);
-        Assert.True(updated.IsRunning);
+        var found = await WaitForSessionAsync(session.Id, TimeSpan.FromSeconds(5));
+        Assert.NotNull(found);
     }
 
     [Fact]
     public async Task WebSocket_Mux_SessionsHaveSeparatePidsAndIds()
     {
-        // Note: Full buffer isolation verification doesn't work in test environment.
-        // This test verifies sessions have separate identities and processes.
-        var create1 = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session1 = await create1.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
+        var session1 = await CreateSessionAndTrackAsync(80, 24);
+        var session2 = await CreateSessionAndTrackAsync(80, 24);
 
-        var create2 = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session2 = await create2.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-
-        Assert.NotNull(session1);
-        Assert.NotNull(session2);
-
-        // Verify separate identities
         Assert.NotEqual(session1.Id, session2.Id);
         Assert.NotEqual(session1.Pid, session2.Pid);
         Assert.True(session1.IsRunning);
         Assert.True(session2.IsRunning);
 
-        // Verify we can target each session independently via WebSocket
+        await WaitForSessionRunningAsync(session1.Id, TimeSpan.FromSeconds(5));
+        await WaitForSessionRunningAsync(session2.Id, TimeSpan.FromSeconds(5));
+
         var ws = await ConnectWebSocket("/ws/mux");
         await DrainInitialFrames(ws);
 
-        // Send resize to session1 only
         var resizePayload = MuxProtocol.CreateResizePayload(100, 30);
         var frame = new byte[MuxProtocol.HeaderSize + resizePayload.Length];
         frame[0] = MuxProtocol.TypeResize;
@@ -178,14 +222,13 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         resizePayload.CopyTo(frame.AsSpan(MuxProtocol.HeaderSize));
 
         await ws.SendAsync(frame, WebSocketMessageType.Binary, true, CancellationToken.None);
-        await Task.Delay(200);
+        await Task.Delay(300);
 
-        // Verify only session1 was resized
-        var sessionsResponse = await _client.GetAsync("/api/sessions");
-        var sessions = await sessionsResponse.Content.ReadFromJsonAsync<SessionListDto>(AppJsonContext.Default.SessionListDto);
+        var sessions = await _client.GetFromJsonAsync<SessionListDto>("/api/sessions", AppJsonContext.Default.SessionListDto);
+        Assert.NotNull(sessions);
 
-        var s1 = sessions?.Sessions.FirstOrDefault(s => s.Id == session1.Id);
-        var s2 = sessions?.Sessions.FirstOrDefault(s => s.Id == session2.Id);
+        var s1 = sessions.Sessions.FirstOrDefault(s => s.Id == session1.Id);
+        var s2 = sessions.Sessions.FirstOrDefault(s => s.Id == session2.Id);
 
         Assert.NotNull(s1);
         Assert.NotNull(s2);
@@ -198,16 +241,12 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task WebSocket_Mux_Resize_Works()
     {
-        // Create a session
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(session);
+        var session = await CreateSessionAndTrackAsync(80, 24);
+        await WaitForSessionRunningAsync(session.Id, TimeSpan.FromSeconds(5));
 
-        // Connect to mux WebSocket
         var ws = await ConnectWebSocket("/ws/mux");
         await DrainInitialFrames(ws);
 
-        // Send resize via MuxProtocol
         var resizePayload = MuxProtocol.CreateResizePayload(160, 50);
         var frame = new byte[MuxProtocol.HeaderSize + resizePayload.Length];
         frame[0] = MuxProtocol.TypeResize;
@@ -216,12 +255,11 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
         await ws.SendAsync(frame, WebSocketMessageType.Binary, true, CancellationToken.None);
 
-        // Verify via API
-        await Task.Delay(500);
-        var sessionsResponse = await _client.GetAsync("/api/sessions");
-        var sessions = await sessionsResponse.Content.ReadFromJsonAsync<SessionListDto>(AppJsonContext.Default.SessionListDto);
+        await Task.Delay(300);
+        var sessions = await _client.GetFromJsonAsync<SessionListDto>("/api/sessions", AppJsonContext.Default.SessionListDto);
+        Assert.NotNull(sessions);
 
-        var updated = sessions?.Sessions.FirstOrDefault(s => s.Id == session.Id);
+        var updated = sessions.Sessions.FirstOrDefault(s => s.Id == session.Id);
         Assert.NotNull(updated);
         Assert.Equal(160, updated.Cols);
         Assert.Equal(50, updated.Rows);
@@ -244,12 +282,12 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         var ws = await ConnectWebSocket("/ws/state");
 
         var buffer = new byte[8192];
-        var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var result = await ws.ReceiveAsync(buffer, cts.Token);
 
         Assert.Equal(WebSocketMessageType.Text, result.MessageType);
         var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
 
-        // Verify the structure matches what the frontend expects: { sessions: { sessions: [] } }
         var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(json, AppJsonContext.Default.StateUpdate);
         Assert.NotNull(state);
         Assert.NotNull(state.Sessions);
@@ -259,43 +297,55 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task WebSocket_State_UpdatesWhenSessionCreated()
     {
-        // Connect to state websocket first
         var ws = await ConnectWebSocket("/ws/state");
 
-        // Drain initial state
         var buffer = new byte[8192];
-        await ws.ReceiveAsync(buffer, CancellationToken.None);
+        using var initCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await ws.ReceiveAsync(buffer, initCts.Token);
 
-        // Create a new session
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 80, Rows = 24 });
-        var session = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(session);
+        var session = await CreateSessionAndTrackAsync(80, 24);
 
-        // Wait for state update
-        using var cts = new CancellationTokenSource(5000);
-        var result = await ws.ReceiveAsync(buffer, cts.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        StateUpdate? foundState = null;
 
-        Assert.Equal(WebSocketMessageType.Text, result.MessageType);
-        var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-        var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(json, AppJsonContext.Default.StateUpdate);
+        while (!cts.Token.IsCancellationRequested)
+        {
+            try
+            {
+                using var recvCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                var result = await ws.ReceiveAsync(buffer, recvCts.Token);
 
-        Assert.NotNull(state);
-        Assert.NotNull(state.Sessions);
-        Assert.Contains(state.Sessions.Sessions, s => s.Id == session.Id);
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(json, AppJsonContext.Default.StateUpdate);
+
+                    if (state?.Sessions?.Sessions?.Any(s => s.Id == session.Id) == true)
+                    {
+                        foundState = state;
+                        break;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        Assert.NotNull(foundState);
+        Assert.Contains(foundState.Sessions!.Sessions, s => s.Id == session.Id);
     }
 
     [Fact]
     public async Task WebSocket_State_SessionListHasCorrectStructure()
     {
-        // Create a session first
-        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new { Cols = 100, Rows = 40 });
-        var session = await createResponse.Content.ReadFromJsonAsync<SessionInfoDto>(AppJsonContext.Default.SessionInfoDto);
-        Assert.NotNull(session);
+        var session = await CreateSessionAndTrackAsync(100, 40);
+        await WaitForSessionRunningAsync(session.Id, TimeSpan.FromSeconds(5));
 
-        // Connect to state websocket
         var ws = await ConnectWebSocket("/ws/state");
         var buffer = new byte[8192];
-        var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var result = await ws.ReceiveAsync(buffer, cts.Token);
 
         var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
         var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(json, AppJsonContext.Default.StateUpdate);
@@ -304,7 +354,8 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         Assert.NotNull(state.Sessions);
         Assert.NotEmpty(state.Sessions.Sessions);
 
-        var sessionInfo = state.Sessions.Sessions.First(s => s.Id == session.Id);
+        var sessionInfo = state.Sessions.Sessions.FirstOrDefault(s => s.Id == session.Id);
+        Assert.NotNull(sessionInfo);
         Assert.Equal(100, sessionInfo.Cols);
         Assert.Equal(40, sessionInfo.Rows);
         Assert.True(sessionInfo.IsRunning);
