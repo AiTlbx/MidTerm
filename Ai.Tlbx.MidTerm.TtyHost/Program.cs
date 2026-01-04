@@ -1,5 +1,12 @@
 using System.Buffers;
 using System.Text;
+#if WINDOWS
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+using System.IO.Pipes;
+#else
+using System.Net.Sockets;
+#endif
 using Ai.Tlbx.MidTerm.Common.Ipc;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Shells;
@@ -10,7 +17,21 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.0.3";
+    public const string Version = "5.2.6";
+
+#if WINDOWS
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool PeekNamedPipe(
+        SafePipeHandle hNamedPipe,
+        IntPtr lpBuffer,
+        uint nBufferSize,
+        IntPtr lpBytesRead,
+        out uint lpTotalBytesAvail,
+        IntPtr lpBytesLeftThisMessage);
+#endif
+
+    private const int HeartbeatIntervalMs = 3000;
+    private const int ReadTimeoutMs = 10000;
 
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -177,6 +198,10 @@ public static class Program
         var handshakeComplete = false;
         var stream = client.Stream;
 
+        // CTS that heartbeat can cancel to terminate message processing
+        using var clientCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var heartbeatTask = HeartbeatLoopAsync(client, clientCts);
+
         try
         {
             void OnOutput(ReadOnlyMemory<byte> data)
@@ -281,7 +306,7 @@ public static class Program
 
             try
             {
-                await ProcessMessagesAsync(session, stream, ct, () =>
+                await ProcessMessagesAsync(session, stream, clientCts.Token, () =>
                 {
                     OnHandshakeComplete();
                     session.OnStateChanged += OnStateChange; // Subscribe after handshake
@@ -300,9 +325,81 @@ public static class Program
         }
         finally
         {
+            clientCts.Cancel();
+            try { await heartbeatTask.ConfigureAwait(false); } catch { }
             try { client.Dispose(); }
             catch (Exception disposeEx) { LogException("HandleClient.ClientDispose", disposeEx); }
             Log("Client disconnected");
+        }
+    }
+
+    private static async Task HeartbeatLoopAsync(IIpcClientConnection client, CancellationTokenSource clientCts)
+    {
+        var ct = clientCts.Token;
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(HeartbeatIntervalMs, ct).ConfigureAwait(false);
+
+                if (!client.IsConnected)
+                {
+                    Log("Heartbeat: client disconnected");
+                    clientCts.Cancel();
+                    break;
+                }
+
+#if WINDOWS
+                // Use PeekNamedPipe for instant stale detection on Windows
+                if (client.Stream is NamedPipeServerStream pipe)
+                {
+                    try
+                    {
+                        var handle = pipe.SafePipeHandle;
+                        if (!PeekNamedPipe(handle, IntPtr.Zero, 0, IntPtr.Zero, out _, IntPtr.Zero))
+                        {
+                            var error = Marshal.GetLastWin32Error();
+                            Log($"Heartbeat: PeekNamedPipe failed (error {error}) - pipe stale");
+                            clientCts.Cancel();
+                            break;
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        clientCts.Cancel();
+                        break;
+                    }
+                }
+#else
+                // On Unix, check socket state
+                if (client.Stream is NetworkStream ns)
+                {
+                    try
+                    {
+                        var socket = ns.Socket;
+                        if (socket.Poll(0, SelectMode.SelectError))
+                        {
+                            Log("Heartbeat: socket error detected");
+                            clientCts.Cancel();
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        clientCts.Cancel();
+                        break;
+                    }
+                }
+#endif
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Log($"Heartbeat error: {ex.Message}");
+            }
         }
     }
 
