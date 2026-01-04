@@ -53,6 +53,53 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Ensure we're up to date with remote
+Write-Host "Checking remote status..." -ForegroundColor Cyan
+git fetch origin 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Warning: Could not fetch from remote" -ForegroundColor Yellow
+}
+
+$localCommit = git rev-parse HEAD 2>$null
+$remoteCommit = git rev-parse origin/main 2>$null
+$baseCommit = git merge-base HEAD origin/main 2>$null
+
+if ($localCommit -ne $remoteCommit) {
+    if ($baseCommit -eq $localCommit) {
+        # Local is behind remote - need to pull
+        Write-Host "Local branch is behind remote. Pulling changes..." -ForegroundColor Yellow
+        git pull origin main 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "ERROR: Git pull failed - likely a merge conflict." -ForegroundColor Red
+            Write-Host ""
+            Write-Host "Please resolve manually:" -ForegroundColor Yellow
+            Write-Host "  1. Run: git pull origin main" -ForegroundColor White
+            Write-Host "  2. Resolve any merge conflicts" -ForegroundColor White
+            Write-Host "  3. Run: git add . && git commit" -ForegroundColor White
+            Write-Host "  4. Re-run this release script" -ForegroundColor White
+            Write-Host ""
+            exit 1
+        }
+        Write-Host "Pull successful." -ForegroundColor Green
+    } elseif ($baseCommit -eq $remoteCommit) {
+        # Local is ahead of remote - that's fine, we'll push
+        Write-Host "Local branch is ahead of remote (will push new commits)." -ForegroundColor Gray
+    } else {
+        # Branches have diverged
+        Write-Host ""
+        Write-Host "ERROR: Local and remote branches have diverged." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Please resolve manually:" -ForegroundColor Yellow
+        Write-Host "  1. Run: git pull origin main" -ForegroundColor White
+        Write-Host "  2. Resolve any merge conflicts" -ForegroundColor White
+        Write-Host "  3. Run: git add . && git commit" -ForegroundColor White
+        Write-Host "  4. Re-run this release script" -ForegroundColor White
+        Write-Host ""
+        exit 1
+    }
+}
+
 # Files to update
 $versionJsonPath = "$PSScriptRoot\version.json"
 $webCsprojPath = "$PSScriptRoot\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj"
