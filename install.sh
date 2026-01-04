@@ -133,7 +133,8 @@ get_existing_password_hash() {
     local settings_path="/usr/local/etc/MidTerm/settings.json"
     if [ -f "$settings_path" ]; then
         local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
-        if [ -n "$hash" ] && [ ${#hash} -gt 10 ]; then
+        # Only accept proper PBKDF2 hashes, not empty or __PENDING__
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0
         fi
@@ -304,7 +305,8 @@ get_existing_user_password_hash() {
     local settings_path="$HOME/.MidTerm/settings.json"
     if [ -f "$settings_path" ]; then
         local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
-        if [ -n "$hash" ] && [ ${#hash} -gt 10 ]; then
+        # Only accept proper PBKDF2 hashes, not empty or __PENDING__
+        if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0
         fi
