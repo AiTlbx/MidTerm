@@ -11,6 +11,16 @@ import { activeSessionId } from '../../state';
 let pasteToTerminal: (sessionId: string, data: string) => void = () => {};
 
 /**
+ * Sanitize pasted content to prevent "paste escape" attacks
+ * Removes embedded bracketed paste markers that could prematurely end the paste block
+ */
+function sanitizePasteContent(text: string): string {
+  return text
+    .replace(/\x1b\[200~/g, '')
+    .replace(/\x1b\[201~/g, '');
+}
+
+/**
  * Register callbacks from mux channel and terminal manager
  */
 export function registerFileDropCallbacks(callbacks: {
@@ -62,8 +72,8 @@ async function handleFileDrop(files: FileList): Promise<void> {
   }
 
   if (paths.length > 0) {
-    // Use terminal.paste() which handles bracketed paste mode automatically
-    pasteToTerminal(activeSessionId, paths.join(' '));
+    const joined = sanitizePasteContent(paths.join(' '));
+    pasteToTerminal(activeSessionId, joined);
   }
 }
 
@@ -117,7 +127,7 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
         const file = new File([blob], `clipboard_${timestamp}.jpg`, { type: imageType });
         const path = await uploadFile(sessionId, file);
         if (path) {
-          pasteToTerminal(sessionId, path);
+          pasteToTerminal(sessionId, sanitizePasteContent(path));
           return; // Image handled, don't paste text
         }
       }
@@ -129,7 +139,10 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
   // No image found or image handling failed, paste text
   try {
     const text = await navigator.clipboard.readText();
-    if (text) pasteToTerminal(sessionId, text);
+    if (text) {
+      const sanitized = sanitizePasteContent(text);
+      pasteToTerminal(sessionId, sanitized);
+    }
   } catch {
     // Text paste failed
   }

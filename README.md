@@ -57,7 +57,7 @@ Your PC                          Anywhere
 curl -fsSL https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.sh | bash
 ```
 
-**Windows (PowerShell as Admin):**
+**Windows (PowerShell):**
 ```powershell
 irm https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.ps1 | iex
 ```
@@ -82,17 +82,10 @@ The installer will:
 
 ## Quick Start
 
-```bash
-# Start MidTerm
-./mt                    # macOS/Linux
-mt.exe                  # Windows
-
-# Open in browser
-http://localhost:2000
-
-# Enter your password, then start Claude Code
-claude
-```
+1. Run the one-liner install above
+2. Open [http://localhost:2000](http://localhost:2000) (or the port you chose during setup)
+3. Click the **+** button to create a new terminal
+4. Enjoy working on your terminal from anywhere
 
 ## Security
 

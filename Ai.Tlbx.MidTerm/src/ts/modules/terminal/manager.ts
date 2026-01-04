@@ -37,6 +37,10 @@ let showBellNotification: (sessionId: string) => void = () => {};
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
 
+// Track bracketed paste mode state per session
+// We track this ourselves because xterm.js internal state may not be reliable
+const bracketedPasteState = new Map<string, boolean>();
+
 /**
  * Auto-update session name from shell title (with debounce)
  */
@@ -227,6 +231,20 @@ export function writeOutputFrame(
 ): void {
   const frame = parseOutputFrame(payload);
 
+  // Track bracketed paste mode by detecting escape sequences in output
+  // Apps send \x1b[?2004h to enable and \x1b[?2004l to disable
+  if (frame.data.length > 0) {
+    const text = new TextDecoder().decode(frame.data);
+    if (text.includes('\x1b[?2004h')) {
+      bracketedPasteState.set(sessionId, true);
+      console.log(`[BPM] Session ${sessionId}: ENABLED`);
+    }
+    if (text.includes('\x1b[?2004l')) {
+      bracketedPasteState.set(sessionId, false);
+      console.log(`[BPM] Session ${sessionId}: DISABLED`);
+    }
+  }
+
   // Ensure terminal matches frame dimensions before writing
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const core = (state.terminal as any)._core;
@@ -397,16 +415,33 @@ export function destroyTerminalForSession(sessionId: string): void {
   state.container.remove();
   sessionTerminals.delete(sessionId);
   pendingOutputFrames.delete(sessionId);
+  bracketedPasteState.delete(sessionId);
 }
 
 /**
- * Paste text to a terminal using xterm.js paste() method
- * This respects bracketed paste mode if the application enabled it
+ * Paste text to a terminal, wrapping with bracketed paste markers if enabled
+ * We track BPM state ourselves to ensure reliable paste handling for TUI apps
  */
 export function pasteToTerminal(sessionId: string, data: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
-  state.terminal.paste(data);
+
+  const bpmEnabled = bracketedPasteState.get(sessionId) ?? false;
+
+  // Diagnostic logging
+  const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode;
+  console.log(`[PASTE] sessionId=${sessionId}, ourBPM=${bpmEnabled}, xtermBPM=${xtermBpm}, len=${data.length}`);
+
+  if (bpmEnabled) {
+    // Manually wrap with bracketed paste sequences and send via input
+    // This ensures TUI apps like Claude Code receive the markers
+    const wrapped = '\x1b[200~' + data + '\x1b[201~';
+    sendInput(sessionId, wrapped);
+    console.log('[PASTE] Sent with BPM markers');
+  } else {
+    // No bracketed paste mode - use standard paste
+    state.terminal.paste(data);
+  }
 }
 
 /**
