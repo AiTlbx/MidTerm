@@ -128,12 +128,20 @@ public sealed class SingleInstanceGuard : IDisposable
 
     private static string GetPidFilePath()
     {
-        if (OperatingSystem.IsMacOS())
+        // Running as root (service mode) - use system location
+        if (Environment.GetEnvironmentVariable("USER") == "root" ||
+            Environment.GetEnvironmentVariable("EUID") == "0")
         {
-            return "/usr/local/var/run/midterm.pid";
+            if (OperatingSystem.IsMacOS())
+            {
+                return "/usr/local/var/run/midterm.pid";
+            }
+            return "/var/run/midterm.pid";
         }
 
-        return "/var/run/midterm.pid";
+        // User mode - use home directory
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Path.Combine(home, ".MidTerm", "midterm.pid");
     }
 
     private static bool IsProcessRunning(int pid)
