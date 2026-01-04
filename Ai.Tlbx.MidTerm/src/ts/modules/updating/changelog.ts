@@ -41,7 +41,9 @@ export function showChangelog(): void {
         const date = release.published_at
           ? new Date(release.published_at).toLocaleDateString()
           : '';
-        const notes = release.body || 'No release notes.';
+        // Strip version prefix from body since version is already shown in header
+        const rawNotes = release.body || 'No release notes.';
+        const notes = stripVersionPrefix(rawNotes, version);
 
         html += '<div class="changelog-release">';
         html += '<div class="changelog-version">' + escapeHtml(version) + '</div>';
@@ -71,6 +73,27 @@ export function closeChangelog(): void {
 }
 
 /**
+ * Strip version prefix from release notes
+ *
+ * Removes patterns like "v5.3.0: " or "5.3.0: " from the start of text
+ * since the version is already shown in the header.
+ */
+function stripVersionPrefix(text: string, version: string): string {
+  // Remove leading "v" from version if present for matching
+  const versionNum = version.replace(/^v/, '');
+  // Match "v5.3.0: " or "5.3.0: " at start of text
+  const pattern = new RegExp(`^v?${escapeRegex(versionNum)}:\\s*`, 'i');
+  return text.replace(pattern, '').trim();
+}
+
+/**
+ * Escape special regex characters in a string
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Format markdown text to HTML (basic subset)
  *
  * Supports: headers (## and ###), bold (**text**),
@@ -84,5 +107,7 @@ export function formatMarkdown(text: string): string {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-    .replace(/\n/g, '<br>');
+    .replace(/\n{3,}/g, '\n\n') // Collapse 3+ newlines to 2
+    .replace(/\n\n/g, '<br><br>') // Double newline = paragraph break
+    .replace(/\n/g, '<br>'); // Single newline = line break
 }

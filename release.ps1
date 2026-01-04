@@ -29,6 +29,10 @@
     When 'yes': Both mt and mthost versions bumped, terminals restart on update
     When 'no':  Only mt version bumped, terminals survive the update
 
+.PARAMETER Details
+    Optional array of bullet points for richer changelog.
+    Each item becomes a "- item" line in the commit message.
+
 .EXAMPLE
     .\release.ps1 -Bump patch -Message "Fix UI bug" -InfluencesTtyHost no
     # Web-only release - terminals survive the update
@@ -36,6 +40,13 @@
 .EXAMPLE
     .\release.ps1 -Bump patch -Message "Fix PTY issue" -InfluencesTtyHost yes
     # Full release - terminals will be restarted
+
+.EXAMPLE
+    .\release.ps1 -Bump minor -Message "Memory efficiency improvements" -Details @(
+        "Bounded output queues with drop-oldest",
+        "Dimension-aware buffer sizing"
+    ) -InfluencesTtyHost yes
+    # Release with detailed changelog
 #>
 
 param(
@@ -45,6 +56,9 @@ param(
 
     [Parameter(Mandatory=$true)]
     [string]$Message,
+
+    [Parameter(Mandatory=$false)]
+    [string[]]$Details,
 
     [Parameter(Mandatory=$true)]
     [ValidateSet("yes", "no")]
@@ -173,10 +187,19 @@ Write-Host "Committing and tagging..." -ForegroundColor Cyan
 git add -A
 if ($LASTEXITCODE -ne 0) { throw "git add failed" }
 
-git commit -m "v${newVersion}: $Message"
+# Build commit message (supports multiline with -Details)
+$commitMsg = "v${newVersion}: $Message"
+if ($Details -and $Details.Count -gt 0) {
+    $commitMsg += "`n`n"
+    foreach ($detail in $Details) {
+        $commitMsg += "- $detail`n"
+    }
+}
+
+$commitMsg | git commit -F -
 if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
 
-git tag -a "v$newVersion" -m "v${newVersion}: $Message"
+$commitMsg | git tag -a "v$newVersion" -F -
 if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
 
 git push origin main

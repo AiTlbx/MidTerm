@@ -1433,6 +1433,20 @@ html, body {
     color: var(--accent-orange);
 }
 
+.update-warning {
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+    text-align: center;
+}
+
+.update-warning-safe {
+    color: var(--accent-green);
+}
+
+.update-warning-warn {
+    color: var(--accent-orange);
+}
+
 /* Modal styles */
 .modal {
     position: fixed;

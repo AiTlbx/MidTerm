@@ -6,7 +6,8 @@
  */
 
 import type { UpdateInfo } from '../../types';
-import { updateInfo, setUpdateInfo } from '../../state';
+import { updateInfo, setUpdateInfo, settingsOpen } from '../../state';
+import { openSettings } from '../settings/panel';
 
 const MAX_RELOAD_ATTEMPTS = 30;
 const RELOAD_INTERVAL_MS = 2000;
@@ -118,6 +119,10 @@ export function waitForServerAndReload(): void {
 export function checkForUpdates(): void {
   const btn = document.getElementById('btn-check-updates') as HTMLButtonElement | null;
   const statusEl = document.getElementById('update-status');
+  const warningEl = document.getElementById('update-warning');
+
+  // Remember if settings were open (renderUpdatePanel may close them as side effect)
+  const wasSettingsOpen = settingsOpen;
 
   if (btn) {
     btn.disabled = true;
@@ -135,23 +140,35 @@ export function checkForUpdates(): void {
       setUpdateInfo(update);
       renderUpdatePanel();
 
+      // Restore settings if they were closed unexpectedly
+      if (wasSettingsOpen && !settingsOpen) {
+        openSettings();
+      }
+
       const applyBtn = document.getElementById('btn-apply-update');
       if (statusEl) {
         statusEl.classList.remove('hidden');
         if (update && update.available) {
           statusEl.className = 'update-status update-status-available';
-          let msg = 'Update available: v' + update.latestVersion;
-          if (update.sessionsPreserved) {
-            msg += ' (sessions will stay alive)';
-          } else {
-            msg += ' (sessions will restart)';
-          }
-          statusEl.textContent = msg;
+          statusEl.textContent = 'Update available: v' + update.latestVersion;
           if (applyBtn) applyBtn.classList.remove('hidden');
+
+          // Show warning based on session preservation
+          if (warningEl) {
+            warningEl.classList.remove('hidden');
+            if (update.sessionsPreserved) {
+              warningEl.textContent = 'Sessions will stay alive';
+              warningEl.className = 'update-warning update-warning-safe';
+            } else {
+              warningEl.textContent = 'Save your work - sessions will restart';
+              warningEl.className = 'update-warning update-warning-warn';
+            }
+          }
         } else {
           statusEl.className = 'update-status update-status-current';
           statusEl.textContent = 'You are running the latest version';
           if (applyBtn) applyBtn.classList.add('hidden');
+          if (warningEl) warningEl.classList.add('hidden');
         }
       }
     })
@@ -165,6 +182,7 @@ export function checkForUpdates(): void {
         statusEl.className = 'update-status update-status-error';
         statusEl.textContent = 'Failed to check for updates';
       }
+      if (warningEl) warningEl.classList.add('hidden');
       console.error('Update check error:', e);
     });
 }
