@@ -6,8 +6,25 @@
 .PARAMETER Bump
     Version bump type: major, minor, or patch
 
-.PARAMETER Message
-    What was done in this release (used in commit message)
+.PARAMETER ReleaseTitle
+    A concise title for this release (one line, no version number).
+    This becomes the commit subject and release headline.
+
+    DO NOT include version numbers - they are added automatically from the tag.
+
+    Good: "Bulletproof self-update with rollback support"
+    Bad:  "v5.3.3: Fix bug" (version prefix is redundant)
+
+.PARAMETER ReleaseNotes
+    MANDATORY: Array of detailed changelog entries for this release.
+    These are user-facing release notes shown in the changelog UI.
+
+    Each entry should be a complete sentence explaining:
+    - What changed
+    - Why it matters to users
+    - Any important technical details
+
+    This is NOT optional. Users deserve to know what changed in each release.
 
 .PARAMETER InfluencesTtyHost
     MANDATORY: Does this release affect mthost or the protocol between mt and mthost?
@@ -29,24 +46,29 @@
     When 'yes': Both mt and mthost versions bumped, terminals restart on update
     When 'no':  Only mt version bumped, terminals survive the update
 
-.PARAMETER Details
-    Optional array of bullet points for richer changelog.
-    Each item becomes a "- item" line in the commit message.
+.EXAMPLE
+    .\release.ps1 -Bump patch -ReleaseTitle "Fix settings panel closing unexpectedly" -ReleaseNotes @(
+        "Fixed bug where settings panel would close when checking for updates",
+        "Update button now correctly shows 'Update & Restart' text",
+        "Added session preservation warning in settings panel"
+    ) -InfluencesTtyHost no
 
 .EXAMPLE
-    .\release.ps1 -Bump patch -Message "Fix UI bug" -InfluencesTtyHost no
-    # Web-only release - terminals survive the update
+    .\release.ps1 -Bump minor -ReleaseTitle "Bulletproof self-update with rollback support" -ReleaseNotes @(
+        "Complete rewrite of update script with 6-phase process: stop, wait for locks, backup, install, verify, start",
+        "Automatic rollback to previous version if update fails at any step",
+        "File lock detection with 15 retry attempts before failing",
+        "Copy verification ensures files are correctly written before proceeding",
+        "Detailed logging to update.log for troubleshooting failed updates",
+        "Toast notifications show update success or failure with error details"
+    ) -InfluencesTtyHost no
 
 .EXAMPLE
-    .\release.ps1 -Bump patch -Message "Fix PTY issue" -InfluencesTtyHost yes
-    # Full release - terminals will be restarted
-
-.EXAMPLE
-    .\release.ps1 -Bump minor -Message "Memory efficiency improvements" -Details @(
-        "Bounded output queues with drop-oldest",
-        "Dimension-aware buffer sizing"
+    .\release.ps1 -Bump patch -ReleaseTitle "Fix PTY handle leak on session close" -ReleaseNotes @(
+        "Fixed memory leak where PTY handles were not released when closing sessions",
+        "Improved cleanup sequence ensures all resources are freed",
+        "Affects mthost - terminals will restart during update"
     ) -InfluencesTtyHost yes
-    # Release with detailed changelog
 #>
 
 param(
@@ -54,11 +76,13 @@ param(
     [ValidateSet("major", "minor", "patch")]
     [string]$Bump,
 
-    [Parameter(Mandatory=$true)]
-    [string]$Message,
+    [Parameter(Mandatory=$true, HelpMessage="A concise title for this release (one line, no version number). This is the commit subject and release headline.")]
+    [ValidateNotNullOrEmpty()]
+    [string]$ReleaseTitle,
 
-    [Parameter(Mandatory=$false)]
-    [string[]]$Details,
+    [Parameter(Mandatory=$true, HelpMessage="REQUIRED: Array of detailed changelog entries. Users deserve to know what changed! Each entry should explain what changed and why it matters.")]
+    [ValidateNotNullOrEmpty()]
+    [string[]]$ReleaseNotes,
 
     [Parameter(Mandatory=$true)]
     [ValidateSet("yes", "no")]
@@ -66,6 +90,42 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Validate ReleaseTitle doesn't contain version prefix
+if ($ReleaseTitle -match "^v?\d+\.\d+") {
+    Write-Host ""
+    Write-Host "ERROR: ReleaseTitle should NOT include a version number." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "The version is automatically included from the git tag." -ForegroundColor Yellow
+    Write-Host "Your title: '$ReleaseTitle'" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Good examples:" -ForegroundColor Green
+    Write-Host "  'Fix settings panel closing unexpectedly'" -ForegroundColor White
+    Write-Host "  'Bulletproof self-update with rollback support'" -ForegroundColor White
+    Write-Host ""
+    exit 1
+}
+
+# Validate ReleaseNotes has meaningful content
+if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[0].Length -lt 20)) {
+    Write-Host ""
+    Write-Host "ERROR: ReleaseNotes must contain meaningful changelog entries." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Users read these notes to understand what changed in each release." -ForegroundColor Yellow
+    Write-Host "Each entry should be a complete sentence explaining:" -ForegroundColor Yellow
+    Write-Host "  - What changed" -ForegroundColor White
+    Write-Host "  - Why it matters to users" -ForegroundColor White
+    Write-Host "  - Any important technical details" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Example:" -ForegroundColor Green
+    Write-Host '  -ReleaseNotes @(' -ForegroundColor White
+    Write-Host '      "Fixed bug where settings panel would close when checking for updates",' -ForegroundColor White
+    Write-Host '      "Added automatic rollback if update fails at any step",' -ForegroundColor White
+    Write-Host '      "Toast notifications now show update success or failure with details"' -ForegroundColor White
+    Write-Host '  )' -ForegroundColor White
+    Write-Host ""
+    exit 1
+}
 
 # Ensure we're up to date with remote
 Write-Host "Checking remote status..." -ForegroundColor Cyan
@@ -187,13 +247,11 @@ Write-Host "Committing and tagging..." -ForegroundColor Cyan
 git add -A
 if ($LASTEXITCODE -ne 0) { throw "git add failed" }
 
-# Build commit message (supports multiline with -Details)
-$commitMsg = "v${newVersion}: $Message"
-if ($Details -and $Details.Count -gt 0) {
-    $commitMsg += "`n`n"
-    foreach ($detail in $Details) {
-        $commitMsg += "- $detail`n"
-    }
+# Build commit/tag message: Title + Release Notes
+# Version is in the tag name, not in the message body
+$commitMsg = "$ReleaseTitle`n`n"
+foreach ($note in $ReleaseNotes) {
+    $commitMsg += "- $note`n"
 }
 
 $commitMsg | git commit -F -

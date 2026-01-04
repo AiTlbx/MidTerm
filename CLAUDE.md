@@ -193,18 +193,36 @@ export function createTerminal(sessionId: string, session: Session): TerminalSta
 
 ## Release Process
 
+**IMPORTANT:** Release notes are user-facing documentation shown in the changelog UI. Write detailed, helpful entries that explain what changed and why it matters.
+
 ```powershell
-# -InfluencesTtyHost is MANDATORY - forces you to consider protocol/mthost impact
-.\release.ps1 -Bump patch -Message "Fix UI bug" -InfluencesTtyHost no
-.\release.ps1 -Bump minor -Message "Add feature" -InfluencesTtyHost no
-.\release.ps1 -Bump patch -Message "Fix PTY issue" -InfluencesTtyHost yes
+.\release.ps1 -Bump patch `
+    -ReleaseTitle "Fix settings panel closing unexpectedly" `
+    -ReleaseNotes @(
+        "Fixed bug where settings panel would close when checking for updates",
+        "Update button now correctly shows 'Update & Restart' text",
+        "Added session preservation warning in settings panel"
+    ) `
+    -InfluencesTtyHost no
 ```
 
-`-InfluencesTtyHost yes` when: TtyHost code, Common/ code, mux protocol, or IPC changed
-`-InfluencesTtyHost no` when: Only frontend, CSS, REST API, or web-only C# changed
+**Parameters:**
+- `-ReleaseTitle`: One-line headline (NO version number - it's in the git tag)
+- `-ReleaseNotes`: MANDATORY array of detailed changelog entries. Each entry should be a complete sentence explaining what changed and why.
+- `-InfluencesTtyHost`: `yes` if TtyHost/Common/protocol changed, `no` for frontend/web-only changes
 
-With `no`: Only mt version bumped, terminals survive the update.
-With `yes`: Both mt and mthost versions bumped, terminals restart on update.
+**Good ReleaseNotes examples:**
+- "Fixed bug where settings panel would close when checking for updates"
+- "Complete rewrite of update script with 6-phase process and automatic rollback"
+- "File lock detection with 15 retry attempts prevents failed updates on Windows"
+
+**Bad ReleaseNotes examples:**
+- "Fix bug" (too vague)
+- "Update UI" (what specifically?)
+- "v5.3.4: Changes" (version is redundant, "changes" says nothing)
+
+With `-InfluencesTtyHost no`: Only mt version bumped, terminals survive the update.
+With `-InfluencesTtyHost yes`: Both mt and mthost versions bumped, terminals restart on update.
 
 ## Install System
 
