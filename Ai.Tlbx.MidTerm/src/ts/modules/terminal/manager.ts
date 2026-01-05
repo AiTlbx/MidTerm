@@ -441,11 +441,13 @@ export function pasteToTerminal(sessionId: string, data: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  const bpmEnabled = bracketedPasteState.get(sessionId) ?? false;
+  // Check both our tracking and xterm.js internal state
+  const ourBpm = bracketedPasteState.get(sessionId) ?? false;
+  const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode ?? false;
+  const bpmEnabled = ourBpm || xtermBpm;
 
   // Diagnostic logging
-  const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode;
-  console.log(`[PASTE] sessionId=${sessionId}, ourBPM=${bpmEnabled}, xtermBPM=${xtermBpm}, len=${data.length}`);
+  console.log(`[PASTE] sessionId=${sessionId}, ourBPM=${ourBpm}, xtermBPM=${xtermBpm}, using=${bpmEnabled}, len=${data.length}`);
 
   if (bpmEnabled) {
     // Manually wrap with bracketed paste sequences and send via input
