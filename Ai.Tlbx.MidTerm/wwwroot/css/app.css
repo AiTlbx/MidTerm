@@ -486,19 +486,31 @@ html, body {
     flex-shrink: 0;
 }
 
+/* Thin auto-hide scrollbar for xterm */
 .terminal-container .xterm-viewport {
     overflow-y: auto !important;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.2s;
 }
 
-/* Overlay scrollbar for xterm */
+.terminal-container .xterm-viewport:hover {
+    scrollbar-color: rgba(122, 162, 247, 0.3) transparent;
+}
+
 .terminal-container .xterm-viewport::-webkit-scrollbar {
-    width: 10px;
+    width: 4px;
     background: transparent;
 }
 
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 2px;
+    transition: background 0.2s;
+}
+
+.terminal-container:hover .xterm-viewport::-webkit-scrollbar-thumb {
     background: rgba(122, 162, 247, 0.3);
-    border-radius: 5px;
 }
 
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
