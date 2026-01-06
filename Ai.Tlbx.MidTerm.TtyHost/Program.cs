@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.6.9";
+    public const string Version = "5.6.10";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -145,7 +145,6 @@ public static class Program
 
     // Track current client to disconnect when a new one connects
     private static CancellationTokenSource? _currentClientCts;
-    private static CancellationTokenSource? _linkedClientCts; // Prevent CTS leak from CreateLinkedTokenSource
     private static readonly object _clientLock = new();
 
     private static async Task AcceptClientsAsync(TerminalSession session, string endpoint, CancellationToken ct, Action? onFirstClientSubscribed = null)
@@ -165,15 +164,22 @@ public static class Program
                 Log($"Client #{connectionCount} connected");
 
                 // Cancel any existing client - only one active client per session
+                // Don't dispose immediately - let GC handle it to avoid race conditions
+                // with linked token registrations
+                CancellationTokenSource clientCts;
                 lock (_clientLock)
                 {
-                    _linkedClientCts?.Cancel();
-                    _linkedClientCts?.Dispose();
                     _currentClientCts?.Cancel();
-                    _currentClientCts?.Dispose();
                     _currentClientCts = new CancellationTokenSource();
-                    _linkedClientCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _currentClientCts.Token);
+                    clientCts = _currentClientCts;
                 }
+
+                // Create a linked CTS that combines shutdown token with this client's token
+                // This is created outside the lock and passed directly to HandleClientAsync
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
+                var clientToken = linkedCts.Token;
+
+                Log($"Client #{connectionCount}: CTS created, IsCancellationRequested={clientToken.IsCancellationRequested}");
 
                 // Start the read loop when the first client subscribes to output
                 Action? onSubscribed = null;
@@ -189,7 +195,10 @@ public static class Program
                     };
                 }
 
-                _ = HandleClientAsync(session, client, _linkedClientCts.Token, onSubscribed);
+                // Run HandleClientAsync synchronously (don't fire-and-forget)
+                // This ensures the linked CTS stays alive for the duration of the handler
+                await HandleClientAsync(session, client, clientToken, onSubscribed).ConfigureAwait(false);
+                Log($"Client #{connectionCount} handler completed");
             }
             catch (OperationCanceledException)
             {
@@ -590,7 +599,15 @@ public static class Program
                 LogException($"ProcessMessage.{msgType}", ex);
                 // Continue processing next message instead of breaking the loop
             }
+
+            // Log cancellation state at end of each iteration
+            if (ct.IsCancellationRequested)
+            {
+                Log($"ProcessMessages: Cancellation requested after message #{messageCount}, exiting loop");
+            }
         }
+
+        Log($"ProcessMessages: Loop exited after {messageCount} messages, IsCancellationRequested={ct.IsCancellationRequested}");
     }
 
     private static SessionConfig? ParseArgs(string[] args)
