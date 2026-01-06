@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.6.1";
+    public const string Version = "5.6.8";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -151,6 +151,7 @@ public static class Program
     private static async Task AcceptClientsAsync(TerminalSession session, string endpoint, CancellationToken ct, Action? onFirstClientSubscribed = null)
     {
         var firstClientSubscribed = false;
+        var connectionCount = 0;
 
         using var server = IpcServerFactory.Create(endpoint);
 
@@ -158,9 +159,10 @@ public static class Program
         {
             try
             {
-                Log("Waiting for client connection...");
+                Log($"Waiting for client connection #{connectionCount + 1}...");
                 var client = await server.AcceptAsync(ct).ConfigureAwait(false);
-                Log("Client connected");
+                connectionCount++;
+                Log($"Client #{connectionCount} connected");
 
                 // Cancel any existing client - only one active client per session
                 lock (_clientLock)

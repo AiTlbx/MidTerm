@@ -114,7 +114,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                 _stream = _networkStream;
 #endif
                 _reconnectAttempts = 0;
-                Log($"Connected to {_endpoint}");
+                Log($"Connected to {_endpoint}, IsConnected={IsConnected}");
                 return true;
             }
             catch (TimeoutException)
@@ -146,6 +146,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     public void StartReadLoop()
     {
         if (_readTask is not null) return;
+        Log($"StartReadLoop: IsConnected={IsConnected}");
         _cts = new CancellationTokenSource();
         _readTask = ReadLoopWithReconnectAsync(_cts.Token);
         _heartbeatTask = HeartbeatLoopAsync(_cts.Token);
@@ -379,16 +380,27 @@ public sealed class TtyHostClient : IAsyncDisposable
     private async Task ReadLoopWithReconnectAsync(CancellationToken ct)
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
+        var loopCount = 0;
 
         while (!ct.IsCancellationRequested && !_disposed)
         {
+            loopCount++;
             try
             {
                 if (!IsConnected)
                 {
+                    if (loopCount == 1)
+                    {
+                        Log($"ReadLoop: DISCONNECTED on first iteration!");
+                    }
                     DebugLogger.Log($"[READ-LOOP] {_sessionId}: Not connected, waiting...");
                     await Task.Delay(100, ct).ConfigureAwait(false);
                     continue;
+                }
+
+                if (loopCount == 1)
+                {
+                    Log($"ReadLoop: First iteration, IsConnected=true");
                 }
 
                 var stream = _stream;
