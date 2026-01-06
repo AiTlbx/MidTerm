@@ -50,47 +50,10 @@ export async function parseCompressedOutputFrame(payload: Uint8Array): Promise<O
 
 /**
  * Decompress GZip data using native DecompressionStream API.
+ * Uses Blob/Response pipeline to avoid backpressure deadlock.
  */
 export async function decompressGzip(compressed: Uint8Array): Promise<Uint8Array> {
-  // Gzip magic bytes should be 0x1f 0x8b
-  const magic = compressed.length >= 2 ? `0x${compressed[0].toString(16)} 0x${compressed[1].toString(16)}` : 'N/A';
-  console.log(`[MUX] decompressGzip: starting, input size=${compressed.length}, magic=${magic}`);
-
-  if (compressed.length < 2 || compressed[0] !== 0x1f || compressed[1] !== 0x8b) {
-    console.error('[MUX] decompressGzip: NOT valid gzip data! First 10 bytes:', Array.from(compressed.slice(0, 10)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
-  }
-
-  const ds = new DecompressionStream('gzip');
-  const writer = ds.writable.getWriter();
-  const reader = ds.readable.getReader();
-
-  console.log('[MUX] decompressGzip: writing to stream...');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await writer.write(compressed as any);
-  console.log('[MUX] decompressGzip: write done, closing writer...');
-  await writer.close();
-  console.log('[MUX] decompressGzip: writer closed, reading chunks...');
-
-  const chunks: Uint8Array[] = [];
-  let readCount = 0;
-  while (true) {
-    console.log('[MUX] decompressGzip: reader.read() call #' + (readCount + 1));
-    const { done, value } = await reader.read();
-    readCount++;
-    console.log('[MUX] decompressGzip: read returned, done=' + done + ', valueLen=' + (value?.length ?? 0));
-    if (done) break;
-    chunks.push(value);
-  }
-
-  // Concatenate chunks into single array
-  const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  console.log('[MUX] decompressGzip: done, output size=' + result.length);
-  return result;
+  const blob = new Blob([compressed as BlobPart]);
+  const stream = blob.stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
 }

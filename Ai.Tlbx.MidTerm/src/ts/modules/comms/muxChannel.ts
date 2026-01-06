@@ -62,17 +62,11 @@ interface OutputFrameItem {
 const outputQueue: OutputFrameItem[] = [];
 let processingQueue = false;
 
-// Debug logging - set to true to trace frame processing
-const DEBUG_MUX = true;
-
 /**
  * Queue an output frame and trigger processing.
  * ALL frames go through this queue to guarantee strict ordering.
  */
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
-  if (DEBUG_MUX) {
-    console.log(`[MUX] Queue frame: session=${sessionId}, size=${payload.length}, compressed=${compressed}, queueLen=${outputQueue.length}`);
-  }
   outputQueue.push({ sessionId, payload, compressed });
   processOutputQueue();
 }
@@ -82,23 +76,16 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
  * Frames are processed one at a time - compressed frames block until decompressed.
  */
 async function processOutputQueue(): Promise<void> {
-  if (processingQueue) {
-    if (DEBUG_MUX) console.log('[MUX] processOutputQueue: already processing, returning');
-    return;
-  }
+  if (processingQueue) return;
   processingQueue = true;
-  if (DEBUG_MUX) console.log('[MUX] processOutputQueue: starting, queue length=' + outputQueue.length);
 
   try {
     while (outputQueue.length > 0) {
       const item = outputQueue.shift()!;
-      if (DEBUG_MUX) console.log(`[MUX] Processing frame: session=${item.sessionId}, compressed=${item.compressed}`);
       await processOneFrame(item);
-      if (DEBUG_MUX) console.log(`[MUX] Frame processed, remaining=${outputQueue.length}`);
     }
   } finally {
     processingQueue = false;
-    if (DEBUG_MUX) console.log('[MUX] processOutputQueue: done');
   }
 }
 
@@ -112,26 +99,21 @@ async function processOneFrame(item: OutputFrameItem): Promise<void> {
     let data: Uint8Array;
 
     if (item.compressed) {
-      if (DEBUG_MUX) console.log(`[MUX] Decompressing frame, payload size=${item.payload.length}`);
       const frame = await parseCompressedOutputFrame(item.payload);
       cols = frame.cols;
       rows = frame.rows;
       data = frame.data;
-      if (DEBUG_MUX) console.log(`[MUX] Decompressed: cols=${cols}, rows=${rows}, dataLen=${data.length}`);
     } else {
       const frame = parseOutputFrame(item.payload);
       cols = frame.cols;
       rows = frame.rows;
       data = frame.data;
-      if (DEBUG_MUX) console.log(`[MUX] Parsed uncompressed: cols=${cols}, rows=${rows}, dataLen=${data.length}`);
     }
 
     const state = sessionTerminals.get(item.sessionId);
     if (state && state.opened) {
-      if (DEBUG_MUX) console.log(`[MUX] Writing to terminal: session=${item.sessionId}, dataLen=${data.length}`);
       writeToTerminal(item.sessionId, state, cols, rows, data);
     } else if (data.length > 0) {
-      if (DEBUG_MUX) console.log(`[MUX] Buffering frame (terminal not opened): session=${item.sessionId}`);
       // Buffer for later replay
       const bufferedPayload = new Uint8Array(4 + data.length);
       bufferedPayload[0] = cols & 0xff;
@@ -144,11 +126,9 @@ async function processOneFrame(item: OutputFrameItem): Promise<void> {
         pendingOutputFrames.set(item.sessionId, []);
       }
       pendingOutputFrames.get(item.sessionId)!.push(bufferedPayload);
-    } else {
-      if (DEBUG_MUX) console.log(`[MUX] Skipping empty data frame`);
     }
   } catch (e) {
-    console.error('[MUX] Failed to process frame:', e);
+    console.error('Failed to process frame:', e);
   }
 }
 
