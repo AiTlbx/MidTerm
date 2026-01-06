@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>5.5.13</Version>
+    <Version>5.5.14</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
@@ -83,7 +83,7 @@
   </PropertyGroup>
 
   <!-- Read version from version.json for JS injection -->
-  <Target Name="ReadVersionJson" BeforeTargets="CompileTypeScriptDebug;CompileTypeScriptRelease">
+  <Target Name="ReadVersionJson" BeforeTargets="CompileTypeScript">
     <Exec Command="node -p &quot;require('../version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMsBuild="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
     </Exec>
@@ -91,21 +91,20 @@
 
   <!-- TypeScript type checking (fails build on TS errors) -->
   <!-- Use node directly to avoid Unix permission issues with npx shims in CI -->
-  <Target Name="TypeCheckTypeScript" BeforeTargets="CompileTypeScriptDebug;CompileTypeScriptRelease"
+  <Target Name="TypeCheckTypeScript" BeforeTargets="CompileTypeScript"
           Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
     <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
-  <!-- Debug build: with source map, version injected -->
-  <Target Name="CompileTypeScriptDebug" BeforeTargets="Build;Publish" DependsOnTargets="ReadVersionJson"
-          Condition="'$(Configuration)' == 'Debug' And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
+  <!-- TypeScript compilation - runs before PrepareResources so generated files are included in EmbeddedResource -->
+  <Target Name="CompileTypeScript" BeforeTargets="PrepareResources" DependsOnTargets="ReadVersionJson"
+          Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
     <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
-  </Target>
-
-  <!-- Release build: WITH source map for production debugging, version injected -->
-  <Target Name="CompileTypeScriptRelease" BeforeTargets="Build;Publish" DependsOnTargets="ReadVersionJson"
-          Condition="'$(Configuration)' != 'Debug' And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
-    <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <!-- Dynamically add generated files to EmbeddedResource since they don't exist at project load time -->
+    <ItemGroup>
+      <EmbeddedResource Include="$(TypeScriptOutFile)" LinkBase="wwwroot/js" Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile)')" />
+      <EmbeddedResource Include="$(TypeScriptOutFile).map" LinkBase="wwwroot/js" Condition="Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile).map')" />
+    </ItemGroup>
   </Target>
 
   <Target Name="CleanTypeScript" AfterTargets="Clean">
