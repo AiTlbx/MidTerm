@@ -21,6 +21,7 @@ import {
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScaling, fitSessionToScreen } from './scaling';
 import { setupFileDrop, handleClipboardPaste } from './fileDrop';
+import { isBracketedPasteEnabled } from '../comms';
 
 declare const Terminal: any;
 declare const FitAddon: any;
@@ -473,10 +474,11 @@ export function pasteToTerminal(sessionId: string, data: string, isFilePath: boo
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  // Check both our tracking and xterm.js internal state
-  const ourBpm = bracketedPasteState.get(sessionId) ?? false;
+  // Check all BPM tracking sources: local replay tracking, muxChannel live tracking, and xterm.js
+  const localBpm = bracketedPasteState.get(sessionId) ?? false;
+  const muxBpm = isBracketedPasteEnabled(sessionId);
   const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode ?? false;
-  const bpmEnabled = ourBpm || xtermBpm;
+  const bpmEnabled = localBpm || muxBpm || xtermBpm;
 
   if (bpmEnabled) {
     // Manually wrap with bracketed paste sequences and send via input
