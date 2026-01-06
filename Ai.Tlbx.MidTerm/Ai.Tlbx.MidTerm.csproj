@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>5.5.12</Version>
+    <Version>5.5.13</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
@@ -82,6 +82,13 @@
     <TypeScriptOutFile>wwwroot/js/terminal.min.js</TypeScriptOutFile>
   </PropertyGroup>
 
+  <!-- Read version from version.json for JS injection -->
+  <Target Name="ReadVersionJson" BeforeTargets="CompileTypeScriptDebug;CompileTypeScriptRelease">
+    <Exec Command="node -p &quot;require('../version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
+    </Exec>
+  </Target>
+
   <!-- TypeScript type checking (fails build on TS errors) -->
   <!-- Use node directly to avoid Unix permission issues with npx shims in CI -->
   <Target Name="TypeCheckTypeScript" BeforeTargets="CompileTypeScriptDebug;CompileTypeScriptRelease"
@@ -89,16 +96,16 @@
     <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
-  <!-- Debug build: with source map -->
-  <Target Name="CompileTypeScriptDebug" BeforeTargets="Build;Publish"
+  <!-- Debug build: with source map, version injected -->
+  <Target Name="CompileTypeScriptDebug" BeforeTargets="Build;Publish" DependsOnTargets="ReadVersionJson"
           Condition="'$(Configuration)' == 'Debug' And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
-    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
-  <!-- Release build: WITH source map for production debugging -->
-  <Target Name="CompileTypeScriptRelease" BeforeTargets="Build;Publish"
+  <!-- Release build: WITH source map for production debugging, version injected -->
+  <Target Name="CompileTypeScriptRelease" BeforeTargets="Build;Publish" DependsOnTargets="ReadVersionJson"
           Condition="'$(Configuration)' != 'Debug' And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
-    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
   <Target Name="CleanTypeScript" AfterTargets="Clean">

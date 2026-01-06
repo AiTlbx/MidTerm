@@ -7,6 +7,16 @@
 import type { TerminalTheme, ThemeName } from './types';
 
 // =============================================================================
+// Build Version (injected at compile time via esbuild --define)
+// =============================================================================
+
+/** Version injected at build time - DO NOT MODIFY, replaced by esbuild */
+declare const BUILD_VERSION: string;
+
+/** The version this JavaScript was compiled for */
+export const JS_BUILD_VERSION: string = typeof BUILD_VERSION !== 'undefined' ? BUILD_VERSION : 'dev';
+
+// =============================================================================
 // Mux Protocol Constants
 // =============================================================================
 
