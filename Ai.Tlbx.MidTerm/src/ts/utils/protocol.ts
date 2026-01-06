@@ -52,7 +52,14 @@ export async function parseCompressedOutputFrame(payload: Uint8Array): Promise<O
  * Decompress GZip data using native DecompressionStream API.
  */
 export async function decompressGzip(compressed: Uint8Array): Promise<Uint8Array> {
-  console.log('[MUX] decompressGzip: starting, input size=' + compressed.length);
+  // Gzip magic bytes should be 0x1f 0x8b
+  const magic = compressed.length >= 2 ? `0x${compressed[0].toString(16)} 0x${compressed[1].toString(16)}` : 'N/A';
+  console.log(`[MUX] decompressGzip: starting, input size=${compressed.length}, magic=${magic}`);
+
+  if (compressed.length < 2 || compressed[0] !== 0x1f || compressed[1] !== 0x8b) {
+    console.error('[MUX] decompressGzip: NOT valid gzip data! First 10 bytes:', Array.from(compressed.slice(0, 10)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+  }
+
   const ds = new DecompressionStream('gzip');
   const writer = ds.writable.getWriter();
   const reader = ds.readable.getReader();
