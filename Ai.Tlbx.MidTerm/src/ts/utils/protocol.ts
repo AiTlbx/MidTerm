@@ -52,17 +52,25 @@ export async function parseCompressedOutputFrame(payload: Uint8Array): Promise<O
  * Decompress GZip data using native DecompressionStream API.
  */
 export async function decompressGzip(compressed: Uint8Array): Promise<Uint8Array> {
+  console.log('[MUX] decompressGzip: starting, input size=' + compressed.length);
   const ds = new DecompressionStream('gzip');
   const writer = ds.writable.getWriter();
   const reader = ds.readable.getReader();
 
+  console.log('[MUX] decompressGzip: writing to stream...');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await writer.write(compressed as any);
+  console.log('[MUX] decompressGzip: write done, closing writer...');
   await writer.close();
+  console.log('[MUX] decompressGzip: writer closed, reading chunks...');
 
   const chunks: Uint8Array[] = [];
+  let readCount = 0;
   while (true) {
+    console.log('[MUX] decompressGzip: reader.read() call #' + (readCount + 1));
     const { done, value } = await reader.read();
+    readCount++;
+    console.log('[MUX] decompressGzip: read returned, done=' + done + ', valueLen=' + (value?.length ?? 0));
     if (done) break;
     chunks.push(value);
   }
@@ -76,5 +84,6 @@ export async function decompressGzip(compressed: Uint8Array): Promise<Uint8Array
     offset += chunk.length;
   }
 
+  console.log('[MUX] decompressGzip: done, output size=' + result.length);
   return result;
 }
