@@ -61,11 +61,17 @@ jobs:
           dotnet clean ${{ env.WEB_PROJECT }} -c Release
           dotnet clean ${{ env.TTYHOST_PROJECT }} -c Release
 
+      - name: Build Web Server (mt) - fresh
+        run: dotnet build ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} --no-incremental
+
       - name: Publish Web Server (mt)
-        run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true --no-incremental
+        run: dotnet publish ${{ env.WEB_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true --no-build
+
+      - name: Build TtyHost (mthost) - fresh
+        run: dotnet build ${{ env.TTYHOST_PROJECT }} -c Release -r ${{ matrix.rid }} --no-incremental
 
       - name: Publish TtyHost (mthost)
-        run: dotnet publish ${{ env.TTYHOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true --no-incremental
+        run: dotnet publish ${{ env.TTYHOST_PROJECT }} -c Release -r ${{ matrix.rid }} /p:IsPublishing=true --no-build
 
       - name: Create staging directory
         shell: bash
