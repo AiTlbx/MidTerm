@@ -365,27 +365,32 @@ html, body {
     margin-bottom: 6px;
     font-size: 9px;
     color: var(--text-secondary);
-    line-height: 1.4;
+    line-height: 1.5;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 8px;
 }
 
 .network-item {
-    display: flex;
-    gap: 4px;
-    white-space: nowrap;
-    overflow: hidden;
+    display: contents;
 }
 
 .network-name {
     color: var(--text-muted);
-    flex-shrink: 0;
-    max-width: 60px;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.network-ip {
+.network-url {
     color: var(--accent-blue);
     font-family: monospace;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.network-url:hover {
+    text-decoration: underline;
 }
 
 .close-session-btn {
@@ -547,6 +552,25 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 200px;
+}
+
+.island-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.island-btn:hover {
+    background-color: var(--btn-secondary);
+    color: var(--text-primary);
 }
 
 /* Sidebar collapsed state (desktop) */

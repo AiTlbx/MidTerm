@@ -119,6 +119,7 @@ export function getTerminalOptions(): object {
   const options: Record<string, unknown> = {
     cursorBlink: currentSettings?.cursorBlink ?? true,
     cursorStyle: currentSettings?.cursorStyle ?? 'bar',
+    cursorInactiveStyle: 'none',
     fontFamily: `'${fontFamily}', ${TERMINAL_FONT_STACK}`,
     fontSize: fontSize,
     letterSpacing: 0,
@@ -132,10 +133,19 @@ export function getTerminalOptions(): object {
     theme: THEMES[themeName] ?? THEMES.dark
   };
 
+  // Configure ConPTY for Windows - use server-provided build or detect from userAgent
+  const isWindows = /Windows|Win32|Win64/i.test(navigator.userAgent);
   if (windowsBuildNumber !== null) {
     options.windowsPty = {
       backend: 'conpty',
       buildNumber: windowsBuildNumber
+    };
+  } else if (isWindows) {
+    // Default to Windows 10 2004 (19041) which has stable ConPTY support
+    // This ensures proper VT sequence interpretation before health check completes
+    options.windowsPty = {
+      backend: 'conpty',
+      buildNumber: 19041
     };
   }
 
@@ -189,7 +199,6 @@ export function createTerminalForSession(
   (fontsReadyPromise ?? Promise.resolve()).then(() => {
     if (!sessionTerminals.has(sessionId)) return; // Session was deleted
     terminal.open(container);
-    state.opened = true;
 
     // Load WebGL addon for GPU-accelerated rendering (with fallback)
     if (currentSettings?.useWebGL !== false) {
@@ -222,7 +231,10 @@ export function createTerminalForSession(
     initSearchForTerminal(sessionId, terminal);
 
     // Replay any WebSocket frames that arrived before terminal was opened
+    // IMPORTANT: Set opened=true AFTER replay to prevent race condition
+    // where new frames could be written before buffered frames
     replayPendingFrames(sessionId, state);
+    state.opened = true;
 
     // Defer resize to next frame - xterm.js needs a frame to fully initialize after open()
     requestAnimationFrame(() => {

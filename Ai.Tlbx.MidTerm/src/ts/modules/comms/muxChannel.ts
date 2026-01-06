@@ -97,22 +97,10 @@ export function connectMuxWebSocket(): void {
       return;
     }
 
-    if (type === MUX_TYPE_OUTPUT) {
-      const state = sessionTerminals.get(sessionId);
-      if (state && state.opened && payload.length >= 4) {
-        writeOutputFrame(sessionId, state, payload);
-      } else if (payload.length >= 4) {
-        // Terminal not yet opened - buffer frame for replay when terminal opens
-        if (!pendingOutputFrames.has(sessionId)) {
-          pendingOutputFrames.set(sessionId, []);
-        }
-        pendingOutputFrames.get(sessionId)!.push(payload.slice());
-      }
-    }
-
-    if (type === MUX_TYPE_COMPRESSED_OUTPUT) {
-      // Handle compressed frames asynchronously
-      handleCompressedFrame(sessionId, payload.slice());
+    if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
+      // Queue ALL output frames (compressed or not) to maintain order
+      // This is critical for TUI apps that rely on escape sequence ordering
+      queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
     }
   };
 
@@ -215,97 +203,57 @@ export function scheduleMuxReconnect(): void {
   );
 }
 
-/**
- * Replay pending output frames for a session that just opened its terminal.
- */
-export function replayPendingFrames(sessionId: string, state: TerminalState): void {
-  const frames = pendingOutputFrames.get(sessionId);
-  if (frames && frames.length > 0) {
-    frames.forEach((payload) => {
-      writeOutputFrame(sessionId, state, payload);
-    });
-    pendingOutputFrames.delete(sessionId);
-  }
-}
-
-/**
- * Write output frame to terminal.
- * Parses dimensions from frame header and resizes terminal if needed.
- */
-export function writeOutputFrame(sessionId: string, state: TerminalState, payload: Uint8Array): void {
-  const frame = parseOutputFrame(payload);
-
-  // Ensure terminal matches frame dimensions before writing
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const termCore = (state.terminal as any)._core;
-  if (frame.valid && termCore && termCore._renderService) {
-    const currentCols = state.terminal.cols;
-    const currentRows = state.terminal.rows;
-
-    if (currentCols !== frame.cols || currentRows !== frame.rows) {
-      try {
-        state.terminal.resize(frame.cols, frame.rows);
-        state.serverCols = frame.cols;
-        state.serverRows = frame.rows;
-        applyTerminalScaling(sessionId, state);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        console.warn('Terminal resize deferred:', message);
-      }
-    }
-  }
-
-  // Write terminal data
-  if (frame.data.length > 0) {
-    state.terminal.write(frame.data);
-  }
-}
-
 // =============================================================================
-// Compressed Frame Handling
+// Unified Output Frame Queue
 // =============================================================================
 
-interface CompressedFrameItem {
+interface OutputFrameItem {
   sessionId: string;
   payload: Uint8Array;
+  compressed: boolean;
 }
 
-const compressedQueue: CompressedFrameItem[] = [];
-let processingCompressed = false;
+const outputQueue: OutputFrameItem[] = [];
+let processingOutput = false;
 
 /**
- * Queue a compressed frame for async decompression.
- * Frames are processed sequentially to maintain order.
+ * Queue an output frame for processing.
+ * ALL frames (compressed or not) go through this queue to maintain order.
  */
-function handleCompressedFrame(sessionId: string, payload: Uint8Array): void {
-  compressedQueue.push({ sessionId, payload });
-  processCompressedQueue();
+function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
+  outputQueue.push({ sessionId, payload, compressed });
+  processOutputQueue();
 }
 
 /**
- * Process compressed frames sequentially.
+ * Process output frames sequentially to maintain order.
  */
-async function processCompressedQueue(): Promise<void> {
-  if (processingCompressed) return;
-  processingCompressed = true;
+async function processOutputQueue(): Promise<void> {
+  if (processingOutput) return;
+  processingOutput = true;
 
-  while (compressedQueue.length > 0) {
-    const item = compressedQueue.shift()!;
+  while (outputQueue.length > 0) {
+    const item = outputQueue.shift()!;
 
     try {
-      const frame = await parseCompressedOutputFrame(item.payload);
+      let frame: { cols: number; rows: number; data: Uint8Array; valid: boolean };
+
+      if (item.compressed) {
+        frame = await parseCompressedOutputFrame(item.payload);
+      } else {
+        frame = parseOutputFrame(item.payload);
+      }
 
       if (!frame.valid) {
-        console.warn('Invalid compressed frame for session:', item.sessionId);
+        console.warn('Invalid output frame for session:', item.sessionId);
         continue;
       }
 
       const state = sessionTerminals.get(item.sessionId);
       if (state && state.opened) {
-        // Write decompressed frame to terminal
-        writeDecompressedFrame(item.sessionId, state, frame);
+        writeFrameToTerminal(item.sessionId, state, frame);
       } else {
-        // Buffer decompressed data for later replay (same format as uncompressed)
+        // Buffer for later replay (same format as uncompressed)
         const uncompressedPayload = new Uint8Array(4 + frame.data.length);
         uncompressedPayload[0] = frame.cols & 0xff;
         uncompressedPayload[1] = (frame.cols >> 8) & 0xff;
@@ -319,17 +267,17 @@ async function processCompressedQueue(): Promise<void> {
         pendingOutputFrames.get(item.sessionId)!.push(uncompressedPayload);
       }
     } catch (e) {
-      console.error('Failed to process compressed frame:', e);
+      console.error('Failed to process output frame:', e);
     }
   }
 
-  processingCompressed = false;
+  processingOutput = false;
 }
 
 /**
- * Write already-parsed decompressed frame to terminal.
+ * Write already-parsed frame to terminal.
  */
-function writeDecompressedFrame(
+function writeFrameToTerminal(
   sessionId: string,
   state: TerminalState,
   frame: { cols: number; rows: number; data: Uint8Array; valid: boolean }
