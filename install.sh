@@ -584,7 +584,17 @@ EOF
 
     # Load service
     echo -e "${GRAY}Starting service...${NC}"
-    launchctl load "$plist_path"
+    if launchctl load "$plist_path"; then
+        sleep 1
+        if launchctl list | grep -q "$LAUNCHD_LABEL"; then
+            echo -e "  ${GREEN}Service started successfully${NC}"
+        else
+            echo -e "  ${YELLOW}Service may still be starting...${NC}"
+        fi
+    else
+        echo -e "  ${RED}Failed to start service${NC}"
+        echo -e "  ${GRAY}Check logs at: /usr/local/var/log/MidTerm.log${NC}"
+    fi
 }
 
 install_systemd() {
@@ -627,7 +637,19 @@ EOF
     echo -e "${GRAY}Starting service...${NC}"
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
-    systemctl start "$SERVICE_NAME"
+
+    if systemctl start "$SERVICE_NAME"; then
+        # Give it a moment to initialize
+        sleep 1
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            echo -e "  ${GREEN}Service started successfully${NC}"
+        else
+            echo -e "  ${YELLOW}Service may still be starting...${NC}"
+        fi
+    else
+        echo -e "  ${RED}Failed to start service${NC}"
+        echo -e "  ${GRAY}Check logs with: journalctl -u $SERVICE_NAME -f${NC}"
+    fi
 }
 
 install_as_user() {

@@ -596,107 +596,23 @@ public class Program
     private static void PrintWelcomeBanner(int port, string bindAddress, SettingsService settingsService, string version)
     {
         var settings = settingsService.Load();
-        bool animate = !Console.IsOutputRedirected;
 
         Console.WriteLine();
 
-        if (animate)
-        {
-            int startRow = Console.CursorTop;
-
-            // Draw pyramid with empty eye space
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine(@"            //   \\");
-            Console.WriteLine(@"           //     \\         __  __ _     _ _____");
-            Console.WriteLine(@"          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___");
-            Console.WriteLine(@"         //  (   )  \\      | |\/| | |/ _` | | |/ _ \ '__| '_ ` _ \");
-            Console.WriteLine(@"        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |");
-            Console.WriteLine(@"       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|");
-            Console.Write(@"      //               \\   ");
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("by J. Schmidt - https://github.com/AiTlbx");
-
-            // Eye position (row 3 = eye row, column 14 = center of eye)
-            int eyeRow = startRow + 3;
-            int eyeLeft = 13;
-            int eyeCenter = 14;
-            int eyeRight = 15;
-
-            // Rainbow colors
-            (int r, int g, int b)[] rainbow =
-            [
-                (255, 0, 0), (255, 80, 0), (255, 160, 0), (255, 255, 0),
-                (128, 255, 0), (0, 255, 0), (0, 255, 128), (0, 255, 255),
-                (0, 128, 255), (0, 0, 255), (128, 0, 255), (255, 0, 255), (255, 0, 128)
-            ];
-
-            // Eye opens with color cycling
-            for (int i = 0; i < 26; i++)
-            {
-                var (r, g, b) = rainbow[i % rainbow.Length];
-                Console.SetCursorPosition(eyeCenter, eyeRow);
-                Console.Write($"\x1b[38;2;{r};{g};{b}m·\x1b[0m");
-                Thread.Sleep(35);
-            }
-
-            // Settle on cyan
-            Console.SetCursorPosition(eyeCenter, eyeRow);
-            Console.Write("\x1b[38;2;0;255;255m·\x1b[0m");
-            Thread.Sleep(300);
-
-            // Blink twice
-            for (int blink = 0; blink < 2; blink++)
-            {
-                Console.SetCursorPosition(eyeCenter, eyeRow);
-                Console.Write(" ");
-                Thread.Sleep(80);
-                Console.SetCursorPosition(eyeCenter, eyeRow);
-                Console.Write("\x1b[38;2;0;255;255m·\x1b[0m");
-                Thread.Sleep(120);
-            }
-            Thread.Sleep(200);
-
-            // Gaze left
-            Console.SetCursorPosition(eyeCenter, eyeRow);
-            Console.Write(" ");
-            Console.SetCursorPosition(eyeLeft, eyeRow);
-            Console.Write("\x1b[38;2;0;255;255m·\x1b[0m");
-            Thread.Sleep(250);
-
-            // Gaze right
-            Console.SetCursorPosition(eyeLeft, eyeRow);
-            Console.Write(" ");
-            Console.SetCursorPosition(eyeRight, eyeRow);
-            Console.Write("\x1b[38;2;0;255;255m·\x1b[0m");
-            Thread.Sleep(250);
-
-            // Back to center
-            Console.SetCursorPosition(eyeRight, eyeRow);
-            Console.Write(" ");
-            Console.SetCursorPosition(eyeCenter, eyeRow);
-            Console.Write("\x1b[38;2;0;255;255m·\x1b[0m");
-
-            // Move cursor to end
-            Console.SetCursorPosition(0, startRow + 7);
-        }
-        else
-        {
-            // Static version
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine(@"            //   \\");
-            Console.WriteLine(@"           //     \\         __  __ _     _ _____");
-            Console.WriteLine(@"          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___");
-            Console.Write(@"         //  ( ");
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write("·");
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine(@" )  \\      | |\/| | |/ _` | | |/ _ \ '__| '_ ` _ \");
-            Console.WriteLine(@"        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |");
-            Console.WriteLine(@"       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|");
-            Console.Write(@"      //               \\   ");
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("by J. Schmidt - https://github.com/AiTlbx");
-        }
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine(@"            //   \\");
+        Console.WriteLine(@"           //     \\         __  __ _     _ _____");
+        Console.WriteLine(@"          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___");
+        Console.Write(@"         //  ( ");
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.Write("·");
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine(@" )  \\      | |\/| | |/ _` | | |/ _ \ '__| '_ ` _ \");
+        Console.WriteLine(@"        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |");
+        Console.WriteLine(@"       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|");
+        Console.Write(@"      //               \\   ");
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("by J. Schmidt - https://github.com/AiTlbx");
 
         Console.ResetColor();
         Console.WriteLine();
