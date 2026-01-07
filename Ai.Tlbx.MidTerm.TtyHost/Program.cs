@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.6.10";
+    public const string Version = "5.6.12";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -865,6 +865,7 @@ internal sealed class TerminalSession
         {
             Id = Id,
             Pid = Pid,
+            HostPid = Environment.ProcessId,
             ShellType = ShellType.ToString(),
             Cols = Cols,
             Rows = Rows,

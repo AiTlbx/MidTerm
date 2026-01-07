@@ -72,9 +72,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             {
                 case DiscoveryResult.Connected connected:
                     connectedSessions.Add(sessionId);
-                    if (connected.Pid > 0)
+                    // Remove the mthost process from orphan list (HostPid is mthost, Pid is shell)
+                    if (connected.HostPid > 0)
                     {
-                        orphanedProcessPids.Remove(connected.Pid);
+                        orphanedProcessPids.Remove(connected.HostPid);
                     }
                     break;
 
@@ -144,9 +145,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             client.StartReadLoop();
             _clients[sessionId] = client;
             _sessionCache[sessionId] = info;
-            Console.WriteLine($"[TtyHostSessionManager] Reconnected to session {sessionId} (PID: {info.Pid})");
+            Console.WriteLine($"[TtyHostSessionManager] Reconnected to session {sessionId} (shell PID: {info.Pid}, host PID: {info.HostPid})");
 
-            return new DiscoveryResult.Connected(info.Pid);
+            return new DiscoveryResult.Connected(info.Pid, info.HostPid);
         }
         catch (Exception ex)
         {
@@ -281,7 +282,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private abstract record DiscoveryResult
     {
-        public sealed record Connected(int Pid) : DiscoveryResult;
+        public sealed record Connected(int Pid, int HostPid) : DiscoveryResult;
         public sealed record Incompatible(int Pid, string? Version) : DiscoveryResult;
         public sealed record Unresponsive(int Pid) : DiscoveryResult;
         public sealed record NoProcess() : DiscoveryResult;
