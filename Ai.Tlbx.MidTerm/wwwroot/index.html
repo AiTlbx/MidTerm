@@ -59,10 +59,17 @@
         </aside>
         <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-        <div class="sidebar-island" id="sidebar-island">
-            <button class="island-expand-btn" id="btn-expand-sidebar" title="Show sidebar">▶</button>
-            <span class="island-title" id="island-title">MidTerm</span>
-            <button class="island-btn" id="btn-resize-island" title="Fit to screen">⤢</button>
+        <div class="collapsed-title-bar" id="collapsed-title-bar">
+            <button class="title-bar-btn" id="btn-expand-sidebar" title="Show sidebar">▶</button>
+            <div class="title-bar-titles">
+                <span class="title-bar-custom" id="title-bar-custom"></span>
+                <span class="title-bar-separator" id="title-bar-separator">—</span>
+                <span class="title-bar-terminal" id="title-bar-terminal"></span>
+            </div>
+            <div class="title-bar-actions">
+                <button class="title-bar-btn" id="btn-rename-titlebar" title="Rename">✏️</button>
+                <button class="title-bar-btn" id="btn-resize-titlebar" title="Fit to screen">⤢</button>
+            </div>
         </div>
 
         <div class="main-content">

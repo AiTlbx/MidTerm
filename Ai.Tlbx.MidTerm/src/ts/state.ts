@@ -115,7 +115,9 @@ export const dom: DOMElements = {
   sidebarOverlay: null,
   settingsView: null,
   settingsBtn: null,
-  islandTitle: null
+  titleBarCustom: null,
+  titleBarTerminal: null,
+  titleBarSeparator: null
 };
 
 // =============================================================================
@@ -216,5 +218,7 @@ export function cacheDOMElements(): void {
   dom.sidebarOverlay = document.getElementById('sidebar-overlay');
   dom.settingsView = document.getElementById('settings-view');
   dom.settingsBtn = document.getElementById('btn-settings');
-  dom.islandTitle = document.getElementById('island-title');
+  dom.titleBarCustom = document.getElementById('title-bar-custom');
+  dom.titleBarTerminal = document.getElementById('title-bar-terminal');
+  dom.titleBarSeparator = document.getElementById('title-bar-separator');
 }

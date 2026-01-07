@@ -186,5 +186,7 @@ export interface DOMElements {
   sidebarOverlay: HTMLElement | null;
   settingsView: HTMLElement | null;
   settingsBtn: HTMLElement | null;
-  islandTitle: HTMLElement | null;
+  titleBarCustom: HTMLElement | null;
+  titleBarTerminal: HTMLElement | null;
+  titleBarSeparator: HTMLElement | null;
 }

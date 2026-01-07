@@ -545,65 +545,74 @@ html, body {
     display: flex;
 }
 
-.sidebar-island {
+.collapsed-title-bar {
     display: none;
     position: fixed;
-    top: 12px;
-    left: 12px;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
     z-index: 200;
     background-color: var(--bg-sidebar);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 6px 12px 6px 6px;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 8px;
     align-items: center;
     gap: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.island-expand-btn {
-    width: 28px;
-    height: 28px;
+.title-bar-btn {
+    width: 20px;
+    height: 20px;
     border: none;
     background-color: var(--btn-secondary);
     color: var(--text-primary);
-    border-radius: 4px;
+    border-radius: 3px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
 }
 
-.island-expand-btn:hover {
+.title-bar-btn:hover {
     background-color: var(--btn-secondary-hover);
 }
 
-.island-title {
-    font-size: 13px;
+.title-bar-titles {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.title-bar-custom {
+    font-weight: 500;
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
 }
 
-.island-btn {
-    width: 24px;
-    height: 24px;
-    border: none;
-    background: transparent;
+.title-bar-separator {
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.title-bar-terminal {
     color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.island-btn:hover {
-    background-color: var(--btn-secondary);
-    color: var(--text-primary);
+.title-bar-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
 }
 
 /* Sidebar collapsed state (desktop) */
@@ -611,8 +620,12 @@ html, body {
     display: none;
 }
 
-.terminal-page.sidebar-collapsed .sidebar-island {
+.terminal-page.sidebar-collapsed .collapsed-title-bar {
     display: flex;
+}
+
+.terminal-page.sidebar-collapsed .terminals-area {
+    top: 28px;
 }
 
 /* ============================================================================
