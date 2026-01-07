@@ -12,5 +12,6 @@ public sealed class SessionInfoDto
     public int Rows { get; set; }
     public string ShellType { get; set; } = string.Empty;
     public string? Name { get; set; }
+    public string? TerminalTitle { get; set; }
     public bool ManuallyNamed { get; set; }
 }

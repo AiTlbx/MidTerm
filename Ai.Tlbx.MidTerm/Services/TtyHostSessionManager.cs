@@ -404,6 +404,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 Rows = s.Rows,
                 ShellType = s.ShellType,
                 Name = s.Name,
+                TerminalTitle = s.TerminalTitle,
                 ManuallyNamed = s.ManuallyNamed
             }).OrderBy(s => s.CreatedAt).ToList()
         };
@@ -472,28 +473,32 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return false;
         }
 
-        if (_sessionCache.TryGetValue(sessionId, out var info))
+        if (!_sessionCache.TryGetValue(sessionId, out var info))
         {
-            if (isManual)
-            {
-                info.ManuallyNamed = true;
-            }
-            else if (info.ManuallyNamed)
-            {
-                return true;
-            }
+            return false;
         }
 
-        var success = await client.SetNameAsync(name, ct).ConfigureAwait(false);
-
-        if (success && info is not null)
+        if (isManual)
         {
-            info.Name = name;
+            // User-set name: store in Name field and send to mthost
+            info.ManuallyNamed = !string.IsNullOrWhiteSpace(name);
+            var success = await client.SetNameAsync(name, ct).ConfigureAwait(false);
+            if (success)
+            {
+                info.Name = string.IsNullOrWhiteSpace(name) ? null : name;
+                OnStateChanged?.Invoke(sessionId);
+                NotifyStateChange();
+            }
+            return success;
+        }
+        else
+        {
+            // Terminal-reported title: store in TerminalTitle field (local only, no IPC)
+            info.TerminalTitle = string.IsNullOrWhiteSpace(name) ? null : name;
             OnStateChanged?.Invoke(sessionId);
             NotifyStateChange();
+            return true;
         }
-
-        return success;
     }
 
     public string AddStateListener(Action callback)

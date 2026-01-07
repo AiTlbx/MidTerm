@@ -237,6 +237,25 @@ html, body {
     display: block;
 }
 
+.session-item.two-line .session-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.session-item.two-line .session-title {
+    font-weight: 600;
+}
+
+.session-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
 .session-details {
     font-size: 11px;
     color: var(--text-secondary);
@@ -793,6 +812,10 @@ html, body {
 
     .session-title {
         font-size: 15px;
+    }
+
+    .session-subtitle {
+        font-size: 12px;
     }
 
     /* Settings adjustments for mobile */

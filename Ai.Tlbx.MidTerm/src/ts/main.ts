@@ -225,6 +225,7 @@ function createSession(): void {
   const tempSession = {
     id: tempId,
     name: null,
+    terminalTitle: null,
     shellType: 'Loading...',
     cols: cols,
     rows: rows
