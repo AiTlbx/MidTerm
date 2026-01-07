@@ -46,6 +46,7 @@
 /* Tokyo Night Theme Variables */
 :root {
     --bg-primary: #101014;
+    --terminal-bg: #06060E;
     --bg-sidebar: #1A1B26;
     --bg-input: #1F2029;
     --border-color: #101014;
@@ -453,6 +454,7 @@ html, body {
     flex: 1;
     position: relative;
     overflow: auto;
+    background-color: var(--terminal-bg);
 }
 
 .terminal-container {
