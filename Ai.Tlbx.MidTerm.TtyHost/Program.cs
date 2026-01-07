@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.7.2";
+    public const string Version = "5.7.2.6";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]

@@ -305,7 +305,11 @@ public class Program
     {
         var shellRegistry = app.Services.GetRequiredService<ShellRegistry>();
 
-        app.MapGet("/api/version", () => Results.Text(version));
+        app.MapGet("/api/version", () =>
+        {
+            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
+            return Results.Text(displayVersion);
+        });
 
         app.MapGet("/api/health", () =>
         {
@@ -357,6 +361,8 @@ public class Program
             string? extractedDir;
             UpdateType updateType;
 
+            bool deleteSourceAfter = true;
+
             if (source == "local")
             {
                 // Apply local update (dev environment only)
@@ -368,6 +374,7 @@ public class Program
 
                 var update = updateService.LatestUpdate;
                 updateType = update?.LocalUpdate?.Type ?? UpdateType.Full;
+                deleteSourceAfter = false; // Don't delete the local release folder
             }
             else
             {
@@ -387,7 +394,7 @@ public class Program
                 updateType = update.Type;
             }
 
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), updateType);
+            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), updateType, deleteSourceAfter);
 
             _ = Task.Run(async () =>
             {
@@ -699,7 +706,14 @@ public class Program
             : OperatingSystem.IsLinux() ? "Linux"
             : "Unknown";
 
-        Console.WriteLine($"  Version:  {version}");
+        Console.Write($"  Version:  {version}");
+        if (UpdateService.IsDevEnvironment)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(" (DEV)");
+            Console.ResetColor();
+        }
+        Console.WriteLine();
         Console.WriteLine($"  Platform: {platform}");
         Console.WriteLine($"  Shell:    {settings.DefaultShell}");
         Console.Write($"  Mode:     ");

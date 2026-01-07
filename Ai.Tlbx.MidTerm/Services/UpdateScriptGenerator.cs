@@ -13,17 +13,17 @@ public static class UpdateScriptGenerator
     private const int MaxRetries = 15;
     private const int RetryDelaySeconds = 1;
 
-    public static string GenerateUpdateScript(string extractedDir, string currentBinaryPath, UpdateType updateType = UpdateType.Full)
+    public static string GenerateUpdateScript(string extractedDir, string currentBinaryPath, UpdateType updateType = UpdateType.Full, bool deleteSourceAfter = true)
     {
         if (OperatingSystem.IsWindows())
         {
-            return GenerateWindowsScript(extractedDir, currentBinaryPath, updateType);
+            return GenerateWindowsScript(extractedDir, currentBinaryPath, updateType, deleteSourceAfter);
         }
 
-        return GenerateUnixScript(extractedDir, currentBinaryPath, updateType);
+        return GenerateUnixScript(extractedDir, currentBinaryPath, updateType, deleteSourceAfter);
     }
 
-    private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, UpdateType updateType)
+    private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, UpdateType updateType, bool deleteSourceAfter)
     {
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? currentBinaryPath;
         var newMtPath = Path.Combine(extractedDir, "mt.exe");
@@ -57,6 +57,7 @@ $LogFile = '{EscapeForPowerShell(logFilePath)}'
 $ResultFile = '{EscapeForPowerShell(resultFilePath)}'
 $MaxRetries = {MaxRetries}
 $IsWebOnly = ${(isWebOnly ? "true" : "false")}
+$DeleteSource = ${(deleteSourceAfter ? "true" : "false")}
 
 # === Helper Functions ===
 
@@ -322,7 +323,9 @@ try {{
     Remove-Item ""$CurrentMt.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentMthost.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentVersionJson.bak"" -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path $ExtractedDir -Recurse -Force -ErrorAction SilentlyContinue
+    if ($DeleteSource) {{
+        Remove-Item -Path $ExtractedDir -Recurse -Force -ErrorAction SilentlyContinue
+    }}
 
     Log 'Cleanup complete'
 
@@ -415,7 +418,7 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         return scriptPath;
     }
 
-    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, UpdateType updateType)
+    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, UpdateType updateType, bool deleteSourceAfter)
     {
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? "/usr/local/bin";
         var newMtPath = Path.Combine(extractedDir, "mt");
@@ -463,6 +466,7 @@ RESULT_FILE='{EscapeForBash(resultFilePath)}'
 MAX_RETRIES={MaxRetries}
 IS_WEB_ONLY={( isWebOnly ? "true" : "false")}
 IS_MACOS={( isMacOs ? "true" : "false")}
+DELETE_SOURCE={( deleteSourceAfter ? "true" : "false")}
 
 ROLLBACK_NEEDED=false
 STARTED_OK=false
@@ -786,7 +790,9 @@ log '=== PHASE 6: Cleanup ==='
 rm -f ""$CURRENT_MT.bak"" 2>/dev/null || true
 rm -f ""$CURRENT_MTHOST.bak"" 2>/dev/null || true
 rm -f ""$CURRENT_VERSION_JSON.bak"" 2>/dev/null || true
-rm -rf ""$EXTRACTED_DIR"" 2>/dev/null || true
+if [[ ""$DELETE_SOURCE"" == ""true"" ]]; then
+    rm -rf ""$EXTRACTED_DIR"" 2>/dev/null || true
+fi
 
 log ""Cleanup complete""
 

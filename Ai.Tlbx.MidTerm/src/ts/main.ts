@@ -433,7 +433,8 @@ function fetchVersion(): void {
   fetch('/api/version')
     .then((r) => r.text())
     .then((v) => {
-      const version = v.split(/[+-]/)[0] ?? v;
+      // Strip git hash suffix but preserve (DEV) indicator
+      const version = v.replace(/[+-][a-f0-9]+$/i, '');
       const el = document.getElementById('app-version');
       if (el) el.textContent = 'v' + version;
     })

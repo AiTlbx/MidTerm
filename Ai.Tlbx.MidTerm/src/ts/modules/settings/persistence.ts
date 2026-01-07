@@ -46,7 +46,8 @@ export function getElementChecked(id: string): boolean {
  * Populate version info in the about section
  */
 export function populateVersionInfo(serverVersion: string | null, hostVersion: string | null, frontendVersion: string): void {
-  const formatVersion = (v: string) => 'v' + (v.split(/[+-]/)[0] ?? v);
+  // Strip git hash suffix but preserve (DEV) indicator
+  const formatVersion = (v: string) => 'v' + v.replace(/[+-][a-f0-9]+$/i, '');
 
   const serverEl = document.getElementById('version-server');
   if (serverEl && serverVersion) {
