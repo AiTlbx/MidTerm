@@ -1493,99 +1493,149 @@ html, body {
     font-size: 13px;
 }
 
-.update-status {
-    padding: 10px 0;
-    font-size: 13px;
-    text-align: center;
+/* Update cards - unified style for both GitHub and Local updates */
+.update-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
 }
 
-.update-status.hidden {
+.update-card {
+    padding: 12px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+}
+
+.update-card.hidden {
     display: none;
 }
 
-.update-status-available {
-    color: var(--accent-green);
-}
-
-.update-status-current {
-    color: var(--text-secondary);
-}
-
-.update-status-error {
-    color: var(--accent-orange);
-}
-
-.update-warning {
-    font-size: 0.85rem;
-    margin-top: 0.5rem;
-    text-align: center;
-}
-
-.update-warning-safe {
-    color: var(--accent-green);
-}
-
-.update-warning-warn {
-    color: var(--accent-orange);
-}
-
-/* Local update section (dev environment only) */
-.local-update-section {
-    margin-top: 1rem;
-    padding: 12px;
-    border: 1px dashed var(--accent-orange);
-    border-radius: 6px;
-    background: rgba(255, 165, 0, 0.05);
-}
-
-.local-update-header {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--accent-orange);
+.update-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 8px;
 }
 
-.local-update-status {
-    font-size: 13px;
-    color: var(--text-secondary);
+.update-card-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.local-update-available {
+.update-card-version {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.update-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.update-card-warning {
+    font-size: 0.8rem;
+}
+
+.update-card-warning.safe {
+    color: var(--accent-green);
+}
+
+.update-card-warning.warn {
     color: var(--accent-orange);
 }
 
-.btn-dev {
-    background: var(--accent-orange);
+/* GitHub update card (blue theme) */
+.update-card.github {
+    border-color: var(--accent-blue);
+    background: rgba(88, 166, 255, 0.08);
+}
+
+.update-card.github .update-card-title {
+    color: var(--accent-blue);
+}
+
+.update-card.github .update-card-version {
+    color: var(--accent-blue);
+}
+
+.update-card.github .btn-update {
+    background: var(--accent-blue);
     color: var(--bg-primary);
     border: none;
-    padding: 8px 16px;
+    padding: 6px 14px;
     border-radius: 4px;
     cursor: pointer;
-    margin-top: 8px;
     font-size: 13px;
     font-weight: 500;
 }
 
-.btn-dev:hover:not(:disabled) {
-    background: #e69500;
+.update-card.github .btn-update:hover:not(:disabled) {
+    background: #4a90d9;
 }
 
-.btn-dev:disabled {
+.update-card.github .btn-update:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }
 
-.local-update-warning {
-    font-size: 0.8rem;
-    margin-top: 6px;
+/* Local update card (orange theme) */
+.update-card.local {
+    border-color: var(--accent-orange);
+    border-style: dashed;
+    background: rgba(255, 165, 0, 0.08);
 }
 
-.local-warning-safe {
-    color: var(--accent-green);
-}
-
-.local-warning-warn {
+.update-card.local .update-card-title {
     color: var(--accent-orange);
+}
+
+.update-card.local .update-card-version {
+    color: var(--accent-orange);
+}
+
+.update-card.local .btn-update {
+    background: var(--accent-orange);
+    color: var(--bg-primary);
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.update-card.local .btn-update:hover:not(:disabled) {
+    background: #e69500;
+}
+
+.update-card.local .btn-update:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* No updates state */
+.update-status-none {
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-align: center;
+    padding: 8px 0;
+}
+
+.update-status-none.hidden {
+    display: none;
+}
+
+.update-status-error {
+    color: var(--accent-orange);
+    font-size: 13px;
+    text-align: center;
+    padding: 8px 0;
 }
 
 /* Modal styles */

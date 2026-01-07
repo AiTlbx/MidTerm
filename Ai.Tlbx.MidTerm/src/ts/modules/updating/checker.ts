@@ -117,8 +117,6 @@ export function waitForServerAndReload(): void {
  */
 export function checkForUpdates(): void {
   const btn = document.getElementById('btn-check-updates') as HTMLButtonElement | null;
-  const statusEl = document.getElementById('update-status');
-  const warningEl = document.getElementById('update-warning');
 
   if (btn) {
     btn.disabled = true;
@@ -135,155 +133,138 @@ export function checkForUpdates(): void {
 
       setUpdateInfo(update);
       renderUpdatePanel();
-      renderLocalUpdateSection(update);
-
-      const applyBtn = document.getElementById('btn-apply-update');
-      if (statusEl) {
-        statusEl.classList.remove('hidden');
-        if (update && update.available) {
-          statusEl.className = 'update-status update-status-available';
-          statusEl.textContent = 'Update available: v' + update.latestVersion;
-          if (applyBtn) applyBtn.classList.remove('hidden');
-
-          // Show warning based on session preservation
-          if (warningEl) {
-            warningEl.classList.remove('hidden');
-            if (update.sessionsPreserved) {
-              warningEl.textContent = 'Sessions will stay alive';
-              warningEl.className = 'update-warning update-warning-safe';
-            } else {
-              warningEl.textContent = 'Save your work - sessions will restart';
-              warningEl.className = 'update-warning update-warning-warn';
-            }
-          }
-        } else {
-          statusEl.className = 'update-status update-status-current';
-          statusEl.textContent = 'You are running the latest version';
-          if (applyBtn) applyBtn.classList.add('hidden');
-          if (warningEl) warningEl.classList.add('hidden');
-        }
-      }
+      renderUpdateCards(update);
     })
     .catch((e) => {
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Check for Updates';
       }
-      if (statusEl) {
-        statusEl.classList.remove('hidden');
-        statusEl.className = 'update-status update-status-error';
-        statusEl.textContent = 'Failed to check for updates';
-      }
-      if (warningEl) warningEl.classList.add('hidden');
+      renderUpdateCards(null, 'Failed to check for updates');
       console.error('Update check error:', e);
     });
 }
 
 /**
- * Render local update section (only visible in dev environment)
+ * Render both GitHub and Local update cards
  */
-export function renderLocalUpdateSection(update: UpdateInfo | null): void {
-  let section = document.getElementById('local-update-section');
+function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
+  const container = document.getElementById('update-cards');
+  const statusNone = document.getElementById('update-status-none');
+  if (!container) return;
 
-  // Remove section if not in dev environment
-  if (!update?.environment) {
-    if (section) section.remove();
+  container.innerHTML = '';
+
+  // Error state
+  if (error) {
+    if (statusNone) statusNone.classList.add('hidden');
+    container.innerHTML = `<div class="update-status-error">${error}</div>`;
     return;
   }
 
-  // Create section if it doesn't exist
-  if (!section) {
-    section = createLocalUpdateSection();
-    const warningEl = document.getElementById('update-warning');
-    if (warningEl) {
-      warningEl.after(section);
-    }
+  const hasGitHub = update?.available ?? false;
+  const hasLocal = update?.environment && update?.localUpdate?.available;
+
+  // No updates available
+  if (!hasGitHub && !hasLocal) {
+    if (statusNone) statusNone.classList.remove('hidden');
+    return;
   }
 
-  const statusEl = section.querySelector('.local-update-status');
-  const applyBtn = section.querySelector('.btn-apply-local') as HTMLButtonElement | null;
-  const warningEl = section.querySelector('.local-update-warning');
-  const local = update.localUpdate;
+  if (statusNone) statusNone.classList.add('hidden');
 
-  if (statusEl) {
-    if (local?.available) {
-      statusEl.textContent = `Local build available: v${local.version}`;
-      statusEl.className = 'local-update-status local-update-available';
-      if (applyBtn) {
-        applyBtn.classList.remove('hidden');
-        applyBtn.disabled = false;
-        applyBtn.textContent = 'Apply Local Build';
-      }
-      if (warningEl) {
-        warningEl.classList.remove('hidden');
-        if (local.sessionsPreserved) {
-          warningEl.textContent = 'Sessions will stay alive';
-          warningEl.className = 'local-update-warning local-warning-safe';
-        } else {
-          warningEl.textContent = 'Save your work - sessions will restart';
-          warningEl.className = 'local-update-warning local-warning-warn';
-        }
-      }
-    } else {
-      statusEl.textContent = 'No local build available';
-      statusEl.className = 'local-update-status';
-      if (applyBtn) applyBtn.classList.add('hidden');
-      if (warningEl) warningEl.classList.add('hidden');
-    }
+  // GitHub update card
+  if (hasGitHub && update) {
+    const card = createUpdateCard({
+      type: 'github',
+      title: 'GitHub Release',
+      version: update.latestVersion,
+      sessionsPreserved: update.sessionsPreserved,
+      onApply: applyUpdate
+    });
+    container.appendChild(card);
+  }
+
+  // Local update card (only in dev environment)
+  if (hasLocal && update?.localUpdate) {
+    const card = createUpdateCard({
+      type: 'local',
+      title: 'Local Build',
+      version: update.localUpdate.version,
+      sessionsPreserved: update.localUpdate.sessionsPreserved,
+      onApply: applyLocalUpdate
+    });
+    container.appendChild(card);
   }
 }
 
+interface UpdateCardOptions {
+  type: 'github' | 'local';
+  title: string;
+  version: string;
+  sessionsPreserved: boolean;
+  onApply: () => void;
+}
+
 /**
- * Create the local update section HTML
+ * Create an update card element
  */
-function createLocalUpdateSection(): HTMLElement {
-  const section = document.createElement('div');
-  section.id = 'local-update-section';
-  section.className = 'local-update-section';
-  section.innerHTML = `
-    <div class="local-update-header">Local Development</div>
-    <div class="local-update-status"></div>
-    <button class="btn-dev btn-apply-local hidden">Apply Local Build</button>
-    <div class="local-update-warning hidden"></div>
+function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
+  const card = document.createElement('div');
+  card.className = `update-card ${opts.type}`;
+  card.id = `update-card-${opts.type}`;
+
+  const warningClass = opts.sessionsPreserved ? 'safe' : 'warn';
+  const warningText = opts.sessionsPreserved
+    ? 'Sessions will stay alive'
+    : 'Sessions will restart';
+
+  card.innerHTML = `
+    <div class="update-card-header">
+      <span class="update-card-title">${opts.title}</span>
+      <span class="update-card-version">v${opts.version}</span>
+    </div>
+    <div class="update-card-footer">
+      <span class="update-card-warning ${warningClass}">${warningText}</span>
+      <button class="btn-update">Apply</button>
+    </div>
   `;
 
-  const applyBtn = section.querySelector('.btn-apply-local');
-  if (applyBtn) {
-    applyBtn.addEventListener('click', applyLocalUpdate);
+  const btn = card.querySelector('.btn-update') as HTMLButtonElement;
+  if (btn) {
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = 'Applying...';
+      opts.onApply();
+    });
   }
 
-  return section;
+  return card;
 }
 
 /**
  * Apply local update from C:\temp\mtlocalrelease
  */
 export function applyLocalUpdate(): void {
-  const section = document.getElementById('local-update-section');
-  const btn = section?.querySelector('.btn-apply-local') as HTMLButtonElement | null;
-
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Applying...';
-  }
-
   fetch('/api/update/apply?source=local', { method: 'POST' })
     .then((r) => {
+      const btn = document.querySelector('#update-card-local .btn-update') as HTMLButtonElement | null;
       if (r.ok) {
         if (btn) btn.textContent = 'Restarting...';
         waitForServerAndReload();
       } else {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = 'Apply Local Build';
+          btn.textContent = 'Apply';
         }
         console.error('Local update failed');
       }
     })
     .catch((e) => {
+      const btn = document.querySelector('#update-card-local .btn-update') as HTMLButtonElement | null;
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Apply Local Build';
+        btn.textContent = 'Apply';
       }
       console.error('Local update error:', e);
     });
