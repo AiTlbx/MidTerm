@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.6.15";
+    public const string Version = "5.7.0";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -736,19 +736,17 @@ public static class Program
 
 internal sealed class TerminalSession
 {
+    private const int BufferCapacity = 10 * 1024 * 1024; // 10MB fixed buffer
+
     private readonly IPtyConnection _pty;
-    private readonly StringBuilder _outputBuffer = new();
+    private readonly CircularByteBuffer _outputBuffer = new(BufferCapacity);
     private readonly object _bufferLock = new();
-    private const int EscapeOverheadFactor = 3; // Conservative: colors, cursor, etc.
-    private readonly int _scrollbackLines;
-    private int _maxBufferSize;
 
     public string Id { get; }
     public ShellType ShellType { get; }
     public int Cols { get; private set; }
     public int Rows { get; private set; }
     public string? Name { get; private set; }
-    public string? CurrentWorkingDirectory { get; private set; }
     public DateTime CreatedAt { get; } = DateTime.UtcNow;
 
     public int Pid => _pty.Pid;
@@ -758,22 +756,13 @@ internal sealed class TerminalSession
     public event Action<ReadOnlyMemory<byte>>? OnOutput;
     public event Action? OnStateChanged;
 
-    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows, int scrollbackLines = 10000)
+    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows)
     {
         Id = id;
         _pty = pty;
         ShellType = shellType;
         Cols = cols;
         Rows = rows;
-        _scrollbackLines = scrollbackLines;
-        RecalculateBufferSize(cols);
-    }
-
-    private void RecalculateBufferSize(int cols)
-    {
-        // Formula: scrollback × cols × escape_overhead
-        // 10000 lines × 300 cols × 3 = 9MB max for wide terminal
-        _maxBufferSize = _scrollbackLines * cols * EscapeOverheadFactor;
     }
 
     public async Task StartReadLoopAsync(CancellationToken ct)
@@ -808,10 +797,12 @@ internal sealed class TerminalSession
                 {
                     Program.DebugLog($"[PTY-READ] {BitConverter.ToString(data.ToArray())}");
                 }
-                // Decode once, use for both buffer append and OSC parsing
-                var text = Encoding.UTF8.GetString(data.Span);
-                AppendToBuffer(text);
-                ParseOscSequences(text);
+
+                lock (_bufferLock)
+                {
+                    _outputBuffer.Write(data.Span);
+                }
+
                 OnOutput?.Invoke(data);
             }
         }
@@ -838,7 +829,6 @@ internal sealed class TerminalSession
         Cols = cols;
         Rows = rows;
         _pty.Resize(cols, rows);
-        RecalculateBufferSize(cols); // Buffer grows with wider terminals
         OnStateChanged?.Invoke();
     }
 
@@ -852,7 +842,7 @@ internal sealed class TerminalSession
     {
         lock (_bufferLock)
         {
-            return Encoding.UTF8.GetBytes(_outputBuffer.ToString());
+            return _outputBuffer.ToArray();
         }
     }
 
@@ -868,7 +858,6 @@ internal sealed class TerminalSession
             Rows = Rows,
             IsRunning = IsRunning,
             ExitCode = ExitCode,
-            CurrentWorkingDirectory = CurrentWorkingDirectory,
             Name = Name,
             CreatedAt = CreatedAt,
             TtyHostVersion = Program.Version
@@ -878,68 +867,5 @@ internal sealed class TerminalSession
     public void Kill()
     {
         _pty.Kill();
-    }
-
-    private void AppendToBuffer(string text)
-    {
-        lock (_bufferLock)
-        {
-            _outputBuffer.Append(text);
-            if (_outputBuffer.Length > _maxBufferSize)
-            {
-                _outputBuffer.Remove(0, _outputBuffer.Length - _maxBufferSize);
-            }
-        }
-    }
-
-    private void ParseOscSequences(string text)
-    {
-
-        // Detect bracketed paste mode enable/disable
-        if (text.Contains("\x1b[?2004h"))
-        {
-            Program.Log("[VT] Bracketed paste mode ENABLED by application");
-        }
-        if (text.Contains("\x1b[?2004l"))
-        {
-            Program.Log("[VT] Bracketed paste mode DISABLED by application");
-        }
-
-        var path = ParseOsc7Path(text);
-        if (path is not null && CurrentWorkingDirectory != path)
-        {
-            CurrentWorkingDirectory = path;
-            OnStateChanged?.Invoke();
-        }
-    }
-
-    private static string? ParseOsc7Path(string text)
-    {
-        var oscStart = text.IndexOf("\x1b]7;", StringComparison.Ordinal);
-        if (oscStart < 0) return null;
-
-        var uriStart = oscStart + 4;
-        var oscEnd = text.IndexOfAny(['\x07', '\x1b'], uriStart);
-        if (oscEnd <= uriStart) return null;
-
-        var uri = text.Substring(uriStart, oscEnd - uriStart);
-        if (!uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return null;
-
-        try
-        {
-            var pathStart = uri.IndexOf('/', 7);
-            if (pathStart < 0) return null;
-
-            var path = Uri.UnescapeDataString(uri.Substring(pathStart));
-            if (path.Length > 2 && path[0] == '/' && path[2] == ':')
-            {
-                path = path.Substring(1);
-            }
-            return path;
-        }
-        catch
-        {
-            return null;
-        }
     }
 }

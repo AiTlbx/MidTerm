@@ -323,7 +323,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 CreatedAt = s.CreatedAt,
                 IsRunning = s.IsRunning,
                 ExitCode = s.ExitCode,
-                CurrentWorkingDirectory = s.CurrentWorkingDirectory,
                 Cols = s.Cols,
                 Rows = s.Rows,
                 ShellType = s.ShellType,

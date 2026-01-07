@@ -183,7 +183,6 @@ public sealed class SessionInfo
     public int Rows { get; set; }
     public bool IsRunning { get; set; }
     public int? ExitCode { get; set; }
-    public string? CurrentWorkingDirectory { get; set; }
     public string? Name { get; set; }
     public bool ManuallyNamed { get; set; }
     public DateTime CreatedAt { get; set; }
