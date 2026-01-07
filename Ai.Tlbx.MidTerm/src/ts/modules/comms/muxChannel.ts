@@ -3,6 +3,9 @@
  *
  * Manages the mux WebSocket connection for terminal I/O.
  * Uses a binary protocol with 9-byte header (1 byte type + 8 byte session ID).
+ *
+ * CRITICAL: All output frames are processed strictly in order through a single queue.
+ * This ensures TUI apps receive escape sequences in the correct order.
  */
 
 import type { TerminalState } from '../../types';
@@ -13,37 +16,181 @@ import {
   MUX_TYPE_RESIZE,
   MUX_TYPE_RESYNC,
   MUX_TYPE_BUFFER_REQUEST,
+  MUX_TYPE_COMPRESSED_OUTPUT,
   INITIAL_RECONNECT_DELAY,
   MAX_RECONNECT_DELAY
 } from '../../constants';
-import { parseOutputFrame, scheduleReconnect } from '../../utils';
+import { parseOutputFrame, parseCompressedOutputFrame, scheduleReconnect } from '../../utils';
 import {
   muxWs,
   muxReconnectTimer,
   muxReconnectDelay,
+  muxHasConnected,
   sessionTerminals,
   pendingOutputFrames,
   setMuxWs,
   setMuxReconnectTimer,
   setMuxReconnectDelay,
-  setMuxWsConnected
+  setMuxWsConnected,
+  setMuxHasConnected
 } from '../../state';
 import { updateConnectionStatus } from './stateChannel';
 
 // Forward declarations for functions from other modules
 let applyTerminalScaling: (sessionId: string, state: TerminalState) => void = () => {};
-let refreshActiveTerminalBuffer: () => void = () => {};
 
 /**
  * Register callbacks from other modules
  */
 export function registerMuxCallbacks(callbacks: {
   applyTerminalScaling?: (sessionId: string, state: TerminalState) => void;
-  refreshActiveTerminalBuffer?: () => void;
 }): void {
   if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
-  if (callbacks.refreshActiveTerminalBuffer) refreshActiveTerminalBuffer = callbacks.refreshActiveTerminalBuffer;
 }
+
+// =============================================================================
+// Strictly Ordered Output Queue
+// =============================================================================
+
+interface OutputFrameItem {
+  sessionId: string;
+  payload: Uint8Array;
+  compressed: boolean;
+}
+
+const outputQueue: OutputFrameItem[] = [];
+let processingQueue = false;
+
+/**
+ * Queue an output frame and trigger processing.
+ * ALL frames go through this queue to guarantee strict ordering.
+ */
+function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
+  outputQueue.push({ sessionId, payload, compressed });
+  processOutputQueue();
+}
+
+/**
+ * Process output frames strictly in order.
+ * Frames are processed one at a time - compressed frames block until decompressed.
+ */
+async function processOutputQueue(): Promise<void> {
+  if (processingQueue) return;
+  processingQueue = true;
+
+  try {
+    while (outputQueue.length > 0) {
+      const item = outputQueue.shift()!;
+      await processOneFrame(item);
+    }
+  } finally {
+    processingQueue = false;
+  }
+}
+
+/**
+ * Process a single frame - decompress if needed, then write to terminal.
+ */
+async function processOneFrame(item: OutputFrameItem): Promise<void> {
+  try {
+    let cols: number;
+    let rows: number;
+    let data: Uint8Array;
+
+    if (item.compressed) {
+      const frame = await parseCompressedOutputFrame(item.payload);
+      cols = frame.cols;
+      rows = frame.rows;
+      data = frame.data;
+    } else {
+      const frame = parseOutputFrame(item.payload);
+      cols = frame.cols;
+      rows = frame.rows;
+      data = frame.data;
+    }
+
+    const state = sessionTerminals.get(item.sessionId);
+    if (state && state.opened) {
+      writeToTerminal(item.sessionId, state, cols, rows, data);
+    } else if (data.length > 0) {
+      // Buffer for later replay
+      const bufferedPayload = new Uint8Array(4 + data.length);
+      bufferedPayload[0] = cols & 0xff;
+      bufferedPayload[1] = (cols >> 8) & 0xff;
+      bufferedPayload[2] = rows & 0xff;
+      bufferedPayload[3] = (rows >> 8) & 0xff;
+      bufferedPayload.set(data, 4);
+
+      if (!pendingOutputFrames.has(item.sessionId)) {
+        pendingOutputFrames.set(item.sessionId, []);
+      }
+      pendingOutputFrames.get(item.sessionId)!.push(bufferedPayload);
+    }
+  } catch (e) {
+    console.error('Failed to process frame:', e);
+  }
+}
+
+// Track bracketed paste mode per session
+const bracketedPasteState = new Map<string, boolean>();
+
+/** Check if session has bracketed paste mode enabled */
+export function isBracketedPasteEnabled(sessionId: string): boolean {
+  return bracketedPasteState.get(sessionId) ?? false;
+}
+
+/**
+ * Write data to terminal, resizing if dimensions changed.
+ */
+function writeToTerminal(
+  sessionId: string,
+  state: TerminalState,
+  cols: number,
+  rows: number,
+  data: Uint8Array
+): void {
+  // Track bracketed paste mode by detecting escape sequences
+  if (data.length > 0) {
+    const text = new TextDecoder().decode(data);
+    if (text.includes('\x1b[?2004h')) {
+      bracketedPasteState.set(sessionId, true);
+    }
+    if (text.includes('\x1b[?2004l')) {
+      bracketedPasteState.set(sessionId, false);
+    }
+  }
+
+  // Resize if dimensions are valid and different
+  if (cols > 0 && rows > 0 && cols <= 500 && rows <= 500) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const termCore = (state.terminal as any)._core;
+    if (termCore && termCore._renderService) {
+      const currentCols = state.terminal.cols;
+      const currentRows = state.terminal.rows;
+
+      if (currentCols !== cols || currentRows !== rows) {
+        try {
+          state.terminal.resize(cols, rows);
+          state.serverCols = cols;
+          state.serverRows = rows;
+          applyTerminalScaling(sessionId, state);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          console.warn('Terminal resize deferred:', message);
+        }
+      }
+    }
+  }
+
+  // Always write data if present
+  if (data.length > 0) {
+    state.terminal.write(data);
+  }
+}
+
+// =============================================================================
+// WebSocket Connection
+// =============================================================================
 
 /**
  * Connect to the mux WebSocket for terminal I/O.
@@ -63,14 +210,30 @@ export function connectMuxWebSocket(): void {
   setMuxWs(ws);
 
   ws.onopen = () => {
-    const wasReconnect = muxReconnectDelay > INITIAL_RECONNECT_DELAY;
+    // Detect reconnect: we've connected before AND have terminals to refresh
+    const isReconnect = muxHasConnected && sessionTerminals.size > 0;
+
     setMuxReconnectDelay(INITIAL_RECONNECT_DELAY);
     setMuxWsConnected(true);
+    setMuxHasConnected(true);
     updateConnectionStatus();
 
-    // On reconnect, refresh buffers to catch any missed output
-    if (wasReconnect) {
-      refreshActiveTerminalBuffer();
+    // On reconnect, clear all terminals and request buffer refresh for each
+    // This handles mt.exe restarts where sessions survive but connection is new
+    if (isReconnect) {
+      console.log(`[Mux] Reconnected - refreshing ${sessionTerminals.size} terminals`);
+      pendingOutputFrames.clear();
+      outputQueue.length = 0;
+      sessionTerminals.forEach((state) => {
+        if (state.opened) {
+          state.terminal.clear();
+        }
+        state.serverCols = 0;
+        state.serverRows = 0;
+        // Server pushes all buffers on connect via SendInitialBuffersAsync
+      });
+    } else {
+      console.log('[Mux] Connected (first connection)');
     }
   };
 
@@ -93,19 +256,14 @@ export function connectMuxWebSocket(): void {
         }
       });
       pendingOutputFrames.clear();
+      outputQueue.length = 0; // Clear pending queue too
       return;
     }
 
-    if (type === MUX_TYPE_OUTPUT) {
-      const state = sessionTerminals.get(sessionId);
-      if (state && state.opened && payload.length >= 4) {
-        writeOutputFrame(sessionId, state, payload);
-      } else if (payload.length >= 4) {
-        // Terminal not yet opened - buffer frame for replay when terminal opens
-        if (!pendingOutputFrames.has(sessionId)) {
-          pendingOutputFrames.set(sessionId, []);
-        }
-        pendingOutputFrames.get(sessionId)!.push(payload.slice());
+    if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
+      // Queue ALL output frames to guarantee strict ordering
+      if (payload.length >= 4) {
+        queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
       }
     }
   };
@@ -144,14 +302,12 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
   const frame = new Uint8Array(MUX_HEADER_SIZE + 4);
   frame[0] = MUX_TYPE_RESIZE;
   encodeSessionId(frame, 1, sessionId);
-  // Encode cols and rows as little-endian 16-bit integers
   frame[MUX_HEADER_SIZE] = cols & 0xff;
   frame[MUX_HEADER_SIZE + 1] = (cols >> 8) & 0xff;
   frame[MUX_HEADER_SIZE + 2] = rows & 0xff;
   frame[MUX_HEADER_SIZE + 3] = (rows >> 8) & 0xff;
   muxWs.send(frame);
 
-  // Update local tracking
   const state = sessionTerminals.get(sessionId);
   if (state) {
     state.serverCols = cols;
@@ -161,7 +317,6 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
 
 /**
  * Request buffer refresh for a session via WebSocket.
- * This ensures the buffer arrives in-order with other terminal data.
  */
 export function requestBufferRefresh(sessionId: string): void {
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
@@ -210,47 +365,9 @@ export function scheduleMuxReconnect(): void {
 }
 
 /**
- * Replay pending output frames for a session that just opened its terminal.
- */
-export function replayPendingFrames(sessionId: string, state: TerminalState): void {
-  const frames = pendingOutputFrames.get(sessionId);
-  if (frames && frames.length > 0) {
-    frames.forEach((payload) => {
-      writeOutputFrame(sessionId, state, payload);
-    });
-    pendingOutputFrames.delete(sessionId);
-  }
-}
-
-/**
- * Write output frame to terminal.
- * Parses dimensions from frame header and resizes terminal if needed.
+ * Write output frame to terminal (used by manager.ts for replay).
  */
 export function writeOutputFrame(sessionId: string, state: TerminalState, payload: Uint8Array): void {
   const frame = parseOutputFrame(payload);
-
-  // Ensure terminal matches frame dimensions before writing
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const termCore = (state.terminal as any)._core;
-  if (frame.valid && termCore && termCore._renderService) {
-    const currentCols = state.terminal.cols;
-    const currentRows = state.terminal.rows;
-
-    if (currentCols !== frame.cols || currentRows !== frame.rows) {
-      try {
-        state.terminal.resize(frame.cols, frame.rows);
-        state.serverCols = frame.cols;
-        state.serverRows = frame.rows;
-        applyTerminalScaling(sessionId, state);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        console.warn('Terminal resize deferred:', message);
-      }
-    }
-  }
-
-  // Write terminal data
-  if (frame.data.length > 0) {
-    state.terminal.write(frame.data);
-  }
+  writeToTerminal(sessionId, state, frame.cols, frame.rows, frame.data);
 }

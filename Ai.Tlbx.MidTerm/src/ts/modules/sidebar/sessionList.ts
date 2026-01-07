@@ -44,11 +44,28 @@ export function setSessionListCallbacks(cbs: SessionListCallbacks): void {
 // Session Display
 // =============================================================================
 
+interface SessionDisplayInfo {
+  primary: string;
+  secondary: string | null;
+}
+
 /**
- * Get the display name for a session
+ * Get display info for a session (primary title and optional secondary subtitle)
+ */
+function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
+  const termTitle = session.terminalTitle || session.shellType;
+  if (session.name) {
+    return { primary: session.name, secondary: termTitle };
+  }
+  return { primary: termTitle, secondary: null };
+}
+
+/**
+ * Get the display name for a session (primary title only, for mobile/island)
  */
 export function getSessionDisplayName(session: Session): string {
-  return session.name || session.shellType;
+  const info = getSessionDisplayInfo(session);
+  return info.primary;
 }
 
 // =============================================================================
@@ -89,11 +106,20 @@ export function renderSessionList(): void {
       info.appendChild(spinner);
     }
 
+    const displayInfo = getSessionDisplayInfo(session);
+
     const title = document.createElement('span');
     title.className = 'session-title';
-    title.textContent = getSessionDisplayName(session);
-
+    title.textContent = displayInfo.primary;
     info.appendChild(title);
+
+    if (displayInfo.secondary) {
+      item.classList.add('two-line');
+      const subtitle = document.createElement('span');
+      subtitle.className = 'session-subtitle';
+      subtitle.textContent = displayInfo.secondary;
+      info.appendChild(subtitle);
+    }
 
     const actions = document.createElement('div');
     actions.className = 'session-actions';

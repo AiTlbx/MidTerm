@@ -18,7 +18,6 @@ import {
 import {
   createTerminalForSession,
   destroyTerminalForSession,
-  refreshActiveTerminalBuffer,
   preloadTerminalFont,
   registerTerminalCallbacks,
   applyTerminalScaling,
@@ -44,8 +43,8 @@ import {
   setupSidebarResize
 } from './modules/sidebar';
 import {
-  closeSettings,
   toggleSettings,
+  closeSettings,
   checkSystemHealth,
   fetchSettings
 } from './modules/settings';
@@ -57,6 +56,7 @@ import {
   renderUpdatePanel,
   applyUpdate,
   checkForUpdates,
+  checkUpdateResult,
   showChangelog,
   closeChangelog
 } from './modules/updating';
@@ -66,7 +66,6 @@ import {
   activeSessionId,
   sessionTerminals,
   currentSettings,
-  settingsOpen,
   stateWsConnected,
   muxWsConnected,
   dom,
@@ -124,6 +123,7 @@ function init(): void {
   fetchNetworks();
   fetchSettings();
   checkAuthStatus();
+  checkUpdateResult();
   requestNotificationPermission();
 
   setupVisibilityChangeHandler();
@@ -145,8 +145,7 @@ function registerCallbacks(): void {
   });
 
   registerMuxCallbacks({
-    applyTerminalScaling,
-    refreshActiveTerminalBuffer
+    applyTerminalScaling
   });
 
   registerTerminalCallbacks({
@@ -182,14 +181,13 @@ function registerCallbacks(): void {
 function setupVisibilityChangeHandler(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      // Reconnect WebSockets if they were dropped while in background
+      // Buffer refresh is handled by muxChannel's reconnect handler if needed
       if (!stateWsConnected) {
         connectStateWebSocket();
       }
       if (!muxWsConnected) {
         connectMuxWebSocket();
-      }
-      if (muxWsConnected && activeSessionId) {
-        setTimeout(refreshActiveTerminalBuffer, 200);
       }
     }
   });
@@ -226,6 +224,7 @@ function createSession(): void {
   const tempSession = {
     id: tempId,
     name: null,
+    terminalTitle: null,
     shellType: 'Loading...',
     cols: cols,
     rows: rows
@@ -266,10 +265,7 @@ function createSession(): void {
 }
 
 function selectSession(sessionId: string): void {
-  if (settingsOpen) {
-    closeSettings();
-  }
-
+  closeSettings();
   sessionTerminals.forEach((state) => {
     state.container.classList.add('hidden');
   });
@@ -278,17 +274,13 @@ function selectSession(sessionId: string): void {
 
   const sessionInfo = sessions.find((s) => s.id === sessionId);
   const state = createTerminalForSession(sessionId, sessionInfo);
-  const isNewTerminal = state.serverCols === 0;
   const isNewlyCreated = newlyCreatedSessions.has(sessionId);
   state.container.classList.remove('hidden');
 
   requestAnimationFrame(() => {
     state.terminal.focus();
 
-    if (isNewTerminal && !isNewlyCreated) {
-      requestBufferRefresh(sessionId);
-    }
-
+    // Server pushes all buffers on WS connect, no need to request again
     if (isNewlyCreated) {
       newlyCreatedSessions.delete(sessionId);
     }
@@ -455,11 +447,15 @@ function fetchNetworks(): void {
       const list = document.getElementById('network-list');
       if (!list) return;
 
+      const protocol = location.protocol;
+      const port = location.port;
       list.innerHTML = networks.map((n: { name: string; ip: string }) => {
+        const url = protocol + '//' + n.ip + ':' + port;
         return '<div class="network-item">' +
           '<span class="network-name" title="' + escapeHtml(n.name) + '">' +
           escapeHtml(n.name) + '</span>' +
-          '<span class="network-ip">' + escapeHtml(n.ip) + ':' + location.port + '</span>' +
+          '<a class="network-url" href="' + url + '" target="_blank">' +
+          escapeHtml(n.ip) + ':' + port + '</a>' +
           '</div>';
       }).join('');
     })
@@ -487,6 +483,9 @@ function bindEvents(): void {
     if (activeSessionId) sendInput(activeSessionId, '\x03');
   });
   bindClick('btn-resize-mobile', () => {
+    if (activeSessionId) fitSessionToScreen(activeSessionId);
+  });
+  bindClick('btn-resize-island', () => {
     if (activeSessionId) fitSessionToScreen(activeSessionId);
   });
   bindClick('btn-rename-mobile', () => {

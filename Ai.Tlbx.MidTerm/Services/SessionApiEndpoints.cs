@@ -118,7 +118,6 @@ public static class SessionApiEndpoints
             CreatedAt = sessionInfo.CreatedAt,
             IsRunning = sessionInfo.IsRunning,
             ExitCode = sessionInfo.ExitCode,
-            CurrentWorkingDirectory = sessionInfo.CurrentWorkingDirectory,
             Cols = sessionInfo.Cols,
             Rows = sessionInfo.Rows,
             ShellType = sessionInfo.ShellType,

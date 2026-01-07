@@ -16,6 +16,7 @@ import type { FitAddon } from '@xterm/addon-fit';
 export interface Session {
   id: string;
   name: string | null;
+  terminalTitle: string | null;
   shellType: string;
   cols: number;
   rows: number;

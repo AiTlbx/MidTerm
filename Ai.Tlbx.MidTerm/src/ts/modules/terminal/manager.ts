@@ -21,6 +21,7 @@ import {
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScaling, fitSessionToScreen } from './scaling';
 import { setupFileDrop, handleClipboardPaste } from './fileDrop';
+import { isBracketedPasteEnabled } from '../comms';
 
 declare const Terminal: any;
 declare const FitAddon: any;
@@ -38,15 +39,36 @@ let requestBufferRefresh: (sessionId: string) => void = () => {};
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
 
-// Track bracketed paste mode state per session
-// We track this ourselves because xterm.js internal state may not be reliable
+/**
+ * Bracketed Paste Mode (BPM) State Tracking
+ *
+ * BPM allows TUI apps to distinguish pasted text from typed input by wrapping
+ * pastes with escape sequences: ESC[200~ (start) and ESC[201~ (end).
+ *
+ * HOW IT WORKS WITH COMPLEX TUIs (e.g., Claude Code):
+ * 1. Shell/app enables BPM by outputting ESC[?2004h
+ * 2. We detect this in terminal output and track state per session
+ * 3. When user pastes (or drops file), we wrap content with BPM markers
+ * 4. TUI app receives markers and knows it's pasted content
+ *
+ * IMAGE DRAG-DROP TO CLAUDE CODE:
+ * Claude Code detects dropped images via string heuristics - it pattern-matches
+ * for file paths like: ^"?[A-Z]:\\.*?\.(png|jpg|jpeg|webp|gif)"?$
+ * When detected, it reads the file and adds it to context as an image.
+ *
+ * CRITICAL FOR WINDOWS: Claude Code checks environment variables to detect
+ * if it's running in Windows Terminal. See ShellConfigurations.cs for details.
+ * - WT_PROFILE_ID must have curly braces: {guid-here}
+ * - TERM and COLORTERM must NOT be set (Windows Terminal doesn't set them)
+ *
+ * FOR MAC/LINUX TESTING: The env var requirements may differ. Start by checking
+ * what environment a native terminal sets, then match it in ShellConfigurations.cs.
+ * The BPM mechanism itself should work the same across platforms.
+ *
+ * We track BPM ourselves AND check xterm.js internal state as fallback because
+ * xterm.js detection alone proved unreliable in some scenarios.
+ */
 const bracketedPasteState = new Map<string, boolean>();
-
-// Check for debug force-enable via URL param: ?forceBPM=1
-const forceBracketedPaste = new URLSearchParams(window.location.search).get('forceBPM') === '1';
-if (forceBracketedPaste) {
-  console.log('[BPM] Force-enabled via URL parameter');
-}
 
 /**
  * Auto-update session name from shell title (with debounce)
@@ -98,6 +120,7 @@ export function getTerminalOptions(): object {
   const options: Record<string, unknown> = {
     cursorBlink: currentSettings?.cursorBlink ?? true,
     cursorStyle: currentSettings?.cursorStyle ?? 'bar',
+    cursorInactiveStyle: 'none',
     fontFamily: `'${fontFamily}', ${TERMINAL_FONT_STACK}`,
     fontSize: fontSize,
     letterSpacing: 0,
@@ -111,10 +134,19 @@ export function getTerminalOptions(): object {
     theme: THEMES[themeName] ?? THEMES.dark
   };
 
+  // Configure ConPTY for Windows - use server-provided build or detect from userAgent
+  const isWindows = /Windows|Win32|Win64/i.test(navigator.userAgent);
   if (windowsBuildNumber !== null) {
     options.windowsPty = {
       backend: 'conpty',
       buildNumber: windowsBuildNumber
+    };
+  } else if (isWindows) {
+    // Default to Windows 10 2004 (19041) which has stable ConPTY support
+    // This ensures proper VT sequence interpretation before health check completes
+    options.windowsPty = {
+      backend: 'conpty',
+      buildNumber: 19041
     };
   }
 
@@ -252,17 +284,9 @@ export function writeOutputFrame(
 
     if (enableMatch) {
       bracketedPasteState.set(sessionId, true);
-      console.log(`[BPM] Session ${sessionId}: ENABLED`);
     }
     if (disableMatch) {
       bracketedPasteState.set(sessionId, false);
-      console.log(`[BPM] Session ${sessionId}: DISABLED`);
-    }
-
-    // Debug: log all CSI ? sequences to see what modes apps request
-    const csiMatch = text.match(/\x1b\[\?(\d+)[hl]/g);
-    if (csiMatch) {
-      console.log(`[CSI-DEBUG] Session ${sessionId}: ${csiMatch.join(', ')}`);
     }
   }
 
@@ -440,26 +464,28 @@ export function destroyTerminalForSession(sessionId: string): void {
 }
 
 /**
- * Paste text to a terminal, wrapping with bracketed paste markers if enabled
- * We track BPM state ourselves to ensure reliable paste handling for TUI apps
+ * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
+ * We track BPM state ourselves to ensure reliable paste handling for TUI apps.
+ *
+ * @param isFilePath - If true, wrap content in quotes for file path handling.
+ *                     This helps TUI apps like Claude Code detect file paths with spaces.
  */
-export function pasteToTerminal(sessionId: string, data: string): void {
+export function pasteToTerminal(sessionId: string, data: string, isFilePath: boolean = false): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  const bpmEnabled = forceBracketedPaste || (bracketedPasteState.get(sessionId) ?? false);
-
-  // Diagnostic logging
-  const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode;
-  console.log(`[PASTE] sessionId=${sessionId}, ourBPM=${bpmEnabled}, xtermBPM=${xtermBpm}, forced=${forceBracketedPaste}, len=${data.length}`);
+  // Check all BPM tracking sources: local replay tracking, muxChannel live tracking, and xterm.js
+  const localBpm = bracketedPasteState.get(sessionId) ?? false;
+  const muxBpm = isBracketedPasteEnabled(sessionId);
+  const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode ?? false;
+  const bpmEnabled = localBpm || muxBpm || xtermBpm;
 
   if (bpmEnabled) {
     // Manually wrap with bracketed paste sequences and send via input
-    // This ensures TUI apps like Claude Code receive the markers
-    // Quote the content to handle paths with spaces
-    const wrapped = '\x1b[200~"' + data + '"\x1b[201~';
+    // Only quote file paths (for Claude Code image detection with spaces in path)
+    const content = isFilePath ? '"' + data + '"' : data;
+    const wrapped = '\x1b[200~' + content + '\x1b[201~';
     sendInput(sessionId, wrapped);
-    console.log('[PASTE] Sent with BPM markers and quotes');
   } else {
     // No bracketed paste mode - use standard paste
     state.terminal.paste(data);

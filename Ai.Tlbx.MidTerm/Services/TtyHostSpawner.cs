@@ -98,19 +98,27 @@ public static class TtyHostSpawner
                          Environment.GetEnvironmentVariable("EUID") == "0" ||
                          Environment.GetEnvironmentVariable("SUDO_USER") is not null;
 
-            if (isRoot && !string.IsNullOrEmpty(runAsUser))
+            // If runAsUser not configured but we're root, try SUDO_USER as fallback
+            // This handles cases where service settings don't have runAsUser set
+            var effectiveRunAsUser = runAsUser;
+            if (string.IsNullOrEmpty(effectiveRunAsUser) && isRoot)
+            {
+                effectiveRunAsUser = Environment.GetEnvironmentVariable("SUDO_USER");
+            }
+
+            if (isRoot && !string.IsNullOrEmpty(effectiveRunAsUser))
             {
                 psi = new ProcessStartInfo
                 {
                     FileName = "sudo",
-                    Arguments = $"-u {runAsUser} {TtyHostPath} {args}",
+                    Arguments = $"-u {effectiveRunAsUser} {TtyHostPath} {args}",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardInput = false,
                     RedirectStandardOutput = false,
                     RedirectStandardError = false
                 };
-                Console.WriteLine($"[TtyHostSpawner] Spawning as user: {runAsUser}");
+                Console.WriteLine($"[TtyHostSpawner] Spawning as user: {effectiveRunAsUser}");
             }
             else
             {

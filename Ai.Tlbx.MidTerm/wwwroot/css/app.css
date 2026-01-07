@@ -46,6 +46,7 @@
 /* Tokyo Night Theme Variables */
 :root {
     --bg-primary: #101014;
+    --terminal-bg: #06060E;
     --bg-sidebar: #1A1B26;
     --bg-input: #1F2029;
     --border-color: #101014;
@@ -113,7 +114,7 @@ html, body {
     align-items: center;
     padding: 6px 12px;
     border-bottom: 1px solid var(--border-color);
-    background-color: var(--bg-primary);
+    background-color: #06060E;
 }
 
 .sidebar-brand {
@@ -237,6 +238,25 @@ html, body {
     display: block;
 }
 
+.session-item.two-line .session-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.session-item.two-line .session-title {
+    font-weight: 600;
+}
+
+.session-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
 .session-details {
     font-size: 11px;
     color: var(--text-secondary);
@@ -347,7 +367,7 @@ html, body {
     border-top: 1px solid var(--border-color);
     font-size: 11px;
     color: var(--text-muted);
-    background-color: var(--bg-primary);
+    background-color: #06060E;
 }
 
 .sidebar-footer .footer-row {
@@ -365,27 +385,32 @@ html, body {
     margin-bottom: 6px;
     font-size: 9px;
     color: var(--text-secondary);
-    line-height: 1.4;
+    line-height: 1.5;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 8px;
 }
 
 .network-item {
-    display: flex;
-    gap: 4px;
-    white-space: nowrap;
-    overflow: hidden;
+    display: contents;
 }
 
 .network-name {
     color: var(--text-muted);
-    flex-shrink: 0;
-    max-width: 60px;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.network-ip {
+.network-url {
     color: var(--accent-blue);
     font-family: monospace;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.network-url:hover {
+    text-decoration: underline;
 }
 
 .close-session-btn {
@@ -429,6 +454,7 @@ html, body {
     flex: 1;
     position: relative;
     overflow: auto;
+    background-color: var(--terminal-bg);
 }
 
 .terminal-container {
@@ -481,19 +507,31 @@ html, body {
     flex-shrink: 0;
 }
 
+/* Thin auto-hide scrollbar for xterm */
 .terminal-container .xterm-viewport {
     overflow-y: auto !important;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.2s;
 }
 
-/* Overlay scrollbar for xterm */
+.terminal-container .xterm-viewport:hover {
+    scrollbar-color: rgba(122, 162, 247, 0.3) transparent;
+}
+
 .terminal-container .xterm-viewport::-webkit-scrollbar {
-    width: 10px;
+    width: 4px;
     background: transparent;
 }
 
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 2px;
+    transition: background 0.2s;
+}
+
+.terminal-container:hover .xterm-viewport::-webkit-scrollbar-thumb {
     background: rgba(122, 162, 247, 0.3);
-    border-radius: 5px;
 }
 
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
@@ -549,6 +587,25 @@ html, body {
     max-width: 200px;
 }
 
+.island-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.island-btn:hover {
+    background-color: var(--btn-secondary);
+    color: var(--text-primary);
+}
+
 /* Sidebar collapsed state (desktop) */
 .terminal-page.sidebar-collapsed .sidebar {
     display: none;
@@ -583,25 +640,34 @@ html, body {
         display: none !important;
     }
 
+    /* Hide resize grip on mobile */
+    .sidebar-resize-grip {
+        display: none !important;
+    }
+
     /* On mobile, ignore sidebar-collapsed class */
     .terminal-page.sidebar-collapsed .sidebar {
         display: flex;
     }
 
-    /* Hide desktop sidebar by default on mobile */
+    /* Hide sidebar by default on mobile */
     .sidebar {
         position: fixed;
-        left: -280px;
         top: 0;
         bottom: 0;
+        left: 0;
         width: 280px;
         z-index: 1000;
-        transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         padding-top: env(safe-area-inset-top, 0);
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    visibility 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .terminal-page.sidebar-open .sidebar {
-        left: 0;
+        transform: translateX(0);
+        visibility: visible;
     }
 
     /* Sidebar overlay for dismissing */
@@ -786,6 +852,10 @@ html, body {
         font-size: 15px;
     }
 
+    .session-subtitle {
+        font-size: 12px;
+    }
+
     /* Settings adjustments for mobile */
     .settings-view {
         padding: 16px;
@@ -863,7 +933,6 @@ html, body {
     /* Sidebar narrower on very small screens */
     .sidebar {
         width: 260px;
-        left: -260px;
     }
 }
 

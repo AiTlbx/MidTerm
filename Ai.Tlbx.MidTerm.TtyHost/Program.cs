@@ -1,7 +1,7 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Text;
 #if WINDOWS
-using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using System.IO.Pipes;
 #else
@@ -17,7 +17,7 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 
 public static class Program
 {
-    public const string Version = "5.3.0";
+    public const string Version = "5.7.2";
 
 #if WINDOWS
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -30,7 +30,7 @@ public static class Program
         IntPtr lpBytesLeftThisMessage);
 #endif
 
-    private const int HeartbeatIntervalMs = 3000;
+    private const int HeartbeatIntervalMs = 5000;
     private const int ReadTimeoutMs = 10000;
 
     private static readonly string LogDir = Path.Combine(
@@ -42,6 +42,7 @@ public static class Program
     private static string? _sessionId;
     private static string? _logPath;
     private static bool _debugEnabled;
+    private static CancellationTokenSource? _shutdownCts;
 
     public static async Task<int> Main(string[] args)
     {
@@ -65,10 +66,16 @@ public static class Program
         }
 
         _sessionId = config.SessionId;
-        _logPath = Path.Combine(LogDir, $"mt-con-{_sessionId}-{StartTimestamp}.log");
+        _logPath = Path.Combine(LogDir, $"mthost-{_sessionId}-{StartTimestamp}.log");
         _debugEnabled = config.Debug;
 
-        Log($"mthost {Version} starting for session {config.SessionId}");
+#if !WINDOWS
+        // Register Unix signal handlers for graceful shutdown
+        PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal);
+        PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal);
+#endif
+
+        Log($"mthost {Version} starting, session={config.SessionId}");
 
         try
         {
@@ -88,8 +95,6 @@ public static class Program
         var shellConfig = shellRegistry.GetConfigurationByName(config.ShellType)
             ?? shellRegistry.GetConfigurationOrDefault(null);
 
-        Log($"Starting shell: {shellConfig.ShellType} ({shellConfig.ExecutablePath})");
-
         IPtyConnection? pty = null;
         try
         {
@@ -101,14 +106,12 @@ public static class Program
                 config.Rows,
                 shellConfig.GetEnvironmentVariables());
 
-            Log($"PTY started, PID: {pty.Pid}");
-
             var session = new TerminalSession(config.SessionId, pty, shellConfig.ShellType, config.Cols, config.Rows);
-
-            var endpoint = IpcEndpoint.GetSessionEndpoint(config.SessionId);
-            Log($"Listening on: {endpoint}");
+            var endpoint = IpcEndpoint.GetSessionEndpoint(config.SessionId, Environment.ProcessId);
+            Log($"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
 
             using var cts = new CancellationTokenSource();
+            _shutdownCts = cts;
             Task? ptyReadTask = null;
 
             // Accept client connections (mt.exe)
@@ -117,7 +120,6 @@ public static class Program
             {
                 if (ptyReadTask is null)
                 {
-                    Log("Starting PTY read loop (first client connected)");
                     ptyReadTask = session.StartReadLoopAsync(cts.Token);
                 }
             }).ConfigureAwait(false);
@@ -131,7 +133,6 @@ public static class Program
         finally
         {
             pty?.Dispose();
-            Log("Shutdown complete");
         }
     }
 
@@ -142,6 +143,7 @@ public static class Program
     private static async Task AcceptClientsAsync(TerminalSession session, string endpoint, CancellationToken ct, Action? onFirstClientSubscribed = null)
     {
         var firstClientSubscribed = false;
+        var connectionCount = 0;
 
         using var server = IpcServerFactory.Create(endpoint);
 
@@ -149,17 +151,25 @@ public static class Program
         {
             try
             {
-                Log("Waiting for client connection...");
                 var client = await server.AcceptAsync(ct).ConfigureAwait(false);
-                Log("Client connected");
+                connectionCount++;
+                Log($"Client connected (#{connectionCount})");
 
                 // Cancel any existing client - only one active client per session
+                // Don't dispose immediately - let GC handle it to avoid race conditions
+                // with linked token registrations
+                CancellationTokenSource clientCts;
                 lock (_clientLock)
                 {
                     _currentClientCts?.Cancel();
-                    _currentClientCts?.Dispose();
                     _currentClientCts = new CancellationTokenSource();
+                    clientCts = _currentClientCts;
                 }
+
+                // Create a linked CTS that combines shutdown token with this client's token
+                // This is created outside the lock and passed directly to HandleClientAsync
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
+                var clientToken = linkedCts.Token;
 
                 // Start the read loop when the first client subscribes to output
                 Action? onSubscribed = null;
@@ -175,8 +185,9 @@ public static class Program
                     };
                 }
 
-                var clientCt = CancellationTokenSource.CreateLinkedTokenSource(ct, _currentClientCts!.Token).Token;
-                _ = HandleClientAsync(session, client, clientCt, onSubscribed);
+                // Run HandleClientAsync synchronously (don't fire-and-forget)
+                // This ensures the linked CTS stays alive for the duration of the handler
+                await HandleClientAsync(session, client, clientToken, onSubscribed).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -225,7 +236,10 @@ public static class Program
                                 pendingOutput.Add(copy);
                                 pendingOutputSize += copy.Length;
                             }
-                            // else: drop - startup output is less critical than OOM
+                            else
+                            {
+                                Log($"Warning: dropping {data.Length} bytes during handshake (buffer full: {pendingOutputSize}/{MaxPendingOutputSize})");
+                            }
                             return;
                         }
                     }
@@ -233,7 +247,6 @@ public static class Program
                     if (client.IsConnected)
                     {
                         var msg = TtyHostProtocol.CreateOutputMessage(session.Cols, session.Rows, data.Span);
-                        Log($"Writing output: type=0x{msg[0]:X2}, len={BitConverter.ToInt32(msg, 1)}, total={msg.Length}");
                         lock (stream)
                         {
                             stream.Write(msg);
@@ -279,7 +292,6 @@ public static class Program
                     // Send any buffered output (buffered before handshake, all at same initial dimensions)
                     if (pendingOutput.Count > 0)
                     {
-                        Log($"Flushing {pendingOutput.Count} buffered output chunks");
                         foreach (var data in pendingOutput)
                         {
                             try
@@ -287,7 +299,6 @@ public static class Program
                                 if (client.IsConnected)
                                 {
                                     var msg = TtyHostProtocol.CreateOutputMessage(session.Cols, session.Rows, data);
-                                    Log($"Writing buffered: type=0x{msg[0]:X2}, len={BitConverter.ToInt32(msg, 1)}, total={msg.Length}");
                                     lock (stream)
                                     {
                                         stream.Write(msg);
@@ -311,13 +322,20 @@ public static class Program
 
             // Don't subscribe to OnStateChanged until after handshake - OSC-7 during startup
             // can fire StateChange before Info response, breaking the handshake
+            var stateChangeSubscribed = false;
 
             try
             {
                 await ProcessMessagesAsync(session, stream, clientCts.Token, () =>
                 {
                     OnHandshakeComplete();
-                    session.OnStateChanged += OnStateChange; // Subscribe after handshake
+                    // Only subscribe once - repeated GetInfo requests must not add duplicate handlers
+                    // (duplicate handlers cause exponential StateChange message growth)
+                    if (!stateChangeSubscribed)
+                    {
+                        stateChangeSubscribed = true;
+                        session.OnStateChanged += OnStateChange;
+                    }
                 }).ConfigureAwait(false);
             }
             finally
@@ -417,8 +435,21 @@ public static class Program
 
         while (!ct.IsCancellationRequested)
         {
-            // Read header
-            var bytesRead = await stream.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
+            int bytesRead;
+            try
+            {
+                bytesRead = await stream.ReadAsync(headerBuffer, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Log($"IPC read error: {ex.Message}");
+                break;
+            }
+
             if (bytesRead == 0)
             {
                 break;
@@ -460,78 +491,84 @@ public static class Program
 
             var payload = payloadBuffer.AsSpan(0, payloadLength);
 
-            // Process message
-            switch (msgType)
+            // Process message - wrap in try-catch for robustness
+            try
             {
-                case TtyHostMessageType.GetInfo:
-                    var info = session.GetInfo();
-                    var infoMsg = TtyHostProtocol.CreateInfoResponse(info);
-                    Log($"Writing Info response: type=0x{infoMsg[0]:X2}, len={BitConverter.ToInt32(infoMsg, 1)}, total={infoMsg.Length}");
-                    lock (stream)
-                    {
-                        stream.Write(infoMsg);
-                        stream.Flush();
-                    }
-                    // Signal that handshake is complete - safe to start sending output
-                    onHandshakeComplete?.Invoke();
-                    break;
+                switch (msgType)
+                {
+                    case TtyHostMessageType.GetInfo:
+                        var info = session.GetInfo();
+                        var infoMsg = TtyHostProtocol.CreateInfoResponse(info);
+                        lock (stream)
+                        {
+                            stream.Write(infoMsg);
+                            stream.Flush();
+                        }
+                        onHandshakeComplete?.Invoke();
+                        break;
 
-                case TtyHostMessageType.Input:
-                    if (payloadLength < 20)
-                    {
-                        DebugLog($"[IPC-INPUT] {BitConverter.ToString(payload.ToArray())}");
-                    }
-                    await session.SendInputAsync(payload.ToArray(), ct).ConfigureAwait(false);
-                    break;
+                    case TtyHostMessageType.Input:
+                        if (payloadLength < 20)
+                        {
+                            DebugLog($"[IPC-INPUT] {BitConverter.ToString(payload.ToArray())}");
+                        }
+                        await session.SendInputAsync(payload.ToArray(), ct).ConfigureAwait(false);
+                        break;
 
-                case TtyHostMessageType.Resize:
-                    var (cols, rows) = TtyHostProtocol.ParseResize(payload);
-                    session.Resize(cols, rows);
-                    var resizeAck = TtyHostProtocol.CreateResizeAck();
-                    lock (stream)
-                    {
-                        stream.Write(resizeAck);
-                        stream.Flush();
-                    }
-                    break;
+                    case TtyHostMessageType.Resize:
+                        var (cols, rows) = TtyHostProtocol.ParseResize(payload);
+                        session.Resize(cols, rows);
+                        var resizeAck = TtyHostProtocol.CreateResizeAck();
+                        lock (stream)
+                        {
+                            stream.Write(resizeAck);
+                            stream.Flush();
+                        }
+                        break;
 
-                case TtyHostMessageType.GetBuffer:
-                    var buffer = session.GetBuffer();
-                    var bufferMsg = TtyHostProtocol.CreateBufferResponse(buffer);
-                    lock (stream)
-                    {
-                        stream.Write(bufferMsg);
-                        stream.Flush();
-                    }
-                    break;
+                    case TtyHostMessageType.GetBuffer:
+                        var buffer = session.GetBuffer();
+                        var bufferMsg = TtyHostProtocol.CreateBufferResponse(buffer);
+                        lock (stream)
+                        {
+                            stream.Write(bufferMsg);
+                            stream.Flush();
+                        }
+                        break;
 
-                case TtyHostMessageType.SetName:
-                    var name = TtyHostProtocol.ParseSetName(payload);
-                    session.SetName(string.IsNullOrEmpty(name) ? null : name);
-                    var nameAck = TtyHostProtocol.CreateSetNameAck();
-                    lock (stream)
-                    {
-                        stream.Write(nameAck);
-                        stream.Flush();
-                    }
-                    break;
+                    case TtyHostMessageType.SetName:
+                        var name = TtyHostProtocol.ParseSetName(payload);
+                        session.SetName(string.IsNullOrEmpty(name) ? null : name);
+                        var nameAck = TtyHostProtocol.CreateSetNameAck();
+                        lock (stream)
+                        {
+                            stream.Write(nameAck);
+                            stream.Flush();
+                        }
+                        break;
 
-                case TtyHostMessageType.Close:
-                    Log("Received close request, shutting down");
-                    var closeAck = TtyHostProtocol.CreateCloseAck();
-                    lock (stream)
-                    {
-                        stream.Write(closeAck);
-                        stream.Flush();
-                    }
-                    session.Kill();
-                    // Exit the entire process
-                    Environment.Exit(0);
-                    return;
+                    case TtyHostMessageType.Close:
+                        Log("Received close request, shutting down");
+                        var closeAck = TtyHostProtocol.CreateCloseAck();
+                        lock (stream)
+                        {
+                            stream.Write(closeAck);
+                            stream.Flush();
+                        }
+                        session.Kill();
+                        // Signal graceful shutdown - let finally blocks run
+                        _shutdownCts?.Cancel();
+                        return;
 
-                default:
-                    Log($"Unknown message type: {msgType}");
-                    break;
+                    default:
+                        Log($"Unknown message type: {msgType}");
+                        break;
+                }
+            }
+            catch (Exception ex) when (msgType != TtyHostMessageType.Close)
+            {
+                Log($"Error processing message type {msgType}: {ex.Message}");
+                LogException($"ProcessMessage.{msgType}", ex);
             }
         }
     }
@@ -572,10 +609,8 @@ public static class Program
             }
         }
 
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            return null;
-        }
+        // Use PID as session ID if not provided - this ensures IPC endpoint name matches the process
+        sessionId ??= Environment.ProcessId.ToString();
 
         workingDir ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
@@ -601,9 +636,9 @@ public static class Program
               -v, --version     Show version
 
             IPC (Windows):
-              Listens on named pipe: mt-con-<session-id>
+              Listens on named pipe: mthost-<session-id>-<pid>
             IPC (macOS/Linux):
-              Listens on Unix socket: /tmp/mt-con-<session-id>.sock
+              Listens on Unix socket: /tmp/mthost-<session-id>-<pid>.sock
             """);
     }
 
@@ -613,7 +648,6 @@ public static class Program
     internal static void Log(string message)
     {
         var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{_sessionId}] {message}";
-        Console.WriteLine(line);
         try
         {
             Directory.CreateDirectory(LogDir);
@@ -651,24 +685,31 @@ public static class Program
         catch { }
     }
 
+#if !WINDOWS
+    private static void OnSignal(PosixSignalContext context)
+    {
+        Log($"Received signal {context.Signal}, initiating graceful shutdown");
+        context.Cancel = true; // Prevent default termination
+        _shutdownCts?.Cancel(); // Signal graceful shutdown
+    }
+#endif
+
     private sealed record SessionConfig(string SessionId, string? ShellType, string WorkingDirectory, int Cols, int Rows, bool Debug);
 }
 
 internal sealed class TerminalSession
 {
+    private const int BufferCapacity = 10 * 1024 * 1024; // 10MB fixed buffer
+
     private readonly IPtyConnection _pty;
-    private readonly StringBuilder _outputBuffer = new();
+    private readonly CircularByteBuffer _outputBuffer = new(BufferCapacity);
     private readonly object _bufferLock = new();
-    private const int EscapeOverheadFactor = 3; // Conservative: colors, cursor, etc.
-    private readonly int _scrollbackLines;
-    private int _maxBufferSize;
 
     public string Id { get; }
     public ShellType ShellType { get; }
     public int Cols { get; private set; }
     public int Rows { get; private set; }
     public string? Name { get; private set; }
-    public string? CurrentWorkingDirectory { get; private set; }
     public DateTime CreatedAt { get; } = DateTime.UtcNow;
 
     public int Pid => _pty.Pid;
@@ -678,22 +719,13 @@ internal sealed class TerminalSession
     public event Action<ReadOnlyMemory<byte>>? OnOutput;
     public event Action? OnStateChanged;
 
-    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows, int scrollbackLines = 10000)
+    public TerminalSession(string id, IPtyConnection pty, ShellType shellType, int cols, int rows)
     {
         Id = id;
         _pty = pty;
         ShellType = shellType;
         Cols = cols;
         Rows = rows;
-        _scrollbackLines = scrollbackLines;
-        RecalculateBufferSize(cols);
-    }
-
-    private void RecalculateBufferSize(int cols)
-    {
-        // Formula: scrollback × cols × escape_overhead
-        // 10000 lines × 300 cols × 3 = 9MB max for wide terminal
-        _maxBufferSize = _scrollbackLines * cols * EscapeOverheadFactor;
     }
 
     public async Task StartReadLoopAsync(CancellationToken ct)
@@ -728,10 +760,12 @@ internal sealed class TerminalSession
                 {
                     Program.DebugLog($"[PTY-READ] {BitConverter.ToString(data.ToArray())}");
                 }
-                // Decode once, use for both buffer append and OSC parsing
-                var text = Encoding.UTF8.GetString(data.Span);
-                AppendToBuffer(text);
-                ParseOscSequences(text);
+
+                lock (_bufferLock)
+                {
+                    _outputBuffer.Write(data.Span);
+                }
+
                 OnOutput?.Invoke(data);
             }
         }
@@ -758,7 +792,6 @@ internal sealed class TerminalSession
         Cols = cols;
         Rows = rows;
         _pty.Resize(cols, rows);
-        RecalculateBufferSize(cols); // Buffer grows with wider terminals
         OnStateChanged?.Invoke();
     }
 
@@ -772,7 +805,7 @@ internal sealed class TerminalSession
     {
         lock (_bufferLock)
         {
-            return Encoding.UTF8.GetBytes(_outputBuffer.ToString());
+            return _outputBuffer.ToArray();
         }
     }
 
@@ -782,12 +815,12 @@ internal sealed class TerminalSession
         {
             Id = Id,
             Pid = Pid,
+            HostPid = Environment.ProcessId,
             ShellType = ShellType.ToString(),
             Cols = Cols,
             Rows = Rows,
             IsRunning = IsRunning,
             ExitCode = ExitCode,
-            CurrentWorkingDirectory = CurrentWorkingDirectory,
             Name = Name,
             CreatedAt = CreatedAt,
             TtyHostVersion = Program.Version
@@ -797,68 +830,5 @@ internal sealed class TerminalSession
     public void Kill()
     {
         _pty.Kill();
-    }
-
-    private void AppendToBuffer(string text)
-    {
-        lock (_bufferLock)
-        {
-            _outputBuffer.Append(text);
-            if (_outputBuffer.Length > _maxBufferSize)
-            {
-                _outputBuffer.Remove(0, _outputBuffer.Length - _maxBufferSize);
-            }
-        }
-    }
-
-    private void ParseOscSequences(string text)
-    {
-
-        // Detect bracketed paste mode enable/disable
-        if (text.Contains("\x1b[?2004h"))
-        {
-            Program.Log("[VT] Bracketed paste mode ENABLED by application");
-        }
-        if (text.Contains("\x1b[?2004l"))
-        {
-            Program.Log("[VT] Bracketed paste mode DISABLED by application");
-        }
-
-        var path = ParseOsc7Path(text);
-        if (path is not null && CurrentWorkingDirectory != path)
-        {
-            CurrentWorkingDirectory = path;
-            OnStateChanged?.Invoke();
-        }
-    }
-
-    private static string? ParseOsc7Path(string text)
-    {
-        var oscStart = text.IndexOf("\x1b]7;", StringComparison.Ordinal);
-        if (oscStart < 0) return null;
-
-        var uriStart = oscStart + 4;
-        var oscEnd = text.IndexOfAny(['\x07', '\x1b'], uriStart);
-        if (oscEnd <= uriStart) return null;
-
-        var uri = text.Substring(uriStart, oscEnd - uriStart);
-        if (!uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return null;
-
-        try
-        {
-            var pathStart = uri.IndexOf('/', 7);
-            if (pathStart < 0) return null;
-
-            var path = Uri.UnescapeDataString(uri.Substring(pathStart));
-            if (path.Length > 2 && path[0] == '/' && path[2] == ':')
-            {
-                path = path.Substring(1);
-            }
-            return path;
-        }
-        catch
-        {
-            return null;
-        }
     }
 }

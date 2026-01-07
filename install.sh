@@ -108,7 +108,7 @@ prompt_service_mode() {
     echo -e "      ${GRAY}- Runs in background, starts on boot${NC}"
     echo -e "      ${GRAY}- Available before you log in${NC}"
     echo -e "      ${GRAY}- Installs to /usr/local/bin${NC}"
-    echo -e "      ${GRAY}- Terminals run as: $(whoami)${NC}"
+    echo -e "      ${GRAY}- Terminals run as: ${INSTALLING_USER}${NC}"
     echo -e "      ${YELLOW}- Requires sudo privileges${NC}"
     echo ""
     echo -e "  ${CYAN}[2] User install${NC} (no sudo required)"
@@ -620,9 +620,17 @@ fi
 # Capture current user info BEFORE any potential sudo
 # This is critical - we need the real user, not root
 if [ -z "$INSTALLING_USER" ]; then
-    INSTALLING_USER=$(whoami)
-    INSTALLING_UID=$(id -u)
-    INSTALLING_GID=$(id -g)
+    # Check SUDO_USER first - set by sudo to the original invoking user
+    # This handles cases where user runs "sudo ./install.sh" directly
+    if [ -n "$SUDO_USER" ]; then
+        INSTALLING_USER="$SUDO_USER"
+        INSTALLING_UID=$(id -u "$SUDO_USER")
+        INSTALLING_GID=$(id -g "$SUDO_USER")
+    else
+        INSTALLING_USER=$(whoami)
+        INSTALLING_UID=$(id -u)
+        INSTALLING_GID=$(id -g)
+    fi
 fi
 
 # Main

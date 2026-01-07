@@ -6,8 +6,7 @@
  */
 
 import type { UpdateInfo } from '../../types';
-import { updateInfo, setUpdateInfo, settingsOpen } from '../../state';
-import { openSettings } from '../settings/panel';
+import { updateInfo, setUpdateInfo } from '../../state';
 
 const MAX_RELOAD_ATTEMPTS = 30;
 const RELOAD_INTERVAL_MS = 2000;
@@ -121,9 +120,6 @@ export function checkForUpdates(): void {
   const statusEl = document.getElementById('update-status');
   const warningEl = document.getElementById('update-warning');
 
-  // Remember if settings were open (renderUpdatePanel may close them as side effect)
-  const wasSettingsOpen = settingsOpen;
-
   if (btn) {
     btn.disabled = true;
     btn.textContent = 'Checking...';
@@ -139,11 +135,6 @@ export function checkForUpdates(): void {
 
       setUpdateInfo(update);
       renderUpdatePanel();
-
-      // Restore settings if they were closed unexpectedly
-      if (wasSettingsOpen && !settingsOpen) {
-        openSettings();
-      }
 
       const applyBtn = document.getElementById('btn-apply-update');
       if (statusEl) {
@@ -193,4 +184,29 @@ export function checkForUpdates(): void {
 export function handleUpdateInfo(update: UpdateInfo): void {
   setUpdateInfo(update);
   renderUpdatePanel();
+}
+
+interface UpdateResult {
+  found: boolean;
+  success: boolean;
+  message: string;
+  details: string;
+  timestamp: string;
+  logFile: string;
+}
+
+/**
+ * Check for update results on startup and clear the result file.
+ * The update result is shown in the settings panel, not as a notification.
+ */
+export function checkUpdateResult(): void {
+  fetch('/api/update/result')
+    .then((r) => r.json())
+    .then((result: UpdateResult) => {
+      if (!result.found) return;
+
+      // Clear the result file - the result is shown in the settings/sidebar panels
+      fetch('/api/update/result', { method: 'DELETE' }).catch(() => {});
+    })
+    .catch(() => {});
 }

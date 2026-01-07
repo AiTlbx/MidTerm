@@ -41,6 +41,10 @@ public class Program
         var settingsService = app.Services.GetRequiredService<SettingsService>();
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
+        var tempCleanupService = app.Services.GetRequiredService<TempCleanupService>();
+
+        // Clean orphaned temp files from previous crashed instances
+        tempCleanupService.CleanupOrphanedFiles();
 
         var settings = settingsService.Load();
         DebugLogger.Enabled = settings.DebugLogging;
@@ -57,7 +61,6 @@ public class Program
         // Session manager - always uses ConHost (spawned subprocess per terminal)
         var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser);
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
-        await sessionManager.DiscoverExistingSessionsAsync();
 
         // Configure remaining endpoints
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
@@ -89,6 +92,8 @@ public class Program
                 }
                 finally
                 {
+                    // Final cleanup of any remaining temp files
+                    tempCleanupService.CleanupAllMidTermFiles();
                     instanceGuard.Dispose();
                 }
             });
@@ -96,6 +101,10 @@ public class Program
         });
 
         PrintWelcomeBanner(port, bindAddress, settingsService, version);
+
+        // Discover existing sessions after banner so logs appear cleanly
+        await sessionManager.DiscoverExistingSessionsAsync();
+
         RunWithPortErrorHandling(app, port, bindAddress);
     }
 
@@ -209,14 +218,19 @@ public class Program
         builder.Services.AddSingleton<SettingsService>();
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
+        builder.Services.AddSingleton<TempCleanupService>();
 
         return builder;
     }
 
     private static string GetVersion()
     {
-        return Assembly.GetExecutingAssembly()
+        var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
+
+        // Strip git hash suffix (e.g., "5.3.5+abc123" -> "5.3.5")
+        var plusIndex = version.IndexOf('+');
+        return plusIndex > 0 ? version[..plusIndex] : version;
     }
 
     private static void ConfigureStaticFiles(WebApplication app)
@@ -333,6 +347,54 @@ public class Program
             });
 
             return Results.Ok("Update started. Server will restart shortly.");
+        });
+
+        app.MapGet("/api/update/result", () =>
+        {
+            var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
+            if (string.IsNullOrEmpty(installDir))
+            {
+                return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
+            }
+
+            var resultPath = Path.Combine(installDir, "update-result.json");
+            if (!File.Exists(resultPath))
+            {
+                return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
+            }
+
+            try
+            {
+                var json = File.ReadAllText(resultPath);
+                var result = System.Text.Json.JsonSerializer.Deserialize<UpdateResult>(json, AppJsonContext.Default.UpdateResult);
+                if (result is not null)
+                {
+                    result.Found = true;
+                    return Results.Json(result, AppJsonContext.Default.UpdateResult);
+                }
+            }
+            catch
+            {
+            }
+
+            return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
+        });
+
+        app.MapDelete("/api/update/result", () =>
+        {
+            var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
+            if (string.IsNullOrEmpty(installDir))
+            {
+                return Results.Ok();
+            }
+
+            var resultPath = Path.Combine(installDir, "update-result.json");
+            if (File.Exists(resultPath))
+            {
+                try { File.Delete(resultPath); } catch { }
+            }
+
+            return Results.Ok();
         });
 
         app.MapGet("/api/networks", () =>

@@ -7,6 +7,16 @@
 import type { TerminalTheme, ThemeName } from './types';
 
 // =============================================================================
+// Build Version (injected at compile time via esbuild --define)
+// =============================================================================
+
+/** Version injected at build time - DO NOT MODIFY, replaced by esbuild */
+declare const BUILD_VERSION: string;
+
+/** The version this JavaScript was compiled for */
+export const JS_BUILD_VERSION: string = typeof BUILD_VERSION !== 'undefined' ? BUILD_VERSION : 'dev';
+
+// =============================================================================
 // Mux Protocol Constants
 // =============================================================================
 
@@ -19,6 +29,7 @@ export const MUX_TYPE_INPUT = 0x02;   // Client -> Server: Terminal input
 export const MUX_TYPE_RESIZE = 0x03;  // Client -> Server: Terminal resize
 export const MUX_TYPE_RESYNC = 0x05;  // Server -> Client: Clear terminals, buffer refresh follows
 export const MUX_TYPE_BUFFER_REQUEST = 0x06; // Client -> Server: Request buffer refresh
+export const MUX_TYPE_COMPRESSED_OUTPUT = 0x07; // Server -> Client: GZip compressed output
 
 // =============================================================================
 // Terminal Themes
@@ -27,10 +38,10 @@ export const MUX_TYPE_BUFFER_REQUEST = 0x06; // Client -> Server: Request buffer
 /** Terminal color themes */
 export const THEMES: Record<ThemeName, TerminalTheme> = {
   dark: {
-    background: '#101014',
+    background: '#06060E',
     foreground: '#DCDCF5',
     cursor: '#DCDCF5',
-    cursorAccent: '#101014',
+    cursorAccent: '#06060E',
     selectionBackground: '#283457'
   },
   light: {
