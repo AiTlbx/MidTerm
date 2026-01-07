@@ -831,14 +831,20 @@ write_result true ""Update completed successfully""
     {
         if (OperatingSystem.IsWindows())
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            // Find pwsh.exe - check common locations
+            var pwshPath = FindPowerShellPath();
+
+            var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "pwsh",
-                Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"",
-                UseShellExecute = true,
+                FileName = pwshPath,
+                Arguments = $"-ExecutionPolicy Bypass -NoProfile -File \"{scriptPath}\"",
+                UseShellExecute = false,
                 CreateNoWindow = true,
-                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
-            });
+                RedirectStandardOutput = false,
+                RedirectStandardError = false
+            };
+
+            System.Diagnostics.Process.Start(psi);
         }
         else
         {
@@ -850,6 +856,28 @@ write_result true ""Update completed successfully""
                 CreateNoWindow = true
             });
         }
+    }
+
+    private static string FindPowerShellPath()
+    {
+        // Try pwsh first (PowerShell Core/7+)
+        var pwshPaths = new[]
+        {
+            @"C:\Program Files\PowerShell\7\pwsh.exe",
+            @"C:\Program Files\PowerShell\pwsh.exe",
+            Environment.ExpandEnvironmentVariables(@"%ProgramFiles%\PowerShell\7\pwsh.exe")
+        };
+
+        foreach (var path in pwshPaths)
+        {
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        // Fall back to pwsh in PATH
+        return "pwsh";
     }
 
     private static string EscapeForPowerShell(string value)

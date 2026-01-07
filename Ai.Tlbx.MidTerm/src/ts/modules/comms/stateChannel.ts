@@ -11,6 +11,7 @@ import { scheduleReconnect } from '../../utils';
 import {
   sessions,
   activeSessionId,
+  settingsOpen,
   stateWs,
   stateReconnectTimer,
   stateReconnectDelay,
@@ -138,17 +139,17 @@ export function handleStateUpdate(newSessions: Session[]): void {
   renderSessionList();
   updateEmptyState();
 
-  // Auto-select first session if none active
+  // Auto-select first session if none active (but not if settings are open)
   const firstSession = sessions[0];
-  if (!activeSessionId && firstSession) {
+  if (!activeSessionId && firstSession && !settingsOpen) {
     selectSession(firstSession.id);
   }
 
-  // Handle active session being deleted
+  // Handle active session being deleted (but not if settings are open)
   if (activeSessionId && !sessions.find(s => s.id === activeSessionId)) {
     setActiveSessionId(null);
     const nextSession = sessions[0];
-    if (nextSession) {
+    if (nextSession && !settingsOpen) {
       selectSession(nextSession.id);
     }
   }
