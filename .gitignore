@@ -85,7 +85,9 @@ coverage*.info
 .claude/
 nul
 
-# TypeScript build output
+# TypeScript build output (generated at build time, not committed)
+Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js
+Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js.map
 Ai.Tlbx.MidTerm/dist/
 
 # Node.js

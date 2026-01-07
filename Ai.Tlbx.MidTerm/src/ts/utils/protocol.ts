@@ -50,31 +50,10 @@ export async function parseCompressedOutputFrame(payload: Uint8Array): Promise<O
 
 /**
  * Decompress GZip data using native DecompressionStream API.
+ * Uses Blob/Response pipeline to avoid backpressure deadlock.
  */
 export async function decompressGzip(compressed: Uint8Array): Promise<Uint8Array> {
-  const ds = new DecompressionStream('gzip');
-  const writer = ds.writable.getWriter();
-  const reader = ds.readable.getReader();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await writer.write(compressed as any);
-  await writer.close();
-
-  const chunks: Uint8Array[] = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-
-  // Concatenate chunks into single array
-  const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return result;
+  const blob = new Blob([compressed as BlobPart]);
+  const stream = blob.stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
 }

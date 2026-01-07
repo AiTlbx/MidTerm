@@ -177,7 +177,12 @@ public sealed class MuxWebSocketHandler
             }
 
             var buffer = await _sessionManager.GetBufferAsync(sessionId);
-            if (buffer is not null && buffer.Length > 0)
+            if (buffer is null)
+            {
+                Console.WriteLine($"[MuxHandler] BufferRequest for {sessionId}: IPC returned null (session disconnected?)");
+                return;
+            }
+            if (buffer.Length > 0)
             {
                 // Chunk and compress buffer response
                 for (var offset = 0; offset < buffer.Length; offset += MuxProtocol.CompressionChunkSize)

@@ -11,13 +11,21 @@ import { activeSessionId } from '../../state';
 let pasteToTerminal: (sessionId: string, data: string, isFilePath?: boolean) => void = () => {};
 
 /**
- * Sanitize pasted content to prevent "paste escape" attacks
- * Removes embedded bracketed paste markers that could prematurely end the paste block
+ * Sanitize pasted content to:
+ * 1. Normalize line endings (CRLF/CR → LF) to prevent interleaved empty lines
+ * 2. Strip all escape sequences to prevent "appears then deleted" bugs
+ * 3. Remove BPM markers to prevent paste escape attacks
+ *
+ * BPM markers are re-added by pasteToTerminal() after sanitization.
  */
 function sanitizePasteContent(text: string): string {
   return text
-    .replace(/\x1b\[200~/g, '')
-    .replace(/\x1b\[201~/g, '');
+    .replace(/\r\n/g, '\n')                     // Normalize CRLF → LF first
+    .replace(/\r(?!\n)/g, '\n')                 // Normalize CR → LF (Mac Classic)
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')      // Remove CSI sequences (colors, cursor, clear)
+    .replace(/\x1b\][^\x07]*\x07/g, '')         // Remove OSC sequences (titles, hyperlinks)
+    .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')   // Remove DCS/SOS/PM/APC sequences
+    .replace(/\x1b[\x20-\x2F]*[\x30-\x7E]/g, ''); // Remove other escape sequences
 }
 
 /**

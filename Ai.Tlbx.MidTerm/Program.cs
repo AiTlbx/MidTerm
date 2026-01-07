@@ -61,7 +61,6 @@ public class Program
         // Session manager - always uses ConHost (spawned subprocess per terminal)
         var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser);
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
-        await sessionManager.DiscoverExistingSessionsAsync();
 
         // Configure remaining endpoints
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
@@ -102,6 +101,10 @@ public class Program
         });
 
         PrintWelcomeBanner(port, bindAddress, settingsService, version);
+
+        // Discover existing sessions after banner so logs appear cleanly
+        await sessionManager.DiscoverExistingSessionsAsync();
+
         RunWithPortErrorHandling(app, port, bindAddress);
     }
 

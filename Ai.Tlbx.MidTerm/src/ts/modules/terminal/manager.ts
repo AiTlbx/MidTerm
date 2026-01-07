@@ -21,6 +21,7 @@ import {
 import { getClipboardStyle, parseOutputFrame } from '../../utils';
 import { applyTerminalScaling, fitSessionToScreen } from './scaling';
 import { setupFileDrop, handleClipboardPaste } from './fileDrop';
+import { isBracketedPasteEnabled } from '../comms';
 
 declare const Terminal: any;
 declare const FitAddon: any;
@@ -119,6 +120,7 @@ export function getTerminalOptions(): object {
   const options: Record<string, unknown> = {
     cursorBlink: currentSettings?.cursorBlink ?? true,
     cursorStyle: currentSettings?.cursorStyle ?? 'bar',
+    cursorInactiveStyle: 'none',
     fontFamily: `'${fontFamily}', ${TERMINAL_FONT_STACK}`,
     fontSize: fontSize,
     letterSpacing: 0,
@@ -132,10 +134,19 @@ export function getTerminalOptions(): object {
     theme: THEMES[themeName] ?? THEMES.dark
   };
 
+  // Configure ConPTY for Windows - use server-provided build or detect from userAgent
+  const isWindows = /Windows|Win32|Win64/i.test(navigator.userAgent);
   if (windowsBuildNumber !== null) {
     options.windowsPty = {
       backend: 'conpty',
       buildNumber: windowsBuildNumber
+    };
+  } else if (isWindows) {
+    // Default to Windows 10 2004 (19041) which has stable ConPTY support
+    // This ensures proper VT sequence interpretation before health check completes
+    options.windowsPty = {
+      backend: 'conpty',
+      buildNumber: 19041
     };
   }
 
@@ -463,10 +474,11 @@ export function pasteToTerminal(sessionId: string, data: string, isFilePath: boo
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  // Check both our tracking and xterm.js internal state
-  const ourBpm = bracketedPasteState.get(sessionId) ?? false;
+  // Check all BPM tracking sources: local replay tracking, muxChannel live tracking, and xterm.js
+  const localBpm = bracketedPasteState.get(sessionId) ?? false;
+  const muxBpm = isBracketedPasteEnabled(sessionId);
   const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode ?? false;
-  const bpmEnabled = ourBpm || xtermBpm;
+  const bpmEnabled = localBpm || muxBpm || xtermBpm;
 
   if (bpmEnabled) {
     // Manually wrap with bracketed paste sequences and send via input

@@ -62,6 +62,7 @@
         <div class="sidebar-island" id="sidebar-island">
             <button class="island-expand-btn" id="btn-expand-sidebar" title="Show sidebar">▶</button>
             <span class="island-title" id="island-title">MidTerm</span>
+            <button class="island-btn" id="btn-resize-island" title="Fit to screen">⤢</button>
         </div>
 
         <div class="main-content">
@@ -98,8 +99,16 @@
                         <div class="settings-section">
                             <h3>About & Updates</h3>
                             <div class="setting-row">
-                                <label>Assembly Version</label>
-                                <span class="version-value" id="version-web" title="From mt.exe binary">-</span>
+                                <label>Server</label>
+                                <span class="version-value" id="version-server" title="mt.exe binary version">-</span>
+                            </div>
+                            <div class="setting-row">
+                                <label>Frontend</label>
+                                <span class="version-value" id="version-frontend" title="JavaScript build version">-</span>
+                            </div>
+                            <div class="setting-row">
+                                <label>Host</label>
+                                <span class="version-value" id="version-host" title="mthost.exe binary version">-</span>
                             </div>
                             <div class="setting-row">
                                 <label>Updates</label>

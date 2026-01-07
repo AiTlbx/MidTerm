@@ -5,8 +5,8 @@
  * Communicates with the server API to persist settings changes.
  */
 
-import type { Settings, ThemeName, TerminalState } from '../../types';
-import { THEMES, TERMINAL_FONT_STACK } from '../../constants';
+import type { Settings, ThemeName, TerminalState, HealthResponse } from '../../types';
+import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
 import { currentSettings, setCurrentSettings, dom, sessionTerminals } from '../../state';
 import { setCookie } from '../../utils';
 
@@ -45,11 +45,22 @@ export function getElementChecked(id: string): boolean {
 /**
  * Populate version info in the about section
  */
-export function populateVersionInfo(version: string | null): void {
-  const webEl = document.getElementById('version-web');
-  if (webEl && version) {
-    const shortVersion = (version.split(/[+-]/)[0] ?? version).split('.').slice(0, 3).join('.');
-    webEl.textContent = 'v' + shortVersion;
+export function populateVersionInfo(serverVersion: string | null, hostVersion: string | null, frontendVersion: string): void {
+  const formatVersion = (v: string) => 'v' + (v.split(/[+-]/)[0] ?? v).split('.').slice(0, 3).join('.');
+
+  const serverEl = document.getElementById('version-server');
+  if (serverEl && serverVersion) {
+    serverEl.textContent = formatVersion(serverVersion);
+  }
+
+  const frontendEl = document.getElementById('version-frontend');
+  if (frontendEl) {
+    frontendEl.textContent = frontendVersion === 'dev' ? 'dev' : formatVersion(frontendVersion);
+  }
+
+  const hostEl = document.getElementById('version-host');
+  if (hostEl) {
+    hostEl.textContent = hostVersion ? formatVersion(hostVersion) : '-';
   }
 }
 
@@ -100,24 +111,27 @@ export function populateSettingsForm(settings: Settings): void {
 }
 
 /**
- * Fetch settings, users, and version from server and populate the form
+ * Fetch settings, users, version, and health from server and populate the form
  */
 export async function fetchSettings(): Promise<void> {
   try {
-    const [settings, users, version] = await Promise.all([
+    const [settings, users, version, health] = await Promise.all([
       fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
       fetch('/api/users')
         .then((r) => r.json() as Promise<Array<{ username: string }>>)
         .catch(() => [] as Array<{ username: string }>),
       fetch('/api/version')
         .then((r) => r.text())
-        .catch(() => null)
+        .catch(() => null),
+      fetch('/api/health')
+        .then((r) => r.json() as Promise<HealthResponse>)
+        .catch(() => ({ status: '', memoryMB: 0, uptime: '', sessionCount: 0, ttyHostVersion: undefined }))
     ]);
 
     setCurrentSettings(settings);
     populateUserDropdown(users, settings.runAsUser);
     populateSettingsForm(settings);
-    populateVersionInfo(version);
+    populateVersionInfo(version, health.ttyHostVersion ?? null, JS_BUILD_VERSION);
 
     // Apply settings to any terminals that were created before settings loaded
     applySettingsToTerminals();

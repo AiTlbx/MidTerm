@@ -6,21 +6,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>5.5.8</Version>
+    <Version>5.7.2</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
     <PublishAot>true</PublishAot>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
 
-  <!-- Publish-only: AOT and size optimizations -->
+  <!-- Publish-only: AOT optimizations (Speed over Size) -->
   <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(IsPublishing)' == 'true'">
-    <OptimizationPreference>Size</OptimizationPreference>
+    <OptimizationPreference>Speed</OptimizationPreference>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
     <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
     <IlcTrimMetadata>true</IlcTrimMetadata>
     <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
@@ -76,29 +77,25 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.1" />
   </ItemGroup>
 
-  <!-- TypeScript build configuration -->
+  <!-- TypeScript build configuration (use forward slashes for cross-platform) -->
   <PropertyGroup>
-    <TypeScriptSourceDir>src\ts</TypeScriptSourceDir>
-    <TypeScriptOutFile>wwwroot\js\terminal.min.js</TypeScriptOutFile>
+    <TypeScriptSourceDir>src/ts</TypeScriptSourceDir>
+    <TypeScriptOutFile>wwwroot/js/terminal.min.js</TypeScriptOutFile>
   </PropertyGroup>
 
-  <!-- TypeScript type checking (fails build on TS errors) -->
-  <!-- Use node directly to avoid Unix permission issues with npx shims in CI -->
-  <Target Name="TypeCheckTypeScript" BeforeTargets="CompileTypeScriptDebug;CompileTypeScriptRelease"
-          Condition="Exists('$(TypeScriptSourceDir)\main.ts')">
-    <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(ProjectDir)" />
-  </Target>
-
-  <!-- Debug build: with source map -->
-  <Target Name="CompileTypeScriptDebug" BeforeTargets="Build;Publish"
-          Condition="'$(Configuration)' == 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')">
-    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" />
-  </Target>
-
-  <!-- Release build: WITH source map for production debugging -->
-  <Target Name="CompileTypeScriptRelease" BeforeTargets="Build;Publish"
-          Condition="'$(Configuration)' != 'Debug' And Exists('$(TypeScriptSourceDir)\main.ts')">
-    <Exec Command="node ../node_modules/esbuild/lib/main.js $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020" />
+  <!-- TypeScript compilation for local dev (skipped if CI already built it) -->
+  <Target Name="CompileTypeScript" BeforeTargets="PrepareResources"
+          Condition="!Exists('$(MSBuildProjectDirectory)/$(TypeScriptOutFile)') And Exists('$(MSBuildProjectDirectory)/$(TypeScriptSourceDir)/main.ts')">
+    <Exec Command="node -p &quot;require('../version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
+    </Exec>
+    <Exec Command="node ../node_modules/typescript/lib/tsc.js --noEmit" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="npx esbuild $(TypeScriptSourceDir)/main.ts --bundle --minify --sourcemap=external --outfile=$(TypeScriptOutFile) --target=es2020 &quot;--define:BUILD_VERSION=\&quot;$(WebVersion)\&quot;&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <!-- Add generated files since they didn't exist at project load -->
+    <ItemGroup>
+      <EmbeddedResource Include="$(TypeScriptOutFile)" LinkBase="wwwroot/js" />
+      <EmbeddedResource Include="$(TypeScriptOutFile).map" LinkBase="wwwroot/js" />
+    </ItemGroup>
   </Target>
 
   <Target Name="CleanTypeScript" AfterTargets="Clean">
