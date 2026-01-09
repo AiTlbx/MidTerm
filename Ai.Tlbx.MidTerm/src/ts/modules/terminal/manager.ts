@@ -494,35 +494,12 @@ export function pasteToTerminal(sessionId: string, data: string, isFilePath: boo
 }
 
 /**
- * Save the scroll position for a terminal (call before hiding)
+ * Scroll terminal to bottom - always show most recent output when switching sessions
  */
-export function saveScrollPosition(sessionId: string): void {
+export function scrollToBottom(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state || !state.opened) return;
-
-  const buffer = state.terminal.buffer?.active;
-  if (buffer) {
-    const viewportY = buffer.viewportY ?? 0;
-    if (viewportY > 0) {
-      state.savedViewportY = viewportY;
-    } else {
-      delete state.savedViewportY;
-    }
-  }
-}
-
-/**
- * Restore the scroll position for a terminal (call after showing)
- */
-export function restoreScrollPosition(sessionId: string): void {
-  const state = sessionTerminals.get(sessionId);
-  if (!state || !state.opened) return;
-
-  if (state.savedViewportY !== undefined && state.savedViewportY > 0) {
-    // viewportY is distance from bottom - scroll up by that amount
-    state.terminal.scrollLines(-state.savedViewportY);
-    delete state.savedViewportY;
-  }
+  state.terminal.scrollToBottom();
 }
 
 /**

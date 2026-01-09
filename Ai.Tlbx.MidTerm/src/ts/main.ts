@@ -38,8 +38,7 @@ import {
   bindSearchEvents,
   registerFileDropCallbacks,
   pasteToTerminal,
-  saveScrollPosition,
-  restoreScrollPosition
+  scrollToBottom
 } from './modules/terminal';
 import {
   renderSessionList,
@@ -302,11 +301,6 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     closeSettings();
   }
 
-  // Save scroll position for the previously active terminal
-  if (activeSessionId && activeSessionId !== sessionId) {
-    saveScrollPosition(activeSessionId);
-  }
-
   sessionTerminals.forEach((state) => {
     state.container.classList.add('hidden');
   });
@@ -321,11 +315,8 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
 
   requestAnimationFrame(() => {
     state.terminal.focus();
+    scrollToBottom(sessionId);
 
-    // Restore scroll position if user had scrolled back
-    restoreScrollPosition(sessionId);
-
-    // Server pushes all buffers on WS connect, no need to request again
     if (isNewlyCreated) {
       newlyCreatedSessions.delete(sessionId);
     }
