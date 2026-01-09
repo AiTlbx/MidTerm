@@ -429,9 +429,30 @@ export function destroyTerminalForSession(sessionId: string): void {
   pendingOutputFrames.delete(sessionId);
 }
 
+// Chunking constants for large pastes to prevent PTY buffer overflow
+const PASTE_CHUNK_SIZE = 4096; // 4KB chunks
+const PASTE_CHUNK_DELAY = 10;  // 10ms between chunks
+
+/**
+ * Send data in chunks with delays to prevent PTY buffer overflow.
+ * Used for large pastes (> 4KB) to avoid cursor corruption.
+ */
+async function sendChunked(sessionId: string, data: string): Promise<void> {
+  for (let i = 0; i < data.length; i += PASTE_CHUNK_SIZE) {
+    const chunk = data.slice(i, i + PASTE_CHUNK_SIZE);
+    sendInput(sessionId, chunk);
+    if (i + PASTE_CHUNK_SIZE < data.length) {
+      await new Promise(resolve => setTimeout(resolve, PASTE_CHUNK_DELAY));
+    }
+  }
+}
+
 /**
  * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
  * BPM state is tracked in muxChannel from live WebSocket data.
+ *
+ * Large pastes (> 4KB) are chunked with delays to prevent PTY buffer overflow
+ * which can cause cursor corruption and data loss.
  *
  * @param isFilePath - If true, wrap content in quotes for file path handling.
  *                     This helps TUI apps like Claude Code detect file paths with spaces.
@@ -445,15 +466,28 @@ export function pasteToTerminal(sessionId: string, data: string, isFilePath: boo
   const xtermBpm = (state.terminal as any).modes?.bracketedPasteMode ?? false;
   const bpmEnabled = muxBpm || xtermBpm;
 
+  // Prepare content
+  const content = isFilePath ? '"' + data + '"' : data;
+
   if (bpmEnabled) {
-    // Manually wrap with bracketed paste sequences and send via input
-    // Only quote file paths (for Claude Code image detection with spaces in path)
-    const content = isFilePath ? '"' + data + '"' : data;
+    // Wrap with bracketed paste sequences
     const wrapped = '\x1b[200~' + content + '\x1b[201~';
-    sendInput(sessionId, wrapped);
+    if (wrapped.length > PASTE_CHUNK_SIZE) {
+      // Large paste: send BPM start, chunked content, BPM end
+      sendInput(sessionId, '\x1b[200~');
+      sendChunked(sessionId, content).then(() => {
+        sendInput(sessionId, '\x1b[201~');
+      });
+    } else {
+      sendInput(sessionId, wrapped);
+    }
   } else {
-    // No bracketed paste mode - use standard paste
-    state.terminal.paste(data);
+    // No bracketed paste mode
+    if (content.length > PASTE_CHUNK_SIZE) {
+      sendChunked(sessionId, content);
+    } else {
+      sendInput(sessionId, content);
+    }
   }
 }
 
