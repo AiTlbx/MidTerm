@@ -30,6 +30,7 @@ export const MUX_TYPE_RESIZE = 0x03;  // Client -> Server: Terminal resize
 export const MUX_TYPE_RESYNC = 0x05;  // Server -> Client: Clear terminals, buffer refresh follows
 export const MUX_TYPE_BUFFER_REQUEST = 0x06; // Client -> Server: Request buffer refresh
 export const MUX_TYPE_COMPRESSED_OUTPUT = 0x07; // Server -> Client: GZip compressed output
+export const MUX_TYPE_ACTIVE_HINT = 0x08; // Client -> Server: Hint which session is active
 
 // =============================================================================
 // Terminal Themes

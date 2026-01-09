@@ -22,6 +22,7 @@ namespace Ai.Tlbx.MidTerm.Services
         public const byte TypeResync = 0x05; // Server -> Client: clear all terminals, buffer refresh follows
         public const byte TypeBufferRequest = 0x06; // Client -> Server: request buffer refresh for session
         public const byte TypeCompressedOutput = 0x07; // Server -> Client: GZip compressed terminal output
+        public const byte TypeActiveSessionHint = 0x08; // Client -> Server: hint which session is active (for priority)
 
         // Compression settings
         public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing

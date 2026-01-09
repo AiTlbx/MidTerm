@@ -121,6 +121,27 @@ POST /api/update/apply            Download update and restart
 - `/ws/mux` — Multiplexed terminal I/O (binary protocol)
 - `/ws/state` — Session state changes (JSON, for sidebar sync)
 
+## Mux Protocol & Priority Buffering
+
+The `/ws/mux` endpoint uses a binary protocol for efficient terminal I/O multiplexing.
+
+**Frame format:** `[1 byte type][8 byte sessionId][payload]`
+
+**Message types:**
+- `0x01` Output (server→client)
+- `0x02` Input (client→server)
+- `0x03` Resize (client→server)
+- `0x05` Resync (server→client)
+- `0x06` BufferRequest (client→server)
+- `0x07` CompressedOutput (server→client, GZip)
+- `0x08` ActiveSessionHint (client→server)
+
+**Priority buffering** (`MuxClient.cs`):
+- Active session: frames sent immediately
+- Background sessions: batched until 2KB or 2s elapsed, then sent as compressed frame
+- Timer-free design: single async loop with `Channel.WaitToReadAsync(500ms timeout)`
+- Client sends `ActiveSessionHint` on tab switch and WS connect
+
 ## Authentication
 
 - **PBKDF2** password hashing (100K iterations, SHA256, 32-byte salt)

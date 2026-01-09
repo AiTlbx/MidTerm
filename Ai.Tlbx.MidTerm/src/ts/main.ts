@@ -20,7 +20,8 @@ import {
   registerMuxCallbacks,
   sendInput,
   sendResize,
-  requestBufferRefresh
+  requestBufferRefresh,
+  sendActiveSessionHint
 } from './modules/comms';
 import {
   createTerminalForSession,
@@ -290,6 +291,7 @@ function selectSession(sessionId: string): void {
   });
 
   setActiveSessionId(sessionId);
+  sendActiveSessionHint(sessionId);
 
   const sessionInfo = sessions.find((s) => s.id === sessionId);
   const state = createTerminalForSession(sessionId, sessionInfo);

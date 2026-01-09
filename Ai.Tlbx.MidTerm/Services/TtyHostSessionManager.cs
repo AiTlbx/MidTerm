@@ -23,6 +23,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public event Action<string, int, int, ReadOnlyMemory<byte>>? OnOutput;
     public event Action<string>? OnStateChanged;
+    public event Action<string>? OnSessionClosed;
 
     public TtyHostSessionManager(string? expectedVersion = null, string? minCompatibleVersion = null, string? runAsUser = null)
     {
@@ -347,6 +348,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
 
+        OnSessionClosed?.Invoke(sessionId);
         OnStateChanged?.Invoke(sessionId);
         NotifyStateChange();
         return true;

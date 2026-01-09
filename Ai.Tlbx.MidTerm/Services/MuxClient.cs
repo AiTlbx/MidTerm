@@ -1,57 +1,90 @@
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
+/// <summary>
+/// WebSocket client with per-session output buffering.
+/// Active session gets immediate delivery; background sessions batch for efficiency.
+/// </summary>
 public sealed class MuxClient : IAsyncDisposable
 {
-    private const int MaxQueuedFrames = 100;
+    private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
+    private const int MaxBufferBytesPerSession = 65536;
+    private const int MaxQueuedItems = 1000;
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(500);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
-    private readonly Channel<byte[]> _outputQueue;
+    private readonly Channel<OutputItem> _inputChannel;
+    private readonly Dictionary<string, SessionBuffer> _sessionBuffers = new();
+    private readonly ConcurrentQueue<string> _sessionsToRemove = new();
     private readonly CancellationTokenSource _cts = new();
-    private readonly Task _outputProcessor;
+    private readonly Task _processor;
+
+    private volatile string? _activeSessionId;
     private int _droppedFrameCount;
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
 
+    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, byte[] Data);
+
+    private sealed class SessionBuffer
+    {
+        public Queue<byte[]> DataChunks { get; } = new();
+        public int TotalBytes { get; set; }
+        public int LastCols { get; set; }
+        public int LastRows { get; set; }
+        public long LastFlushTicks { get; set; } = Environment.TickCount64;
+    }
+
     public MuxClient(string id, WebSocket webSocket)
     {
         Id = id;
         WebSocket = webSocket;
-        _outputQueue = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(MaxQueuedFrames)
+        _inputChannel = Channel.CreateBounded<OutputItem>(new BoundedChannelOptions(MaxQueuedItems)
         {
             SingleReader = true,
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest
         });
-        _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
+        _processor = ProcessLoopAsync(_cts.Token);
     }
 
-    public void QueueOutput(byte[] frame)
+    /// <summary>
+    /// Queue raw terminal output for buffered delivery.
+    /// </summary>
+    public void QueueOutput(string sessionId, int cols, int rows, byte[] data)
     {
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
 
-        // Track if we're dropping frames (queue full)
-        var queueCount = _outputQueue.Reader.Count;
-        if (queueCount >= MaxQueuedFrames - 1)
+        var queueCount = _inputChannel.Reader.Count;
+        if (queueCount >= MaxQueuedItems - 1)
         {
             var newCount = Interlocked.Increment(ref _droppedFrameCount);
             if (newCount == 1)
             {
-                Log.Warn(() => $"[MuxClient] {Id}: Queue full, dropping old frames");
+                Log.Warn(() => $"[MuxClient] {Id}: Input queue full, dropping items");
             }
         }
 
-        _outputQueue.Writer.TryWrite(frame);
+        _inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, data));
+    }
+
+    /// <summary>
+    /// Set the active session for priority delivery.
+    /// </summary>
+    public void SetActiveSession(string? sessionId)
+    {
+        _activeSessionId = sessionId;
     }
 
     /// <summary>
     /// Check if frames were dropped and a resync is needed.
-    /// Returns true if resync should happen, and resets the counter.
     /// </summary>
     public bool CheckAndResetDroppedFrames()
     {
@@ -59,37 +92,137 @@ public sealed class MuxClient : IAsyncDisposable
         return count > 0;
     }
 
-    private async Task ProcessOutputQueueAsync(CancellationToken ct)
+    /// <summary>
+    /// Queue session buffer removal (thread-safe, processed by loop).
+    /// </summary>
+    public void RemoveSession(string sessionId)
     {
+        _sessionsToRemove.Enqueue(sessionId);
+    }
+
+    private async Task ProcessLoopAsync(CancellationToken ct)
+    {
+        var reader = _inputChannel.Reader;
+
         try
         {
-            await foreach (var frame in _outputQueue.Reader.ReadAllAsync(ct))
+            while (!ct.IsCancellationRequested)
             {
-                if (WebSocket.State != WebSocketState.Open)
+                // 1. Process pending session removals
+                while (_sessionsToRemove.TryDequeue(out var sessionId))
                 {
-                    // Connection closed, drain and exit
-                    while (_outputQueue.Reader.TryRead(out _)) { }
-                    break;
+                    _sessionBuffers.Remove(sessionId);
                 }
 
+                // 2. Drain all immediately available items into buffers
+                while (reader.TryRead(out var item))
+                {
+                    BufferOutput(item);
+                }
+
+                // 3. Flush what's due (active immediately, background if threshold/time)
+                var now = Environment.TickCount64;
+                await FlushDueBuffersAsync(now).ConfigureAwait(false);
+
+                // 4. Wait for more data OR timeout (to check time-based flushes)
                 try
                 {
-                    await SendFrameAsync(frame).ConfigureAwait(false);
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(LoopCheckInterval);
+                    await reader.WaitToReadAsync(timeoutCts.Token).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    Log.Error(() => $"[MuxClient] {Id}: Send error: {ex.Message}");
-                    // Continue trying to send other frames
+                    // Timeout - continue to check time-based flushes
                 }
             }
         }
         catch (OperationCanceledException)
         {
+            // Normal shutdown
         }
         catch (Exception ex)
         {
-            Log.Exception(ex, $"MuxClient.ProcessOutputQueue({Id})");
+            Log.Exception(ex, $"MuxClient.ProcessLoop({Id})");
         }
+    }
+
+    private void BufferOutput(OutputItem item)
+    {
+        if (!_sessionBuffers.TryGetValue(item.SessionId, out var buffer))
+        {
+            buffer = new SessionBuffer();
+            _sessionBuffers[item.SessionId] = buffer;
+        }
+
+        // Enforce per-session limit (drop oldest if exceeded)
+        while (buffer.TotalBytes + item.Data.Length > MaxBufferBytesPerSession
+               && buffer.DataChunks.Count > 0)
+        {
+            var oldest = buffer.DataChunks.Dequeue();
+            buffer.TotalBytes -= oldest.Length;
+        }
+
+        buffer.DataChunks.Enqueue(item.Data);
+        buffer.TotalBytes += item.Data.Length;
+        buffer.LastCols = item.Cols;
+        buffer.LastRows = item.Rows;
+    }
+
+    private async Task FlushDueBuffersAsync(long nowTicks)
+    {
+        if (WebSocket.State != WebSocketState.Open) return;
+
+        foreach (var (sessionId, buffer) in _sessionBuffers)
+        {
+            if (buffer.DataChunks.Count == 0) continue;
+
+            bool shouldFlush;
+            if (sessionId == _activeSessionId)
+            {
+                // Active: ALWAYS flush immediately
+                shouldFlush = true;
+            }
+            else
+            {
+                // Background: flush if size threshold OR time elapsed
+                var elapsedMs = nowTicks - buffer.LastFlushTicks;
+                shouldFlush = buffer.TotalBytes >= FlushThresholdBytes
+                           || elapsedMs >= (long)FlushInterval.TotalMilliseconds;
+            }
+
+            if (shouldFlush)
+            {
+                await FlushBufferAsync(sessionId, buffer).ConfigureAwait(false);
+                buffer.LastFlushTicks = nowTicks;
+            }
+        }
+    }
+
+    private async Task FlushBufferAsync(string sessionId, SessionBuffer buffer)
+    {
+        if (buffer.DataChunks.Count == 0) return;
+
+        // Combine all chunks into single payload
+        var totalLen = buffer.DataChunks.Sum(c => c.Length);
+        var combined = new byte[totalLen];
+        var offset = 0;
+        foreach (var chunk in buffer.DataChunks)
+        {
+            Buffer.BlockCopy(chunk, 0, combined, offset, chunk.Length);
+            offset += chunk.Length;
+        }
+
+        // Create frame (with compression if large enough)
+        var frame = combined.Length > MuxProtocol.CompressionThreshold
+            ? MuxProtocol.CreateCompressedOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, combined)
+            : MuxProtocol.CreateOutputFrame(sessionId, buffer.LastCols, buffer.LastRows, combined);
+
+        // Send first, clear after - prevents data loss on send failure
+        await SendFrameAsync(frame).ConfigureAwait(false);
+
+        buffer.DataChunks.Clear();
+        buffer.TotalBytes = 0;
     }
 
     private async Task SendFrameAsync(byte[] data)
@@ -108,6 +241,9 @@ public sealed class MuxClient : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Send a frame directly (bypassing buffering) - used for init/sync frames.
+    /// </summary>
     public async Task<bool> TrySendAsync(byte[] data)
     {
         if (WebSocket.State != WebSocketState.Open) return false;
@@ -136,14 +272,15 @@ public sealed class MuxClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _cts.Cancel();
-        _outputQueue.Writer.Complete();
+        _inputChannel.Writer.Complete();
 
         try
         {
-            await _outputProcessor.ConfigureAwait(false);
+            await _processor.ConfigureAwait(false);
         }
         catch
         {
+            // Ignore shutdown errors
         }
 
         _cts.Dispose();

@@ -43,6 +43,7 @@ Your PC                          Anywhere
 - **Cross-platform** — macOS, Windows, Linux (Native AOT compiled)
 - **Password protected** — PBKDF2 hashed password, required during install
 - **Multi-session** — Multiple terminals, one WebSocket connection
+- **Priority multiplexing** — Active terminal gets instant delivery, background sessions batch efficiently
 - **Manual resize** — Fit terminal to any screen size with one click
 - **Any shell** — Zsh, Bash, PowerShell, CMD
 - **Auto-update** — One-click update from the UI, page reloads automatically

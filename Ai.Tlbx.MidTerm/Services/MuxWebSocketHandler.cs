@@ -164,6 +164,10 @@ public sealed class MuxWebSocketHandler
             case MuxProtocol.TypeBufferRequest:
                 await SendBufferForSessionAsync(client, sessionId);
                 break;
+
+            case MuxProtocol.TypeActiveSessionHint:
+                client.SetActiveSession(sessionId);
+                break;
         }
     }
 

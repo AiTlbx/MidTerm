@@ -18,6 +18,7 @@ import {
   MUX_TYPE_RESYNC,
   MUX_TYPE_BUFFER_REQUEST,
   MUX_TYPE_COMPRESSED_OUTPUT,
+  MUX_TYPE_ACTIVE_HINT,
   INITIAL_RECONNECT_DELAY,
   MAX_RECONNECT_DELAY
 } from '../../constants';
@@ -29,6 +30,7 @@ import {
   muxHasConnected,
   sessionTerminals,
   pendingOutputFrames,
+  activeSessionId,
   setMuxWs,
   setMuxReconnectTimer,
   setMuxReconnectDelay,
@@ -240,6 +242,11 @@ export function connectMuxWebSocket(): void {
     } else {
       log.info(() => 'Connected (first connection)');
     }
+
+    // Send active session hint so server knows which session to prioritize
+    if (activeSessionId) {
+      sendActiveSessionHint(activeSessionId);
+    }
   };
 
   ws.onmessage = (event) => {
@@ -329,6 +336,20 @@ export function requestBufferRefresh(sessionId: string): void {
   const frame = new Uint8Array(MUX_HEADER_SIZE);
   frame[0] = MUX_TYPE_BUFFER_REQUEST;
   encodeSessionId(frame, 1, sessionId);
+  muxWs.send(frame);
+}
+
+/**
+ * Send active session hint to server for priority delivery.
+ */
+export function sendActiveSessionHint(sessionId: string | null): void {
+  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+
+  const frame = new Uint8Array(MUX_HEADER_SIZE);
+  frame[0] = MUX_TYPE_ACTIVE_HINT;
+  if (sessionId) {
+    encodeSessionId(frame, 1, sessionId);
+  }
   muxWs.send(frame);
 }
 

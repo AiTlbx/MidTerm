@@ -23,9 +23,18 @@ public sealed class TtyHostMuxConnectionManager
     {
         _sessionManager = sessionManager;
         _sessionManager.OnOutput += HandleOutput;
+        _sessionManager.OnSessionClosed += HandleSessionClosed;
 
         _cts = new CancellationTokenSource();
         _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
+    }
+
+    private void HandleSessionClosed(string sessionId)
+    {
+        foreach (var client in _clients.Values)
+        {
+            client.RemoveSession(sessionId);
+        }
     }
 
     private void HandleOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
@@ -42,17 +51,12 @@ public sealed class TtyHostMuxConnectionManager
                 Log.Verbose(() => $"[WS-OUTPUT] {sessionId}: {BitConverter.ToString(data)}");
             }
 
-            // Use compression for payloads over threshold
-            var frame = data.Length > MuxProtocol.CompressionThreshold
-                ? MuxProtocol.CreateCompressedOutputFrame(sessionId, cols, rows, data)
-                : MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data);
-
-            // Queue to each client - non-blocking, each client has its own queue
+            // Queue raw data to each client - clients handle buffering and framing
             foreach (var client in _clients.Values)
             {
                 if (client.WebSocket.State == WebSocketState.Open)
                 {
-                    client.QueueOutput(frame);
+                    client.QueueOutput(sessionId, cols, rows, data);
                 }
             }
         }
@@ -89,17 +93,13 @@ public sealed class TtyHostMuxConnectionManager
         var cols = sessionInfo?.Cols ?? 80;
         var rows = sessionInfo?.Rows ?? 24;
 
-        // Use compression for payloads over threshold
-        var frame = data.Length > MuxProtocol.CompressionThreshold
-            ? MuxProtocol.CreateCompressedOutputFrame(sessionId, cols, rows, data.Span)
-            : MuxProtocol.CreateOutputFrame(sessionId, cols, rows, data.Span);
-
-        // Queue to each client - non-blocking
+        // Queue raw data to each client - clients handle buffering and framing
+        var dataArray = data.ToArray();
         foreach (var client in _clients.Values)
         {
             if (client.WebSocket.State == WebSocketState.Open)
             {
-                client.QueueOutput(frame);
+                client.QueueOutput(sessionId, cols, rows, dataArray);
             }
         }
     }
