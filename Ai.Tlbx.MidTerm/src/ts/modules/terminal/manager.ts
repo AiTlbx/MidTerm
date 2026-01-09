@@ -501,7 +501,11 @@ export function saveScrollPosition(sessionId: string): void {
   const buffer = state.terminal.buffer?.active;
   if (buffer) {
     const viewportY = buffer.viewportY ?? 0;
-    state.savedViewportY = viewportY > 0 ? viewportY : undefined;
+    if (viewportY > 0) {
+      state.savedViewportY = viewportY;
+    } else {
+      delete state.savedViewportY;
+    }
   }
 }
 
@@ -515,7 +519,7 @@ export function restoreScrollPosition(sessionId: string): void {
   if (state.savedViewportY !== undefined && state.savedViewportY > 0) {
     // viewportY is distance from bottom - scroll up by that amount
     state.terminal.scrollLines(-state.savedViewportY);
-    state.savedViewportY = undefined;
+    delete state.savedViewportY;
   }
 }
 
