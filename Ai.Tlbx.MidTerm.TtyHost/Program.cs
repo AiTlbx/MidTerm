@@ -38,6 +38,16 @@ public static class Program
 
     public static async Task<int> Main(string[] args)
     {
+#if !WINDOWS
+        // PTY exec mode - check FIRST before any .NET initialization
+        // Usage: mthost --pty-exec <slave-path> <shell> [shell-args...]
+        // This replaces the process with the shell via execvp() and never returns
+        if (args.Length >= 3 && args[0] == "--pty-exec")
+        {
+            return PtyExec.Execute(args[1], args[2..]);
+        }
+#endif
+
         if (args.Contains("--version") || args.Contains("-v"))
         {
             Console.WriteLine($"mthost {Version}");
@@ -621,6 +631,7 @@ public static class Program
             mthost {Version} - MidTerm Console Host
 
             Usage: mthost --session <id> [options]
+                   mthost --pty-exec <slave-path> <shell> [shell-args...]
 
             Required:
               --session <id>    Unique session identifier
@@ -634,6 +645,9 @@ public static class Program
               --debug           Shortcut for --loglevel verbose
               -h, --help        Show this help
               -v, --version     Show version
+
+            PTY Exec Mode (Unix only):
+              --pty-exec        Set up PTY and exec shell (internal, does not return)
 
             IPC (Windows):
               Listens on named pipe: mthost-<session-id>-<pid>

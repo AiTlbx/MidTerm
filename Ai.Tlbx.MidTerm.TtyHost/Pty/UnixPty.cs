@@ -139,38 +139,31 @@ public sealed class UnixPty : IPtyConnection
         _writerStream = new FileStream(_masterHandle, FileAccess.Write, bufferSize: 4096, isAsync: false);
         _readerStream = new FileStream(_masterHandle, FileAccess.Read, bufferSize: 4096, isAsync: false);
 
-        ProcessStartInfo psi;
-        var argsString = args.Length > 0 ? " " + string.Join(" ", args) : "";
+        // Self-invoke mthost in PTY exec mode (unified for macOS and Linux)
+        // mthost --pty-exec <slave-path> <shell> [shell-args...]
+        var mtHostPath = Environment.ProcessPath!;
 
-        if (OperatingSystem.IsMacOS())
+        var psi = new ProcessStartInfo
         {
-            var pyScript = $"import os; os.setsid(); fd=os.open('{slaveName}',os.O_RDWR); " +
-                           "os.dup2(fd,0); os.dup2(fd,1); os.dup2(fd,2); os.close(fd); " +
-                           $"os.execvp('{app}',['{app}'" + (args.Length > 0 ? ", " + string.Join(", ", args.Select(a => $"'{a}'")) : "") + "])";
-            psi = new ProcessStartInfo
-            {
-                FileName = "/usr/bin/python3",
-                Arguments = $"-c \"{pyScript}\""
-            };
-        }
-        else
+            FileName = mtHostPath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = false,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false
+        };
+
+        psi.ArgumentList.Add("--pty-exec");
+        psi.ArgumentList.Add(slaveName);
+        psi.ArgumentList.Add(app);
+        foreach (var arg in args)
         {
-            var execCmd = $"exec setsid {app}{argsString} <'{slaveName}' >'{slaveName}' 2>&1";
-            psi = new ProcessStartInfo
-            {
-                FileName = "/bin/sh",
-                Arguments = $"-c \"{execCmd}\""
-            };
+            psi.ArgumentList.Add(arg);
         }
 
         psi.WorkingDirectory = Directory.Exists(workingDirectory)
             ? workingDirectory
             : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        psi.UseShellExecute = false;
-        psi.CreateNoWindow = true;
-        psi.RedirectStandardInput = false;
-        psi.RedirectStandardOutput = false;
-        psi.RedirectStandardError = false;
 
         if (environment is not null)
         {
