@@ -4,11 +4,11 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public static class AuthEndpoints
 {
-    private static readonly CookieOptions SessionCookieOptions = new()
+    private static CookieOptions GetSessionCookieOptions() => new()
     {
         HttpOnly = true,
         SameSite = SameSiteMode.Strict,
-        Secure = false,
+        Secure = true,  // Always HTTPS
         Path = "/",
         MaxAge = TimeSpan.FromDays(21)
     };
@@ -38,7 +38,7 @@ public static class AuthEndpoints
                 // Don't modify response for WebSocket upgrade requests
                 if (!context.WebSockets.IsWebSocketRequest)
                 {
-                    context.Response.Cookies.Append("mm-session", token, SessionCookieOptions);
+                    context.Response.Cookies.Append("mm-session", token, GetSessionCookieOptions());
                 }
                 await next();
                 return;
@@ -89,7 +89,7 @@ public static class AuthEndpoints
 
             authService.ResetAttempts(ip);
             var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append("mm-session", token, SessionCookieOptions);
+            ctx.Response.Cookies.Append("mm-session", token, GetSessionCookieOptions());
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
@@ -130,7 +130,7 @@ public static class AuthEndpoints
             settingsService.Save(pwSettings);
 
             var token = authService.CreateSessionToken();
-            ctx.Response.Cookies.Append("mm-session", token, SessionCookieOptions);
+            ctx.Response.Cookies.Append("mm-session", token, GetSessionCookieOptions());
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
@@ -151,6 +151,7 @@ public static class AuthEndpoints
         return path == "/login" ||
                path == "/login.html" ||
                path == "/api/health" ||
+               path == "/api/certificate/info" ||
                path.StartsWith("/api/auth/") ||
                path.StartsWith("/css/") ||
                path.StartsWith("/js/") ||

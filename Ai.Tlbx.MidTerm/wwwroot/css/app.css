@@ -2176,6 +2176,78 @@ html, body {
     display: none;
 }
 
+/* Certificate Info (TOFU) */
+.cert-info {
+    margin-top: 24px;
+    padding: 16px;
+    background-color: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+.cert-info.hidden {
+    display: none;
+}
+
+.cert-info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.cert-info-title {
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.cert-hide-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 4px;
+    opacity: 0.6;
+}
+
+.cert-hide-btn:hover {
+    opacity: 1;
+    color: var(--text-primary);
+}
+
+.cert-fingerprint {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 10px;
+    color: var(--text-primary);
+    word-break: break-all;
+    line-height: 1.6;
+    background-color: var(--bg-input);
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.cert-dates {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-bottom: 10px;
+}
+
+.cert-hint {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-style: italic;
+    opacity: 0.8;
+}
+
 /* Password Modal */
 .password-modal-content {
     max-width: 400px;

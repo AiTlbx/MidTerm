@@ -8,9 +8,6 @@ param(
     [string]$PasswordHash,
     [int]$Port = 2000,
     [string]$BindAddress = "",
-    [bool]$UseHttps = $false,
-    [string]$CertPath = "",
-    [string]$CertPassword = "",
     [switch]$ServiceMode
 )
 
@@ -56,8 +53,19 @@ function Get-CurrentUserInfo
 
 function Get-ExistingPasswordHash
 {
-    # Passwords are now stored in platform-specific secure storage (DPAPI on Windows)
-    # This cannot be read from PowerShell without the binary - fresh install required
+    $settingsPath = "$env:ProgramData\MidTerm\settings.json"
+    if (Test-Path $settingsPath)
+    {
+        try
+        {
+            $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+            if ($settings.passwordHash -and $settings.passwordHash.Length -gt 10)
+            {
+                return $settings.passwordHash
+            }
+        }
+        catch { }
+    }
     return $null
 }
 
@@ -94,13 +102,13 @@ function Prompt-Password
             continue
         }
 
-        # Hash the password using mt.exe --hash-password via stdin (secure)
+        # Hash the password using mt.exe --hash-password
         $mmPath = Join-Path $InstallDir "mt.exe"
         if (Test-Path $mmPath)
         {
             try
             {
-                $hash = $pwPlain | & $mmPath --hash-password 2>&1
+                $hash = & $mmPath --hash-password $pwPlain 2>&1
                 if ($hash -match '^\$PBKDF2\$')
                 {
                     return $hash
@@ -109,10 +117,9 @@ function Prompt-Password
             catch { }
         }
 
-        # Fail-fast: binary should have been downloaded before calling this
-        Write-Host "  Error: Could not hash password. Binary not found at: $mmPath" -ForegroundColor Red
-        Write-Host "  Please re-run the installer." -ForegroundColor Red
-        exit 1
+        # Fallback: Return plaintext marker (will be hashed on first run)
+        Write-Host "  Warning: Could not hash password, will be set on first access." -ForegroundColor Yellow
+        return "__PENDING__:$pwPlain"
     }
 
     Write-Host "  Too many failed attempts. Exiting." -ForegroundColor Red
@@ -122,53 +129,51 @@ function Prompt-Password
 function Generate-Certificate
 {
     param(
-        [string]$CertPath
+        [string]$InstallDir,
+        [string]$SettingsDir
     )
 
-    # Generate random 24-char alphanumeric password
-    $Password = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+    Write-Host "  Generating HTTPS certificate with OS-protected private key..." -ForegroundColor Gray
 
-    Write-Host "  Generating HTTPS certificate..." -ForegroundColor Gray
-
-    # Get all local IP addresses (physical and VPN)
-    $ipAddresses = @("127.0.0.1")
-    try
+    $mtPath = Join-Path $InstallDir "mt.exe"
+    if (-not (Test-Path $mtPath))
     {
-        $adapters = Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
-            $_.IPAddress -ne "127.0.0.1" -and
-            $_.PrefixOrigin -ne "WellKnown"
-        }
-        foreach ($adapter in $adapters)
-        {
-            $ipAddresses += $adapter.IPAddress
-        }
+        Write-Host "  Error: mt.exe not found at $mtPath" -ForegroundColor Red
+        return $null
     }
-    catch { }
 
-    # Build DNS names list (localhost + all IPs)
-    $dnsNames = @("localhost") + $ipAddresses
-
-    # Generate self-signed certificate
     try
     {
-        $cert = New-SelfSignedCertificate `
-            -Subject "CN=MidTerm" `
-            -DnsName $dnsNames `
-            -CertStoreLocation "Cert:\CurrentUser\My" `
-            -NotAfter (Get-Date).AddYears(10) `
-            -KeyUsage DigitalSignature, KeyEncipherment `
-            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.1") `
-            -FriendlyName "MidTerm HTTPS Certificate"
+        # Use mt.exe --generate-cert to generate certificate with DPAPI-protected key
+        $output = & $mtPath --generate-cert 2>&1
+        $exitCode = $LASTEXITCODE
 
-        # Export to PFX
-        $securePassword = ConvertTo-SecureString -String $Password -Force -AsPlainText
-        Export-PfxCertificate -Cert $cert -FilePath $CertPath -Password $securePassword | Out-Null
+        if ($exitCode -ne 0)
+        {
+            Write-Host "  Failed to generate certificate: $output" -ForegroundColor Red
+            return $null
+        }
 
-        Write-Host "  Certificate generated: $CertPath" -ForegroundColor Gray
-        Write-Host "  Valid for: localhost, $($ipAddresses -join ', ')" -ForegroundColor Gray
+        # Parse output for certificate path
+        $certPath = $null
+        foreach ($line in $output)
+        {
+            if ($line -match "Certificate saved to: (.+\.pem)")
+            {
+                $certPath = $Matches[1].Trim()
+            }
+        }
+
+        if (-not $certPath)
+        {
+            # Default path
+            $certPath = Join-Path $SettingsDir "midterm-cert.pem"
+        }
+
+        Write-Host "  Certificate generated with DPAPI-protected private key" -ForegroundColor Green
+        Write-Host ""
 
         # Offer to trust the certificate
-        Write-Host ""
         Write-Host "  Trust certificate? (Removes browser warnings)" -ForegroundColor Yellow
         Write-Host "  This requires administrator privileges." -ForegroundColor Gray
         $trustChoice = Read-Host "  Trust certificate? [Y/n]"
@@ -177,6 +182,12 @@ function Generate-Certificate
         {
             try
             {
+                # Load the PEM certificate
+                $certContent = Get-Content $certPath -Raw
+                $certBytes = [System.Text.Encoding]::UTF8.GetBytes($certContent)
+                $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+                $cert.Import([Convert]::FromBase64String(($certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", "")))
+
                 # Import to Trusted Root - requires admin
                 $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
                 $rootStore.Open("ReadWrite")
@@ -191,21 +202,17 @@ function Generate-Certificate
             }
         }
 
-        return @{ Success = $true; Password = $Password }
+        return $certPath
     }
     catch
     {
         Write-Host "  Failed to generate certificate: $_" -ForegroundColor Red
-        return @{ Success = $false; Password = $null }
+        return $null
     }
 }
 
 function Prompt-NetworkConfig
 {
-    param(
-        [string]$SettingsDir
-    )
-
     Write-Host ""
     Write-Host "  Network Configuration:" -ForegroundColor Cyan
     Write-Host ""
@@ -253,50 +260,13 @@ function Prompt-NetworkConfig
         Write-Host "  Ensure your password is strong and consider firewall rules." -ForegroundColor Yellow
     }
 
-    # HTTPS configuration
+    # Always HTTPS - certificate will be generated after binary install
     Write-Host ""
-    Write-Host "  HTTPS Configuration:" -ForegroundColor White
-    Write-Host "  [1] HTTP only (default)" -ForegroundColor Cyan
-    Write-Host "      - No encryption, works immediately" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  [2] HTTPS (recommended for network access)" -ForegroundColor Cyan
-    Write-Host "      - Generates self-signed certificate" -ForegroundColor Gray
-    Write-Host "      - Encrypts all traffic" -ForegroundColor Gray
-    Write-Host ""
-
-    $httpsChoice = Read-Host "  Your choice [1/2]"
-    $useHttps = $false
-    $certPath = $null
-
-    $certPassword = $null
-
-    if ($httpsChoice -eq "2")
-    {
-        $useHttps = $true
-        if ($SettingsDir)
-        {
-            if (-not (Test-Path $SettingsDir)) { New-Item -ItemType Directory -Path $SettingsDir -Force | Out-Null }
-            $certPath = Join-Path $SettingsDir "cert.pfx"
-            $certResult = Generate-Certificate -CertPath $certPath
-            if (-not $certResult.Success)
-            {
-                Write-Host "  Falling back to HTTP" -ForegroundColor Yellow
-                $useHttps = $false
-                $certPath = $null
-            }
-            else
-            {
-                $certPassword = $certResult.Password
-            }
-        }
-    }
+    Write-Host "  HTTPS: Enabled (self-signed certificate with OS-protected key)" -ForegroundColor Green
 
     return @{
         Port = $port
         BindAddress = $bindAddress
-        UseHttps = $useHttps
-        CertPath = $certPath
-        CertPassword = $certPassword
     }
 }
 
@@ -319,42 +289,14 @@ function Get-AssetUrl
     return $asset.browser_download_url
 }
 
-function Ensure-BinaryForHashing
-{
-    param([string]$TempDir)
-
-    if (-not (Test-Path $TempDir)) { New-Item -ItemType Directory -Path $TempDir -Force | Out-Null }
-
-    $tempZip = Join-Path $TempDir "mt-download.zip"
-    $tempExtract = Join-Path $TempDir "extract"
-
-    Write-Host "Downloading..." -ForegroundColor Gray
-    $assetUrl = Get-AssetUrl -Release $script:release
-    Invoke-WebRequest -Uri $assetUrl -OutFile $tempZip
-
-    Write-Host "Extracting..." -ForegroundColor Gray
-    Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
-    Remove-Item $tempZip -Force
-
-    $sourceBinary = Join-Path $tempExtract $WebBinaryName
-    $destBinary = Join-Path $TempDir $WebBinaryName
-
-    if (Test-Path $sourceBinary)
-    {
-        Copy-Item $sourceBinary $destBinary -Force
-    }
-
-    return $TempDir
-}
-
 function Write-ServiceSettings
 {
     param(
         [string]$Username,
         [string]$UserSid,
+        [string]$PasswordHash,
         [int]$Port = 2000,
         [string]$BindAddress = "*",
-        [bool]$UseHttps = $false,
         [string]$CertPath = $null
     )
 
@@ -376,18 +318,22 @@ function Write-ServiceSettings
 
     # Write minimal bootstrap settings - app will migrate user preferences from .old
     # Note: port/bind are passed via service command line args, not settings.json
-    # Note: secrets (passwordHash, certificatePassword, sessionSecret) are stored via --write-secret
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
         authenticationEnabled = $true
     }
 
-    # HTTPS settings (only path, password stored separately)
-    if ($UseHttps -and $CertPath)
+    if ($PasswordHash)
     {
-        $settings.useHttps = $true
+        $settings.passwordHash = $PasswordHash
+    }
+
+    # HTTPS settings - always HTTPS, use OS-level key protection
+    if ($CertPath)
+    {
         $settings.certificatePath = $CertPath
+        $settings.keyProtection = "osProtected"
     }
 
     $json = $settings | ConvertTo-Json -Depth 10
@@ -396,41 +342,8 @@ function Write-ServiceSettings
     Write-Host "  Terminal user: $Username" -ForegroundColor Gray
     Write-Host "  Port: $Port" -ForegroundColor Gray
     Write-Host "  Binding: $(if ($BindAddress -eq 'localhost') { 'localhost only' } else { 'all interfaces' })" -ForegroundColor Gray
-    if ($UseHttps) { Write-Host "  HTTPS: enabled" -ForegroundColor Green }
-}
-
-function Write-Secrets
-{
-    param(
-        [string]$InstallDir,
-        [string]$PasswordHash,
-        [string]$CertPassword
-    )
-
-    $mmPath = Join-Path $InstallDir "mt.exe"
-
-    # Generate session secret
-    $sessionSecret = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
-
-    Write-Host "  Writing secrets to secure storage..." -ForegroundColor Gray
-
-    # Store password hash
-    if ($PasswordHash)
-    {
-        $PasswordHash | & $mmPath --write-secret password_hash 2>&1 | Out-Null
-        Write-Host "    Password hash: stored" -ForegroundColor Gray
-    }
-
-    # Store session secret
-    $sessionSecret | & $mmPath --write-secret session_secret 2>&1 | Out-Null
-    Write-Host "    Session secret: generated" -ForegroundColor Gray
-
-    # Store certificate password
-    if ($CertPassword)
-    {
-        $CertPassword | & $mmPath --write-secret certificate_password 2>&1 | Out-Null
-        Write-Host "    Certificate password: stored" -ForegroundColor Gray
-    }
+    if ($CertPath) { Write-Host "  HTTPS: enabled (OS-protected key)" -ForegroundColor Green }
+    if ($PasswordHash) { Write-Host "  Password: configured" -ForegroundColor Gray }
 }
 
 function Install-MidTerm
@@ -442,10 +355,7 @@ function Install-MidTerm
         [string]$RunAsUserSid,
         [string]$PasswordHash,
         [int]$Port = 2000,
-        [string]$BindAddress = "*",
-        [bool]$UseHttps = $false,
-        [string]$CertPath = "",
-        [string]$CertPassword = ""
+        [string]$BindAddress = "*"
     )
 
     if ($AsService)
@@ -551,17 +461,44 @@ function Install-MidTerm
     Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
     Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
 
-    # Store secrets now that mt.exe is installed
+    # Hash pending password now that mt.exe is installed
+    if ($PasswordHash -and $PasswordHash.StartsWith("__PENDING__:"))
+    {
+        $plainPassword = $PasswordHash.Substring(12)
+        try
+        {
+            $hash = & $destWebBinary --hash-password $plainPassword 2>&1
+            if ($hash -match '^\$PBKDF2\$')
+            {
+                $PasswordHash = $hash
+                Write-Host "  Password: hashed" -ForegroundColor Gray
+            }
+            else
+            {
+                Write-Host "  Warning: Password hashing failed, using fallback" -ForegroundColor Yellow
+            }
+        }
+        catch
+        {
+            Write-Host "  Warning: Could not hash password: $_" -ForegroundColor Yellow
+        }
+    }
+
+    # Always generate certificate now that mt.exe is installed (always HTTPS)
+    $settingsDir = if ($AsService) { "$env:ProgramData\MidTerm" } else { "$env:USERPROFILE\.MidTerm" }
+    $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir
+    if (-not $CertPath)
+    {
+        Write-Host "  Warning: Certificate generation failed. App will use fallback certificate." -ForegroundColor Yellow
+    }
+
     if ($AsService)
     {
-        # Write settings file (no secrets, they go to secure storage)
+        # Write settings with runAsUser info and password
         if ($RunAsUser -and $RunAsUserSid)
         {
-            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath
+            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -CertPath $CertPath
         }
-
-        # Write secrets to platform-specific secure storage
-        Write-Secrets -InstallDir $installDir -PasswordHash $PasswordHash -CertPassword $CertPassword
 
         Install-AsService -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
 
@@ -580,10 +517,10 @@ function Install-MidTerm
         if ($mmProc) { Write-Host "  mt (web)   : Running (PID $($mmProc.Id))" -ForegroundColor Green }
         else { Write-Host "  mt (web)   : Starting..." -ForegroundColor Yellow }
 
-        # Check health endpoint
+        # Check health endpoint (HTTPS with self-signed cert requires SkipCertificateCheck)
         try
         {
-            $health = Invoke-RestMethod -Uri "http://localhost:$Port/api/health" -TimeoutSec 5 -ErrorAction Stop
+            $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
             Write-Host ""
             Write-Host "Health Check:" -ForegroundColor Cyan
             if ($health.healthy) { Write-Host "  Status     : Healthy" -ForegroundColor Green }
@@ -594,11 +531,25 @@ function Install-MidTerm
         {
             Write-Host ""
             Write-Host "Health Check:" -ForegroundColor Cyan
-            Write-Host "  Status     : Could not connect to http://localhost:$Port" -ForegroundColor Yellow
+            Write-Host "  Status     : Could not connect to https://localhost:$Port" -ForegroundColor Yellow
         }
     }
     else
     {
+        # Write user settings
+        $userSettingsDir = Join-Path $env:USERPROFILE ".MidTerm"
+        $userSettingsPath = Join-Path $userSettingsDir "settings.json"
+        if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
+
+        $userSettings = @{ authenticationEnabled = $true }
+        if ($PasswordHash) { $userSettings.passwordHash = $PasswordHash }
+        if ($CertPath) {
+            $userSettings.certificatePath = $CertPath
+            $userSettings.keyProtection = "osProtected"
+        }
+        $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
+        Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
+
         Install-AsUserApp -InstallDir $installDir -Version $Version
     }
 
@@ -606,9 +557,8 @@ function Install-MidTerm
     Write-Host "Installation complete!" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Location: $installDir" -ForegroundColor Gray
-    $protocol = if ($UseHttps) { "https" } else { "http" }
-    Write-Host "  URL:      ${protocol}://localhost:$Port" -ForegroundColor Cyan
-    if ($UseHttps) { Write-Host "  Note:     Browser may show certificate warning until trusted" -ForegroundColor Yellow }
+    Write-Host "  URL:      https://localhost:$Port" -ForegroundColor Cyan
+    Write-Host "  Note:     Browser may show certificate warning until trusted" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -796,7 +746,7 @@ if ($ServiceMode)
     $version = $script:release.tag_name -replace "^v", ""
     Write-Host "  Latest version: $version" -ForegroundColor White
     Write-Host ""
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath -CertPassword $CertPassword
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
     exit
 }
 
@@ -846,20 +796,14 @@ if ($asService)
     }
     else
     {
-        # Download binary to temp for password hashing BEFORE prompting
-        $tempHashDir = Join-Path $env:TEMP "MidTerm-Hash"
-        Ensure-BinaryForHashing -TempDir $tempHashDir | Out-Null
-        $passwordHash = Prompt-Password -InstallDir $tempHashDir
+        # New install - prompt for password
+        $passwordHash = Prompt-Password -InstallDir $installDir
     }
 
-    # Prompt for network configuration (including HTTPS)
-    $settingsDir = "$env:ProgramData\MidTerm"
-    $networkConfig = Prompt-NetworkConfig -SettingsDir $settingsDir
+    # Prompt for network configuration
+    $networkConfig = Prompt-NetworkConfig
     $port = $networkConfig.Port
     $bindAddress = $networkConfig.BindAddress
-    $useHttps = $networkConfig.UseHttps
-    $certPath = $networkConfig.CertPath
-    $certPassword = $networkConfig.CertPassword
 
     # Check if we need to elevate
     if (-not (Test-Administrator))
@@ -883,9 +827,6 @@ if ($asService)
             "-PasswordHash", $passwordHash
             "-Port", $port
             "-BindAddress", $bindAddress
-            "-UseHttps", $useHttps
-            "-CertPath", $certPath
-            "-CertPassword", $certPassword
         )
 
         Start-Process pwsh -ArgumentList $arguments -Verb RunAs -Wait
@@ -894,7 +835,7 @@ if ($asService)
     }
 
     # Already admin, proceed with install
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -UseHttps $useHttps -CertPath $certPath -CertPassword $certPassword
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress
 }
 else
 {
@@ -925,31 +866,13 @@ else
     }
     else
     {
-        # Download binary to temp for password hashing BEFORE prompting
-        $tempHashDir = Join-Path $env:TEMP "MidTerm-Hash"
-        Ensure-BinaryForHashing -TempDir $tempHashDir | Out-Null
-        $passwordHash = Prompt-Password -InstallDir $tempHashDir
+        # Prompt for password - need a temp location for mt.exe to hash
+        $tempDir = Join-Path $env:TEMP "MidTerm-Install"
+        $passwordHash = Prompt-Password -InstallDir $tempDir
     }
 
-    # Prompt for network configuration (including HTTPS)
-    $networkConfig = Prompt-NetworkConfig -SettingsDir $userSettingsDir
-    $useHttps = $networkConfig.UseHttps
-    $certPath = $networkConfig.CertPath
-    $certPassword = $networkConfig.CertPassword
+    # Prompt for network configuration
+    $networkConfig = Prompt-NetworkConfig
 
-    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash -UseHttps $useHttps -CertPath $certPath -CertPassword $certPassword
-
-    # Write user settings (no secrets, they go to secure storage)
-    $installDir = "$env:LOCALAPPDATA\MidTerm"
-    if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
-    $userSettings = @{ authenticationEnabled = $true }
-    if ($useHttps -and $certPath) {
-        $userSettings.useHttps = $true
-        $userSettings.certificatePath = $certPath
-    }
-    $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
-    Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
-
-    # Write secrets to platform-specific secure storage
-    Write-Secrets -InstallDir $installDir -PasswordHash $passwordHash -CertPassword $certPassword
+    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash
 }

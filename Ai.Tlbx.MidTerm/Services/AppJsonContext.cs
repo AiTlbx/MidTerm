@@ -33,6 +33,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ChangePasswordRequest))]
 [JsonSerializable(typeof(AuthResponse))]
 [JsonSerializable(typeof(AuthStatusResponse))]
+[JsonSerializable(typeof(CertificateInfoResponse))]
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]

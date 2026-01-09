@@ -35,6 +35,12 @@ public enum ClipboardShortcutsSetting
     [JsonStringEnumMemberName("unix")] Unix
 }
 
+public enum KeyProtectionMethod
+{
+    [JsonStringEnumMemberName("osProtected")] OsProtected,
+    [JsonStringEnumMemberName("legacyPfx")] LegacyPfx
+}
+
 public sealed class MidTermSettings
 {
     // Session Defaults
@@ -88,12 +94,13 @@ public sealed class MidTermSettings
     [JsonIgnore]
     public string? SessionSecret { get; set; }
 
-    // HTTPS
-    public bool UseHttps { get; set; } = false;
+    // HTTPS (always enabled - no HTTP endpoint)
     public string? CertificatePath { get; set; }
 
     [JsonIgnore]
-    public string? CertificatePassword { get; set; }
+    public string? CertificatePassword { get; set; }  // Deprecated: for legacy PFX migration only
+
+    public KeyProtectionMethod KeyProtection { get; set; } = KeyProtectionMethod.OsProtected;
 
     // Diagnostics
     public LogSeverity LogLevel { get; set; } = LogSeverity.Warn;

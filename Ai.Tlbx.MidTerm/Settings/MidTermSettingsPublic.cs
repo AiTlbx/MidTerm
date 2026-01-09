@@ -37,8 +37,7 @@ public sealed class MidTermSettingsPublic
     // Authentication (public fields only - no PasswordHash, SessionSecret)
     public bool AuthenticationEnabled { get; set; }
 
-    // HTTPS (no CertificatePassword)
-    public bool UseHttps { get; set; }
+    // HTTPS (always enabled - no CertificatePassword exposed)
     public string? CertificatePath { get; set; }
 
     // Diagnostics
@@ -70,7 +69,6 @@ public sealed class MidTermSettingsPublic
             RunAsUid = settings.RunAsUid,
             RunAsGid = settings.RunAsGid,
             AuthenticationEnabled = settings.AuthenticationEnabled,
-            UseHttps = settings.UseHttps,
             CertificatePath = settings.CertificatePath,
             LogLevel = settings.LogLevel
         };
@@ -100,7 +98,6 @@ public sealed class MidTermSettingsPublic
         settings.RunAsUid = RunAsUid;
         settings.RunAsGid = RunAsGid;
         settings.AuthenticationEnabled = AuthenticationEnabled;
-        settings.UseHttps = UseHttps;
         settings.CertificatePath = CertificatePath;
         settings.LogLevel = LogLevel;
     }

@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -43,6 +45,13 @@ public class Program
         var updateService = app.Services.GetRequiredService<UpdateService>();
         var authService = app.Services.GetRequiredService<AuthService>();
         var tempCleanupService = app.Services.GetRequiredService<TempCleanupService>();
+        var certInfoService = app.Services.GetRequiredService<CertificateInfoService>();
+
+        // Set certificate info (captured during ConfigureKestrel)
+        if (_loadedCertificate is not null)
+        {
+            certInfoService.SetCertificate(_loadedCertificate, _isFallbackCertificate);
+        }
 
         // Clean orphaned temp files from previous crashed instances
         tempCleanupService.CleanupOrphanedFiles();
@@ -51,6 +60,13 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, settings.LogLevel);
         Log.Info(() => $"MidTerm server starting (LogLevel: {settings.LogLevel})");
+
+        // HSTS middleware - always enabled (HTTPS only)
+        app.Use(async (context, next) =>
+        {
+            context.Response.Headers.StrictTransportSecurity = "max-age=31536000; includeSubDomains";
+            await next();
+        });
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
         AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
@@ -115,7 +131,7 @@ public class Program
         // Discover existing sessions after banner so logs appear cleanly
         await sessionManager.DiscoverExistingSessionsAsync();
 
-        RunWithPortErrorHandling(app, port, bindAddress, settings);
+        RunWithPortErrorHandling(app, port, bindAddress);
     }
 
     private static bool HandleSpecialCommands(string[] args)
@@ -256,6 +272,13 @@ public class Program
             return true;
         }
 
+        if (args.Contains("--generate-cert"))
+        {
+            var force = args.Contains("--force");
+            GenerateCertificateCommand(force);
+            return true;
+        }
+
         return false;
     }
 
@@ -273,6 +296,7 @@ public class Program
         Console.WriteLine("  --hash-password     Hash a password (reads from stdin)");
         Console.WriteLine("  --write-secret <k>  Store secret (reads value from stdin)");
         Console.WriteLine("                      Keys: password_hash, session_secret, certificate_password");
+        Console.WriteLine("  --generate-cert     Generate HTTPS certificate");
         Console.WriteLine("  --apply-update      Download and apply latest update");
         Console.WriteLine();
         Console.WriteLine("Password Recovery:");
@@ -314,6 +338,58 @@ public class Program
         return password.ToString();
     }
 
+    private static void GenerateCertificateCommand(bool force)
+    {
+        var settingsService = new SettingsService();
+        var settings = settingsService.Load();
+        var settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
+
+        var certPath = Path.Combine(settingsDir, "midterm.pem");
+        var keyId = "midterm";
+
+        if (File.Exists(certPath) && !force)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("Certificate already exists. Use --force to regenerate.");
+            Console.ResetColor();
+            Console.WriteLine($"  Path: {certPath}");
+            return;
+        }
+
+        Console.WriteLine("Generating self-signed certificate...");
+
+        var dnsNames = CertificateGenerator.GetDnsNames();
+        var ipAddresses = CertificateGenerator.GetLocalIPAddresses();
+
+        Console.WriteLine($"  DNS names: {string.Join(", ", dnsNames)}");
+        Console.WriteLine($"  IP addresses: {string.Join(", ", ipAddresses)}");
+
+        var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
+
+        // Export public certificate as PEM
+        CertificateGenerator.ExportPublicCertToPem(cert, certPath);
+
+        // Store private key with OS-level protection
+        var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, settingsService.IsRunningAsService);
+        var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
+                              ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
+                              ?? throw new InvalidOperationException("Failed to export private key");
+        protector.StorePrivateKey(privateKeyBytes, keyId);
+        System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+
+        // Update settings
+        settings.CertificatePath = certPath;
+        settings.CertificatePassword = null;
+        settings.KeyProtection = KeyProtectionMethod.OsProtected;
+        settingsService.Save(settings);
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("Certificate generated successfully!");
+        Console.ResetColor();
+
+        CertificateGenerator.PrintTrustInstructions(certPath, dnsNames, ipAddresses);
+    }
+
     private static (int port, string bindAddress) ParseCommandLineArgs(string[] args)
     {
         var port = DefaultPort;
@@ -336,6 +412,9 @@ public class Program
         return (port, bindAddress);
     }
 
+    private static X509Certificate2? _loadedCertificate;
+    private static bool _isFallbackCertificate;
+
     private static WebApplicationBuilder CreateBuilder(string[] args)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
@@ -352,27 +431,54 @@ public class Program
         {
             options.AddServerHeader = false;
 
-            // Configure HTTPS if enabled and certificate exists
-            if (settings.UseHttps &&
-                !string.IsNullOrEmpty(settings.CertificatePath) &&
-                File.Exists(settings.CertificatePath))
+            // Always HTTPS - no HTTP endpoint
+            var cert = LoadOrGenerateCertificate(settings, settingsService);
+            if (cert is null)
             {
-                try
-                {
-                    var cert = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(
-                        settings.CertificatePath,
-                        settings.CertificatePassword);
-                    options.ConfigureHttpsDefaults(httpsOptions =>
-                    {
-                        httpsOptions.ServerCertificate = cert;
-                    });
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Warning: Failed to load HTTPS certificate: {ex.Message}");
-                    Console.WriteLine("Falling back to HTTP");
-                }
+                // Fallback: generate emergency in-memory certificate so users can access settings
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("Warning: Using emergency fallback certificate.");
+                Console.WriteLine("         Run 'mt --generate-cert' to create a proper certificate.");
+                Console.ResetColor();
+                cert = CertificateGenerator.GenerateSelfSigned(["localhost"], ["127.0.0.1"], useEcdsa: true);
+                _isFallbackCertificate = true;
             }
+
+            _loadedCertificate = cert;
+
+            options.ConfigureHttpsDefaults(httpsOptions =>
+            {
+                httpsOptions.ServerCertificate = cert;
+
+                // TLS 1.2 and 1.3 only (TLS 1.0/1.1 caps SSL Labs to B grade)
+                httpsOptions.SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                                            | System.Security.Authentication.SslProtocols.Tls13;
+
+                // Cipher suites for SSL Labs A+ rating (Linux/macOS only, Windows uses Schannel)
+                if (!OperatingSystem.IsWindows())
+                {
+                    httpsOptions.OnAuthenticate = (context, sslOptions) =>
+                    {
+#pragma warning disable CA1416 // Validate platform compatibility (guarded by IsWindows check above)
+                        sslOptions.CipherSuitesPolicy = new System.Net.Security.CipherSuitesPolicy(
+                        [
+                            // TLS 1.3 suites (AEAD only, forward secrecy built-in)
+                            System.Net.Security.TlsCipherSuite.TLS_AES_256_GCM_SHA384,
+                            System.Net.Security.TlsCipherSuite.TLS_AES_128_GCM_SHA256,
+                            System.Net.Security.TlsCipherSuite.TLS_CHACHA20_POLY1305_SHA256,
+
+                            // TLS 1.2 suites (ECDHE for forward secrecy, AEAD modes)
+                            System.Net.Security.TlsCipherSuite.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+                            System.Net.Security.TlsCipherSuite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+                            System.Net.Security.TlsCipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+                            System.Net.Security.TlsCipherSuite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+                            System.Net.Security.TlsCipherSuite.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+                            System.Net.Security.TlsCipherSuite.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+                        ]);
+#pragma warning restore CA1416
+                    };
+                }
+            });
         });
         builder.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning);
 
@@ -386,8 +492,86 @@ public class Program
         builder.Services.AddSingleton<UpdateService>();
         builder.Services.AddSingleton<AuthService>();
         builder.Services.AddSingleton<TempCleanupService>();
+        builder.Services.AddSingleton<CertificateInfoService>();
 
         return builder;
+    }
+
+    private static System.Security.Cryptography.X509Certificates.X509Certificate2? LoadOrGenerateCertificate(
+        MidTermSettings settings,
+        SettingsService settingsService)
+    {
+        var settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
+        const string keyId = "midterm";
+
+        // Try to load existing certificate
+        if (!string.IsNullOrEmpty(settings.CertificatePath) && File.Exists(settings.CertificatePath))
+        {
+            try
+            {
+                // Check if using OS-protected key or legacy PFX
+                if (settings.KeyProtection == KeyProtectionMethod.OsProtected)
+                {
+                    var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, settingsService.IsRunningAsService);
+                    return protector.LoadCertificateWithPrivateKey(settings.CertificatePath, keyId);
+                }
+                else
+                {
+                    // Legacy PFX loading
+                    return System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(
+                        settings.CertificatePath,
+                        settings.CertificatePassword);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"Error: Failed to load HTTPS certificate: {ex.Message}");
+                Console.ResetColor();
+                return null;
+            }
+        }
+
+        // Auto-generate certificate if none exists
+        Console.WriteLine("  No certificate found. Generating self-signed certificate...");
+
+        try
+        {
+            var certPath = Path.Combine(settingsDir, "midterm.pem");
+            var dnsNames = CertificateGenerator.GetDnsNames();
+            var ipAddresses = CertificateGenerator.GetLocalIPAddresses();
+
+            var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
+
+            // Export public certificate as PEM
+            CertificateGenerator.ExportPublicCertToPem(cert, certPath);
+
+            // Store private key with OS-level protection
+            var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, settingsService.IsRunningAsService);
+            var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
+                                  ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
+                                  ?? throw new InvalidOperationException("Failed to export private key");
+            protector.StorePrivateKey(privateKeyBytes, keyId);
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+
+            // Update settings with new certificate path
+            settings.CertificatePath = certPath;
+            settings.CertificatePassword = null;
+            settings.KeyProtection = KeyProtectionMethod.OsProtected;
+            settingsService.Save(settings);
+
+            CertificateGenerator.PrintTrustInstructions(certPath, dnsNames, ipAddresses);
+
+            // Reload certificate with private key from protected storage
+            return protector.LoadCertificateWithPrivateKey(certPath, keyId);
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Error: Failed to generate HTTPS certificate: {ex.Message}");
+            Console.ResetColor();
+            return null;
+        }
     }
 
     private static string GetVersion()
@@ -481,6 +665,12 @@ public class Program
         {
             var manifest = updateService.InstalledManifest;
             return Results.Json(manifest, AppJsonContext.Default.VersionManifest);
+        });
+
+        app.MapGet("/api/certificate/info", () =>
+        {
+            var certService = app.Services.GetRequiredService<CertificateInfoService>();
+            return Results.Json(certService.GetInfo(), AppJsonContext.Default.CertificateInfoResponse);
         });
 
         app.MapGet("/api/update/check", async () =>
@@ -725,16 +915,12 @@ public class Program
         });
     }
 
-    private static void RunWithPortErrorHandling(WebApplication app, int port, string bindAddress, MidTermSettings settings)
+    private static void RunWithPortErrorHandling(WebApplication app, int port, string bindAddress)
     {
         try
         {
-            var useHttps = settings.UseHttps &&
-                           !string.IsNullOrEmpty(settings.CertificatePath) &&
-                           File.Exists(settings.CertificatePath);
-
-            var protocol = useHttps ? "https" : "http";
-            app.Run($"{protocol}://{bindAddress}:{port}");
+            // Always HTTPS - no HTTP endpoint
+            app.Run($"https://{bindAddress}:{port}");
         }
         catch (IOException ex) when (ex.InnerException is System.Net.Sockets.SocketException socketEx &&
             socketEx.SocketErrorCode == System.Net.Sockets.SocketError.AddressAlreadyInUse)
@@ -796,11 +982,8 @@ public class Program
         Console.ResetColor();
         Console.WriteLine();
 
-        var useHttps = settings.UseHttps &&
-                       !string.IsNullOrEmpty(settings.CertificatePath) &&
-                       File.Exists(settings.CertificatePath);
-        var protocol = useHttps ? "https" : "http";
-        Console.WriteLine($"  Listening on {protocol}://{bindAddress}:{port}");
+        // Always HTTPS
+        Console.WriteLine($"  Listening on https://{bindAddress}:{port}");
         Console.WriteLine();
 
         switch (settingsService.LoadStatus)

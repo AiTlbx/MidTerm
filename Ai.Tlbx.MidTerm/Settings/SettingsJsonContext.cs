@@ -8,6 +8,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]
 [JsonSerializable(typeof(ClipboardShortcutsSetting))]
+[JsonSerializable(typeof(KeyProtectionMethod))]
 [JsonSerializable(typeof(LogSeverity))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

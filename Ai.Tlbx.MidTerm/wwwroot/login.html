@@ -33,6 +33,21 @@
                 <button type="submit" id="login-btn" class="login-btn">Login</button>
             </form>
         </div>
+
+        <div id="cert-info" class="cert-info hidden">
+            <div class="cert-info-header">
+                <span class="cert-info-title">Certificate Fingerprint</span>
+                <button type="button" id="cert-hide-btn" class="cert-hide-btn" title="Hide this panel">×</button>
+            </div>
+            <div class="cert-fingerprint" id="cert-fingerprint"></div>
+            <div class="cert-dates">
+                <span id="cert-valid-from"></span>
+                <span id="cert-valid-until"></span>
+            </div>
+            <div class="cert-hint">
+                Verify this matches across devices. See Settings → Security for details.
+            </div>
+        </div>
     </div>
 
     <script>
@@ -82,6 +97,48 @@
             function showError(msg) {
                 errorDiv.textContent = msg;
                 errorDiv.classList.remove('hidden');
+            }
+
+            // Certificate TOFU display
+            const CERT_HIDDEN_KEY = 'mt-cert-info-hidden';
+            const certInfoDiv = document.getElementById('cert-info');
+            const certHideBtn = document.getElementById('cert-hide-btn');
+
+            if (localStorage.getItem(CERT_HIDDEN_KEY) !== 'true') {
+                loadCertificateInfo();
+            }
+
+            certHideBtn.addEventListener('click', () => {
+                localStorage.setItem(CERT_HIDDEN_KEY, 'true');
+                certInfoDiv.classList.add('hidden');
+            });
+
+            async function loadCertificateInfo() {
+                try {
+                    const response = await fetch('/api/certificate/info');
+                    if (!response.ok) return;
+
+                    const info = await response.json();
+                    if (!info.fingerprint) return;
+
+                    // Format fingerprint with colons every 2 chars
+                    const fp = info.fingerprint.match(/.{1,2}/g).join(':');
+                    document.getElementById('cert-fingerprint').textContent = fp;
+
+                    // Format dates
+                    const formatDate = (iso) => {
+                        if (!iso) return '';
+                        const d = new Date(iso);
+                        return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+                    };
+
+                    document.getElementById('cert-valid-from').textContent = 'From: ' + formatDate(info.notBefore);
+                    document.getElementById('cert-valid-until').textContent = 'Until: ' + formatDate(info.notAfter);
+
+                    certInfoDiv.classList.remove('hidden');
+                } catch (err) {
+                    // Silently fail - this is optional info
+                }
             }
         })();
     </script>
