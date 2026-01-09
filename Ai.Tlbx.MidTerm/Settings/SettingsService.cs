@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Services;
 
 namespace Ai.Tlbx.MidTerm.Settings;
 
@@ -16,6 +17,7 @@ public enum SettingsLoadStatus
 public sealed class SettingsService
 {
     private readonly string _settingsPath;
+    private readonly ISecretStorage _secretStorage;
     private MidTermSettings? _cached;
     private readonly object _lock = new();
     private readonly ConcurrentDictionary<string, Action<MidTermSettings>> _settingsListeners = new();
@@ -23,12 +25,15 @@ public sealed class SettingsService
     public SettingsLoadStatus LoadStatus { get; private set; } = SettingsLoadStatus.Default;
     public string? LoadError { get; private set; }
     public string SettingsPath => _settingsPath;
+    public string SettingsDirectory => Path.GetDirectoryName(_settingsPath)!;
     public bool IsRunningAsService { get; }
+    public ISecretStorage SecretStorage => _secretStorage;
 
     public SettingsService()
     {
         IsRunningAsService = DetectServiceMode();
         _settingsPath = GetSettingsPath(IsRunningAsService);
+        _secretStorage = SecretStorageFactory.Create(SettingsDirectory, IsRunningAsService);
     }
 
     private static string GetSettingsPath(bool isService)
@@ -96,6 +101,7 @@ public sealed class SettingsService
             if (!File.Exists(_settingsPath))
             {
                 _cached = new MidTermSettings();
+                LoadSecretsIntoSettings(_cached);
                 LoadStatus = SettingsLoadStatus.Default;
                 return _cached;
             }
@@ -109,6 +115,9 @@ public sealed class SettingsService
                 // Apply defaults for properties that may be missing from older settings files
                 // System.Text.Json leaves missing bool properties as false, not their initializer value
                 ApplyMissingDefaults(_cached, json);
+
+                // Load secrets from secure storage
+                LoadSecretsIntoSettings(_cached);
 
                 LoadStatus = SettingsLoadStatus.LoadedFromFile;
 
@@ -132,12 +141,20 @@ public sealed class SettingsService
             catch (Exception ex)
             {
                 _cached = new MidTermSettings();
+                LoadSecretsIntoSettings(_cached);
                 LoadStatus = SettingsLoadStatus.ErrorFallbackToDefault;
                 LoadError = ex.Message;
             }
 
             return _cached;
         }
+    }
+
+    private void LoadSecretsIntoSettings(MidTermSettings settings)
+    {
+        settings.SessionSecret = _secretStorage.GetSecret(SecretKeys.SessionSecret);
+        settings.PasswordHash = _secretStorage.GetSecret(SecretKeys.PasswordHash);
+        settings.CertificatePassword = _secretStorage.GetSecret(SecretKeys.CertificatePassword);
     }
 
     private static void ApplyMissingDefaults(MidTermSettings settings, string json)
@@ -181,18 +198,40 @@ public sealed class SettingsService
     {
         lock (_lock)
         {
+            // Save secrets to secure storage
+            SaveSecretsFromSettings(settings);
+
             var dir = Path.GetDirectoryName(_settingsPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
             }
 
+            // Secrets have [JsonIgnore] so they won't be written to settings.json
             var json = JsonSerializer.Serialize(settings, SettingsJsonContext.Default.MidTermSettings);
             File.WriteAllText(_settingsPath, json);
             _cached = settings;
         }
 
         NotifySettingsChange(settings);
+    }
+
+    private void SaveSecretsFromSettings(MidTermSettings settings)
+    {
+        if (!string.IsNullOrEmpty(settings.SessionSecret))
+        {
+            _secretStorage.SetSecret(SecretKeys.SessionSecret, settings.SessionSecret);
+        }
+
+        if (!string.IsNullOrEmpty(settings.PasswordHash))
+        {
+            _secretStorage.SetSecret(SecretKeys.PasswordHash, settings.PasswordHash);
+        }
+
+        if (!string.IsNullOrEmpty(settings.CertificatePassword))
+        {
+            _secretStorage.SetSecret(SecretKeys.CertificatePassword, settings.CertificatePassword);
+        }
     }
 
     public void InvalidateCache()

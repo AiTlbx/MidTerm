@@ -10,6 +10,7 @@ param(
     [string]$BindAddress = "",
     [bool]$UseHttps = $false,
     [string]$CertPath = "",
+    [string]$CertPassword = "",
     [switch]$ServiceMode
 )
 
@@ -55,19 +56,8 @@ function Get-CurrentUserInfo
 
 function Get-ExistingPasswordHash
 {
-    $settingsPath = "$env:ProgramData\MidTerm\settings.json"
-    if (Test-Path $settingsPath)
-    {
-        try
-        {
-            $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-            if ($settings.passwordHash -and $settings.passwordHash.Length -gt 10)
-            {
-                return $settings.passwordHash
-            }
-        }
-        catch { }
-    }
+    # Passwords are now stored in platform-specific secure storage (DPAPI on Windows)
+    # This cannot be read from PowerShell without the binary - fresh install required
     return $null
 }
 
@@ -104,13 +94,13 @@ function Prompt-Password
             continue
         }
 
-        # Hash the password using mt.exe --hash-password
+        # Hash the password using mt.exe --hash-password via stdin (secure)
         $mmPath = Join-Path $InstallDir "mt.exe"
         if (Test-Path $mmPath)
         {
             try
             {
-                $hash = & $mmPath --hash-password $pwPlain 2>&1
+                $hash = $pwPlain | & $mmPath --hash-password 2>&1
                 if ($hash -match '^\$PBKDF2\$')
                 {
                     return $hash
@@ -119,9 +109,10 @@ function Prompt-Password
             catch { }
         }
 
-        # Fallback: Return plaintext marker (will be hashed on first run)
-        Write-Host "  Warning: Could not hash password, will be set on first access." -ForegroundColor Yellow
-        return "__PENDING__:$pwPlain"
+        # Fail-fast: binary should have been downloaded before calling this
+        Write-Host "  Error: Could not hash password. Binary not found at: $mmPath" -ForegroundColor Red
+        Write-Host "  Please re-run the installer." -ForegroundColor Red
+        exit 1
     }
 
     Write-Host "  Too many failed attempts. Exiting." -ForegroundColor Red
@@ -131,9 +122,11 @@ function Prompt-Password
 function Generate-Certificate
 {
     param(
-        [string]$CertPath,
-        [string]$Password = "midterm"
+        [string]$CertPath
     )
+
+    # Generate random 24-char alphanumeric password
+    $Password = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
 
     Write-Host "  Generating HTTPS certificate..." -ForegroundColor Gray
 
@@ -198,12 +191,12 @@ function Generate-Certificate
             }
         }
 
-        return $true
+        return @{ Success = $true; Password = $Password }
     }
     catch
     {
         Write-Host "  Failed to generate certificate: $_" -ForegroundColor Red
-        return $false
+        return @{ Success = $false; Password = $null }
     }
 }
 
@@ -275,6 +268,8 @@ function Prompt-NetworkConfig
     $useHttps = $false
     $certPath = $null
 
+    $certPassword = $null
+
     if ($httpsChoice -eq "2")
     {
         $useHttps = $true
@@ -282,12 +277,16 @@ function Prompt-NetworkConfig
         {
             if (-not (Test-Path $SettingsDir)) { New-Item -ItemType Directory -Path $SettingsDir -Force | Out-Null }
             $certPath = Join-Path $SettingsDir "cert.pfx"
-            $certGenerated = Generate-Certificate -CertPath $certPath
-            if (-not $certGenerated)
+            $certResult = Generate-Certificate -CertPath $certPath
+            if (-not $certResult.Success)
             {
                 Write-Host "  Falling back to HTTP" -ForegroundColor Yellow
                 $useHttps = $false
                 $certPath = $null
+            }
+            else
+            {
+                $certPassword = $certResult.Password
             }
         }
     }
@@ -297,6 +296,7 @@ function Prompt-NetworkConfig
         BindAddress = $bindAddress
         UseHttps = $useHttps
         CertPath = $certPath
+        CertPassword = $certPassword
     }
 }
 
@@ -319,12 +319,39 @@ function Get-AssetUrl
     return $asset.browser_download_url
 }
 
+function Ensure-BinaryForHashing
+{
+    param([string]$TempDir)
+
+    if (-not (Test-Path $TempDir)) { New-Item -ItemType Directory -Path $TempDir -Force | Out-Null }
+
+    $tempZip = Join-Path $TempDir "mt-download.zip"
+    $tempExtract = Join-Path $TempDir "extract"
+
+    Write-Host "Downloading..." -ForegroundColor Gray
+    $assetUrl = Get-AssetUrl -Release $script:release
+    Invoke-WebRequest -Uri $assetUrl -OutFile $tempZip
+
+    Write-Host "Extracting..." -ForegroundColor Gray
+    Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
+    Remove-Item $tempZip -Force
+
+    $sourceBinary = Join-Path $tempExtract $WebBinaryName
+    $destBinary = Join-Path $TempDir $WebBinaryName
+
+    if (Test-Path $sourceBinary)
+    {
+        Copy-Item $sourceBinary $destBinary -Force
+    }
+
+    return $TempDir
+}
+
 function Write-ServiceSettings
 {
     param(
         [string]$Username,
         [string]$UserSid,
-        [string]$PasswordHash,
         [int]$Port = 2000,
         [string]$BindAddress = "*",
         [bool]$UseHttps = $false,
@@ -349,23 +376,18 @@ function Write-ServiceSettings
 
     # Write minimal bootstrap settings - app will migrate user preferences from .old
     # Note: port/bind are passed via service command line args, not settings.json
+    # Note: secrets (passwordHash, certificatePassword, sessionSecret) are stored via --write-secret
     $settings = @{
         runAsUser = $Username
         runAsUserSid = $UserSid
         authenticationEnabled = $true
     }
 
-    if ($PasswordHash)
-    {
-        $settings.passwordHash = $PasswordHash
-    }
-
-    # HTTPS settings
+    # HTTPS settings (only path, password stored separately)
     if ($UseHttps -and $CertPath)
     {
         $settings.useHttps = $true
         $settings.certificatePath = $CertPath
-        $settings.certificatePassword = "midterm"
     }
 
     $json = $settings | ConvertTo-Json -Depth 10
@@ -375,7 +397,40 @@ function Write-ServiceSettings
     Write-Host "  Port: $Port" -ForegroundColor Gray
     Write-Host "  Binding: $(if ($BindAddress -eq 'localhost') { 'localhost only' } else { 'all interfaces' })" -ForegroundColor Gray
     if ($UseHttps) { Write-Host "  HTTPS: enabled" -ForegroundColor Green }
-    if ($PasswordHash) { Write-Host "  Password: configured" -ForegroundColor Gray }
+}
+
+function Write-Secrets
+{
+    param(
+        [string]$InstallDir,
+        [string]$PasswordHash,
+        [string]$CertPassword
+    )
+
+    $mmPath = Join-Path $InstallDir "mt.exe"
+
+    # Generate session secret
+    $sessionSecret = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
+
+    Write-Host "  Writing secrets to secure storage..." -ForegroundColor Gray
+
+    # Store password hash
+    if ($PasswordHash)
+    {
+        $PasswordHash | & $mmPath --write-secret password_hash 2>&1 | Out-Null
+        Write-Host "    Password hash: stored" -ForegroundColor Gray
+    }
+
+    # Store session secret
+    $sessionSecret | & $mmPath --write-secret session_secret 2>&1 | Out-Null
+    Write-Host "    Session secret: generated" -ForegroundColor Gray
+
+    # Store certificate password
+    if ($CertPassword)
+    {
+        $CertPassword | & $mmPath --write-secret certificate_password 2>&1 | Out-Null
+        Write-Host "    Certificate password: stored" -ForegroundColor Gray
+    }
 }
 
 function Install-MidTerm
@@ -389,7 +444,8 @@ function Install-MidTerm
         [int]$Port = 2000,
         [string]$BindAddress = "*",
         [bool]$UseHttps = $false,
-        [string]$CertPath = ""
+        [string]$CertPath = "",
+        [string]$CertPassword = ""
     )
 
     if ($AsService)
@@ -495,36 +551,17 @@ function Install-MidTerm
     Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
     Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
 
-    # Hash pending password now that mt.exe is installed
-    if ($PasswordHash -and $PasswordHash.StartsWith("__PENDING__:"))
-    {
-        $plainPassword = $PasswordHash.Substring(12)
-        try
-        {
-            $hash = & $destWebBinary --hash-password $plainPassword 2>&1
-            if ($hash -match '^\$PBKDF2\$')
-            {
-                $PasswordHash = $hash
-                Write-Host "  Password: hashed" -ForegroundColor Gray
-            }
-            else
-            {
-                Write-Host "  Warning: Password hashing failed, using fallback" -ForegroundColor Yellow
-            }
-        }
-        catch
-        {
-            Write-Host "  Warning: Could not hash password: $_" -ForegroundColor Yellow
-        }
-    }
-
+    # Store secrets now that mt.exe is installed
     if ($AsService)
     {
-        # Write settings with runAsUser info and password
+        # Write settings file (no secrets, they go to secure storage)
         if ($RunAsUser -and $RunAsUserSid)
         {
-            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath
+            Write-ServiceSettings -Username $RunAsUser -UserSid $RunAsUserSid -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath
         }
+
+        # Write secrets to platform-specific secure storage
+        Write-Secrets -InstallDir $installDir -PasswordHash $PasswordHash -CertPassword $CertPassword
 
         Install-AsService -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
 
@@ -759,7 +796,7 @@ if ($ServiceMode)
     $version = $script:release.tag_name -replace "^v", ""
     Write-Host "  Latest version: $version" -ForegroundColor White
     Write-Host ""
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -UseHttps $UseHttps -CertPath $CertPath -CertPassword $CertPassword
     exit
 }
 
@@ -809,8 +846,10 @@ if ($asService)
     }
     else
     {
-        # New install - prompt for password
-        $passwordHash = Prompt-Password -InstallDir $installDir
+        # Download binary to temp for password hashing BEFORE prompting
+        $tempHashDir = Join-Path $env:TEMP "MidTerm-Hash"
+        Ensure-BinaryForHashing -TempDir $tempHashDir | Out-Null
+        $passwordHash = Prompt-Password -InstallDir $tempHashDir
     }
 
     # Prompt for network configuration (including HTTPS)
@@ -820,6 +859,7 @@ if ($asService)
     $bindAddress = $networkConfig.BindAddress
     $useHttps = $networkConfig.UseHttps
     $certPath = $networkConfig.CertPath
+    $certPassword = $networkConfig.CertPassword
 
     # Check if we need to elevate
     if (-not (Test-Administrator))
@@ -845,6 +885,7 @@ if ($asService)
             "-BindAddress", $bindAddress
             "-UseHttps", $useHttps
             "-CertPath", $certPath
+            "-CertPassword", $certPassword
         )
 
         Start-Process pwsh -ArgumentList $arguments -Verb RunAs -Wait
@@ -853,7 +894,7 @@ if ($asService)
     }
 
     # Already admin, proceed with install
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -UseHttps $useHttps -CertPath $certPath
+    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -UseHttps $useHttps -CertPath $certPath -CertPassword $certPassword
 }
 else
 {
@@ -884,27 +925,31 @@ else
     }
     else
     {
-        # Prompt for password - need a temp location for mt.exe to hash
-        $tempDir = Join-Path $env:TEMP "MidTerm-Install"
-        $passwordHash = Prompt-Password -InstallDir $tempDir
+        # Download binary to temp for password hashing BEFORE prompting
+        $tempHashDir = Join-Path $env:TEMP "MidTerm-Hash"
+        Ensure-BinaryForHashing -TempDir $tempHashDir | Out-Null
+        $passwordHash = Prompt-Password -InstallDir $tempHashDir
     }
 
     # Prompt for network configuration (including HTTPS)
     $networkConfig = Prompt-NetworkConfig -SettingsDir $userSettingsDir
     $useHttps = $networkConfig.UseHttps
     $certPath = $networkConfig.CertPath
+    $certPassword = $networkConfig.CertPassword
 
-    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash -UseHttps $useHttps -CertPath $certPath
+    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash -UseHttps $useHttps -CertPath $certPath -CertPassword $certPassword
 
-    # Write user settings
+    # Write user settings (no secrets, they go to secure storage)
+    $installDir = "$env:LOCALAPPDATA\MidTerm"
     if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
     $userSettings = @{ authenticationEnabled = $true }
-    if ($passwordHash) { $userSettings.passwordHash = $passwordHash }
-    if ($useHttps) {
+    if ($useHttps -and $certPath) {
         $userSettings.useHttps = $true
         $userSettings.certificatePath = $certPath
-        $userSettings.certificatePassword = "midterm"
     }
     $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
     Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
+
+    # Write secrets to platform-specific secure storage
+    Write-Secrets -InstallDir $installDir -PasswordHash $passwordHash -CertPassword $certPassword
 }

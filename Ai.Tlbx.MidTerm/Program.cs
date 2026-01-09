@@ -54,6 +54,17 @@ public class Program
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
         AuthEndpoints.ConfigureAuthMiddleware(app, settingsService, authService);
+
+        // Security headers middleware
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+            headers["X-Frame-Options"] = "DENY";
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+            await next();
+        });
+
         ConfigureStaticFiles(app);
 
         // Session manager - always uses ConHost (spawned subprocess per terminal)
@@ -163,16 +174,144 @@ public class Program
             return true;
         }
 
-        var hashIndex = Array.IndexOf(args, "--hash-password");
-        if (hashIndex >= 0 && hashIndex + 1 < args.Length)
+        if (args.Contains("--help") || args.Contains("-h"))
         {
-            var password = args[hashIndex + 1];
+            PrintHelp();
+            return true;
+        }
+
+        if (args.Contains("--hash-password"))
+        {
+            string password;
+            if (Console.IsInputRedirected)
+            {
+                // Secure: read password from stdin (piped input)
+                password = Console.ReadLine() ?? "";
+            }
+            else
+            {
+                // Interactive: prompt for password
+                Console.Error.Write("Enter password: ");
+                password = ReadPasswordMasked();
+            }
+
+            if (string.IsNullOrEmpty(password))
+            {
+                Console.Error.WriteLine("Error: Password cannot be empty");
+                Environment.Exit(1);
+            }
+
             var authService = new AuthService(new SettingsService());
             Console.WriteLine(authService.HashPassword(password));
             return true;
         }
 
+        var writeSecretIdx = Array.IndexOf(args, "--write-secret");
+        if (writeSecretIdx >= 0)
+        {
+            if (writeSecretIdx + 1 >= args.Length)
+            {
+                Console.Error.WriteLine("Error: --write-secret requires a key name");
+                Console.Error.WriteLine("Usage: mt --write-secret <key>");
+                Console.Error.WriteLine("Keys: password_hash, session_secret, certificate_password");
+                Environment.Exit(1);
+            }
+
+            var keyArg = args[writeSecretIdx + 1];
+            var secretKey = keyArg switch
+            {
+                "password_hash" => SecretKeys.PasswordHash,
+                "session_secret" => SecretKeys.SessionSecret,
+                "certificate_password" => SecretKeys.CertificatePassword,
+                _ => null
+            };
+
+            if (secretKey is null)
+            {
+                Console.Error.WriteLine($"Error: Unknown secret key '{keyArg}'");
+                Console.Error.WriteLine("Valid keys: password_hash, session_secret, certificate_password");
+                Environment.Exit(1);
+            }
+
+            string value;
+            if (Console.IsInputRedirected)
+            {
+                value = Console.ReadLine() ?? "";
+            }
+            else
+            {
+                Console.Error.Write($"Enter {keyArg}: ");
+                value = ReadPasswordMasked();
+            }
+
+            if (string.IsNullOrEmpty(value))
+            {
+                Console.Error.WriteLine("Error: Value cannot be empty");
+                Environment.Exit(1);
+            }
+
+            var settingsService = new SettingsService();
+            settingsService.SecretStorage.SetSecret(secretKey, value);
+            Console.WriteLine($"Secret '{keyArg}' stored successfully");
+            return true;
+        }
+
         return false;
+    }
+
+    private static void PrintHelp()
+    {
+        Console.WriteLine($"MidTerm {GetVersion()} - Web-based Terminal Multiplexer");
+        Console.WriteLine();
+        Console.WriteLine("Usage: mt [options]");
+        Console.WriteLine();
+        Console.WriteLine("Options:");
+        Console.WriteLine("  --port <port>       Set listening port (default: 2000)");
+        Console.WriteLine("  --bind <address>    Set bind address (default: 0.0.0.0)");
+        Console.WriteLine("  --version, -v       Show version");
+        Console.WriteLine("  --help, -h          Show this help");
+        Console.WriteLine("  --hash-password     Hash a password (reads from stdin)");
+        Console.WriteLine("  --write-secret <k>  Store secret (reads value from stdin)");
+        Console.WriteLine("                      Keys: password_hash, session_secret, certificate_password");
+        Console.WriteLine("  --apply-update      Download and apply latest update");
+        Console.WriteLine();
+        Console.WriteLine("Password Recovery:");
+        Console.WriteLine("  If you forget your password:");
+        Console.WriteLine("  1. Stop the MidTerm service");
+        Console.WriteLine("  2. Edit settings.json (location shown on startup)");
+        Console.WriteLine("  3. Set \"authenticationEnabled\" to false");
+        Console.WriteLine("  4. Restart MidTerm");
+        Console.WriteLine("  5. Set new password in Settings > Security");
+        Console.WriteLine();
+        Console.WriteLine("Settings locations:");
+        Console.WriteLine("  Service: %ProgramData%\\MidTerm\\settings.json (Windows)");
+        Console.WriteLine("           /usr/local/etc/midterm/settings.json (Unix)");
+        Console.WriteLine("  User:    ~/.midterm/settings.json");
+    }
+
+    private static string ReadPasswordMasked()
+    {
+        var password = new System.Text.StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter)
+            {
+                Console.Error.WriteLine();
+                break;
+            }
+            if (key.Key == ConsoleKey.Backspace && password.Length > 0)
+            {
+                password.Length--;
+                Console.Error.Write("\b \b");
+            }
+            else if (!char.IsControl(key.KeyChar))
+            {
+                password.Append(key.KeyChar);
+                Console.Error.Write('*');
+            }
+        }
+        return password.ToString();
     }
 
     private static (int port, string bindAddress) ParseCommandLineArgs(string[] args)
@@ -509,12 +648,15 @@ public class Program
         app.MapGet("/api/settings", () =>
         {
             var settings = settingsService.Load();
-            return Results.Json(settings, AppJsonContext.Default.MidTermSettings);
+            var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+            return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
-        app.MapPut("/api/settings", (MidTermSettings settings) =>
+        app.MapPut("/api/settings", (MidTermSettingsPublic publicSettings) =>
         {
-            settingsService.Save(settings);
+            var currentSettings = settingsService.Load();
+            publicSettings.ApplyTo(currentSettings);
+            settingsService.Save(currentSettings);
             return Results.Ok();
         });
 

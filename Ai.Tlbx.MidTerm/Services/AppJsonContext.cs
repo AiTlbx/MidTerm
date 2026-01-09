@@ -19,6 +19,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ShellInfoDto))]
 [JsonSerializable(typeof(List<ShellInfoDto>))]
 [JsonSerializable(typeof(MidTermSettings))]
+[JsonSerializable(typeof(MidTermSettingsPublic))]
 [JsonSerializable(typeof(UpdateInfo))]
 [JsonSerializable(typeof(LocalUpdateInfo))]
 [JsonSerializable(typeof(UpdateType))]

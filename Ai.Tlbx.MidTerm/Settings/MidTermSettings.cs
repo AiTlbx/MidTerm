@@ -81,12 +81,18 @@ public sealed class MidTermSettings
 
     // Authentication
     public bool AuthenticationEnabled { get; set; } = false;
+
+    [JsonIgnore]
     public string? PasswordHash { get; set; }
+
+    [JsonIgnore]
     public string? SessionSecret { get; set; }
 
     // HTTPS
     public bool UseHttps { get; set; } = false;
     public string? CertificatePath { get; set; }
+
+    [JsonIgnore]
     public string? CertificatePassword { get; set; }
 
     // Diagnostics

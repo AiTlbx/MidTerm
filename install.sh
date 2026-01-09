@@ -40,6 +40,7 @@ PORT="${PORT:-2000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 USE_HTTPS="${USE_HTTPS:-false}"
 CERT_PATH="${CERT_PATH:-}"
+CERT_PASSWORD="${CERT_PASSWORD:-}"
 
 print_header() {
     echo ""
@@ -132,15 +133,8 @@ prompt_service_mode() {
 }
 
 get_existing_password_hash() {
-    local settings_path="/usr/local/etc/MidTerm/settings.json"
-    if [ -f "$settings_path" ]; then
-        local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
-        # Only accept proper PBKDF2 hashes, not empty or __PENDING__
-        if [[ "$hash" == '$PBKDF2$'* ]]; then
-            echo "$hash"
-            return 0
-        fi
-    fi
+    # Passwords are now stored in platform-specific secure storage (Keychain on macOS, file on Linux)
+    # This cannot be read from shell - fresh install required
     return 1
 }
 
@@ -172,10 +166,10 @@ prompt_password() {
             continue
         fi
 
-        # Hash using the installed binary (must be called after install_binary)
+        # Hash using the installed binary via stdin (secure - password not in process args)
         local mt_path="${MT_BINARY_PATH:-/usr/local/bin/mt}"
         if [ -f "$mt_path" ]; then
-            local hash=$("$mt_path" --hash-password "$password" 2>/dev/null || true)
+            local hash=$(echo -n "$password" | "$mt_path" --hash-password 2>/dev/null || true)
             if [[ "$hash" == '$PBKDF2$'* ]]; then
                 PASSWORD_HASH="$hash"
                 return 0
@@ -256,6 +250,9 @@ generate_certificate() {
     local settings_dir="$1"
     local cert_dir="$settings_dir"
 
+    # Generate random certificate password (24 chars, alphanumeric)
+    CERT_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
+
     mkdir -p "$cert_dir"
     CERT_PATH="$cert_dir/cert.pfx"
 
@@ -319,7 +316,7 @@ EOF
 
     # Export to PFX format
     openssl pkcs12 -export -out "$CERT_PATH" -inkey "$temp_key" -in "$temp_cert" \
-        -password pass:midterm 2>/dev/null
+        -password pass:"$CERT_PASSWORD" 2>/dev/null
 
     # Cleanup temp files
     rm -f "$temp_key" "$temp_cert" "$temp_config"
@@ -329,23 +326,24 @@ EOF
         echo -e "  ${YELLOW}To trust the certificate (may require password):${NC}"
         echo -e "  ${GRAY}sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \"$cert_dir/cert.pem\"${NC}"
         # Export PEM for macOS trust
-        openssl pkcs12 -in "$CERT_PATH" -out "$cert_dir/cert.pem" -nodes -password pass:midterm 2>/dev/null
+        openssl pkcs12 -in "$CERT_PATH" -out "$cert_dir/cert.pem" -nodes -password pass:"$CERT_PASSWORD" 2>/dev/null
     else
         echo -e "  ${YELLOW}To trust the certificate on Linux:${NC}"
         echo -e "  ${GRAY}sudo cp \"$cert_dir/cert.pem\" /usr/local/share/ca-certificates/midterm.crt${NC}"
         echo -e "  ${GRAY}sudo update-ca-certificates${NC}"
-        openssl pkcs12 -in "$CERT_PATH" -out "$cert_dir/cert.pem" -nodes -password pass:midterm 2>/dev/null
+        openssl pkcs12 -in "$CERT_PATH" -out "$cert_dir/cert.pem" -nodes -password pass:"$CERT_PASSWORD" 2>/dev/null
     fi
 
     echo -e "  ${GREEN}Certificate generated: $CERT_PATH${NC}"
 }
 
 write_service_settings() {
-    local config_dir="/usr/local/etc/MidTerm"
+    local config_dir="/usr/local/etc/midterm"
     local settings_path="$config_dir/settings.json"
     local old_settings_path="$config_dir/settings.json.old"
 
     mkdir -p "$config_dir"
+    chmod 700 "$config_dir"
 
     # Backup existing settings for migration by the app
     if [ -f "$settings_path" ]; then
@@ -353,24 +351,17 @@ write_service_settings() {
         mv "$settings_path" "$old_settings_path"
     fi
 
-    # Build JSON with optional fields
+    # Build JSON - secrets are stored via --write-secret, not in settings.json
     local json_content="{
   \"runAsUser\": \"$INSTALLING_USER\",
   \"runAsUid\": $INSTALLING_UID,
   \"runAsGid\": $INSTALLING_GID,
   \"authenticationEnabled\": true"
 
-    if [ -n "$PASSWORD_HASH" ]; then
-        json_content="$json_content,
-  \"passwordHash\": \"$PASSWORD_HASH\""
-        echo -e "  ${GRAY}Password: configured${NC}"
-    fi
-
     if [ "$USE_HTTPS" = true ] && [ -n "$CERT_PATH" ]; then
         json_content="$json_content,
   \"useHttps\": true,
-  \"certificatePath\": \"$CERT_PATH\",
-  \"certificatePassword\": \"midterm\""
+  \"certificatePath\": \"$CERT_PATH\""
         echo -e "  ${GREEN}HTTPS: enabled${NC}"
     fi
 
@@ -378,7 +369,7 @@ write_service_settings() {
 }"
 
     echo "$json_content" > "$settings_path"
-    chmod 644 "$settings_path"
+    chmod 600 "$settings_path"
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
     echo -e "  ${GRAY}Port: $PORT${NC}"
     if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
@@ -388,27 +379,47 @@ write_service_settings() {
     fi
 }
 
+write_secrets() {
+    local install_dir="$1"
+    local mt_path="$install_dir/mt"
+
+    # Generate session secret (32 chars alphanumeric)
+    local session_secret=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
+
+    echo -e "  ${GRAY}Writing secrets to secure storage...${NC}"
+
+    # Store password hash
+    if [ -n "$PASSWORD_HASH" ]; then
+        echo -n "$PASSWORD_HASH" | "$mt_path" --write-secret password_hash >/dev/null 2>&1
+        echo -e "    ${GRAY}Password hash: stored${NC}"
+    fi
+
+    # Store session secret
+    echo -n "$session_secret" | "$mt_path" --write-secret session_secret >/dev/null 2>&1
+    echo -e "    ${GRAY}Session secret: generated${NC}"
+
+    # Store certificate password
+    if [ -n "$CERT_PASSWORD" ]; then
+        echo -n "$CERT_PASSWORD" | "$mt_path" --write-secret certificate_password >/dev/null 2>&1
+        echo -e "    ${GRAY}Certificate password: stored${NC}"
+    fi
+}
+
 write_user_settings() {
-    local config_dir="$HOME/.MidTerm"
+    local config_dir="$HOME/.midterm"
     local settings_path="$config_dir/settings.json"
 
     mkdir -p "$config_dir"
+    chmod 700 "$config_dir"
 
-    # Build JSON with optional fields
+    # Build JSON - secrets are stored via --write-secret, not in settings.json
     local json_content="{
   \"authenticationEnabled\": true"
-
-    if [ -n "$PASSWORD_HASH" ]; then
-        json_content="$json_content,
-  \"passwordHash\": \"$PASSWORD_HASH\""
-        echo -e "  ${GRAY}Password: configured${NC}"
-    fi
 
     if [ "$USE_HTTPS" = true ] && [ -n "$CERT_PATH" ]; then
         json_content="$json_content,
   \"useHttps\": true,
-  \"certificatePath\": \"$CERT_PATH\",
-  \"certificatePassword\": \"midterm\""
+  \"certificatePath\": \"$CERT_PATH\""
         echo -e "  ${GREEN}HTTPS: enabled${NC}"
     fi
 
@@ -421,15 +432,8 @@ write_user_settings() {
 }
 
 get_existing_user_password_hash() {
-    local settings_path="$HOME/.MidTerm/settings.json"
-    if [ -f "$settings_path" ]; then
-        local hash=$(grep -o '"passwordHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$settings_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
-        # Only accept proper PBKDF2 hashes, not empty or __PENDING__
-        if [[ "$hash" == '$PBKDF2$'* ]]; then
-            echo "$hash"
-            return 0
-        fi
-    fi
+    # Passwords are now stored in platform-specific secure storage
+    # This cannot be read from shell - fresh install required
     return 1
 }
 
@@ -484,6 +488,7 @@ install_as_service() {
                      BIND_ADDRESS="$BIND_ADDRESS" \
                      USE_HTTPS="$USE_HTTPS" \
                      CERT_PATH="$CERT_PATH" \
+                     CERT_PASSWORD="$CERT_PASSWORD" \
                      "$SCRIPT_PATH" --service
     fi
 
@@ -501,10 +506,13 @@ install_as_service() {
         MT_BINARY_PATH="$install_dir/mt" prompt_password
     fi
 
-    # Write settings with runAsUser info
+    # Write settings with runAsUser info (no secrets, they go to secure storage)
     if [ -n "$INSTALLING_USER" ] && [ -n "$INSTALLING_UID" ]; then
         write_service_settings
     fi
+
+    # Write secrets to platform-specific secure storage
+    write_secrets "$install_dir"
 
     if [ "$(uname -s)" = "Darwin" ]; then
         install_launchd "$install_dir"
@@ -688,8 +696,11 @@ install_as_user() {
         USE_HTTPS=false
     fi
 
-    # Write user settings with password
+    # Write user settings (no secrets, they go to secure storage)
     write_user_settings
+
+    # Write secrets to platform-specific secure storage
+    write_secrets "$install_dir"
 
     # Check if ~/.local/bin is in PATH
     if [[ ":$PATH:" != *":$install_dir:"* ]]; then
