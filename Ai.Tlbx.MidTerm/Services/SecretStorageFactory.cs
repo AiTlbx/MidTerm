@@ -8,17 +8,15 @@ public static class SecretStorageFactory
         Justification = "Platform checks are performed via OperatingSystem.IsX() guards")]
     public static ISecretStorage Create(string settingsDirectory, bool isServiceMode)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return new WindowsSecretStorage(settingsDirectory, isServiceMode);
-        }
-
+#if WINDOWS
+        return new WindowsSecretStorage(settingsDirectory, isServiceMode);
+#else
         if (OperatingSystem.IsMacOS())
         {
             return new MacOsSecretStorage();
         }
 
-        // Linux and other Unix-like systems
         return new LinuxSecretStorage(settingsDirectory);
+#endif
     }
 }
