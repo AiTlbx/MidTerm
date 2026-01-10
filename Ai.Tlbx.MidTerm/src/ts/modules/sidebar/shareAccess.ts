@@ -5,7 +5,6 @@
  * with connection info for sharing terminal access with others.
  */
 
-import { bindClick } from '../../utils';
 import { createLogger } from '../logging';
 
 const log = createLogger('shareAccess');
@@ -34,7 +33,14 @@ interface SharePacketInfo {
 }
 
 export function initShareAccessButton(): void {
-  bindClick('btn-share-access', openShareEmail);
+  const el = document.getElementById('btn-share-access');
+  console.log('[shareAccess] initShareAccessButton: element found =', !!el);
+  if (el) {
+    el.addEventListener('click', () => {
+      console.log('[shareAccess] Share Access button clicked');
+      openShareEmail();
+    });
+  }
 }
 
 async function openShareEmail(): Promise<void> {
