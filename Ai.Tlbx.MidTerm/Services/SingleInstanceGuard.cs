@@ -16,6 +16,7 @@ public sealed class SingleInstanceGuard : IDisposable
 
 #if WINDOWS
     private Mutex? _mutex;
+    private bool _ownsMutex;
 #else
     private FileStream? _pidFile;
 #endif
@@ -57,6 +58,7 @@ public sealed class SingleInstanceGuard : IDisposable
 
             if (createdNew)
             {
+                _ownsMutex = true;
                 return true;
             }
 
@@ -164,7 +166,17 @@ public sealed class SingleInstanceGuard : IDisposable
         _disposed = true;
 
 #if WINDOWS
-        _mutex?.ReleaseMutex();
+        if (_ownsMutex && _mutex is not null)
+        {
+            try
+            {
+                _mutex.ReleaseMutex();
+            }
+            catch (ApplicationException)
+            {
+                // Mutex may have been released by a different thread or not owned
+            }
+        }
         _mutex?.Dispose();
 #else
         if (_pidFile is not null)
