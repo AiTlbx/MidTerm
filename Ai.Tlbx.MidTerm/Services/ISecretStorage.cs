@@ -1,15 +1,14 @@
 namespace Ai.Tlbx.MidTerm.Services;
 
+/// <summary>
+/// Interface for platform-specific secret storage (DPAPI on Windows, file-based on Unix).
+/// </summary>
 public interface ISecretStorage
 {
+    /// <summary>Gets a secret value by key, or null if not found.</summary>
     string? GetSecret(string key);
+    /// <summary>Sets or updates a secret value.</summary>
     void SetSecret(string key, string value);
+    /// <summary>Deletes a secret by key.</summary>
     void DeleteSecret(string key);
-}
-
-public static class SecretKeys
-{
-    public const string SessionSecret = "midterm.session_secret";
-    public const string PasswordHash = "midterm.password_hash";
-    public const string CertificatePassword = "midterm.certificate_password";
 }

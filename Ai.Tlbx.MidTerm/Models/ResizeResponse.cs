@@ -1,5 +1,8 @@
 namespace Ai.Tlbx.MidTerm.Models;
 
+/// <summary>
+/// Response payload after resizing a terminal session.
+/// </summary>
 public sealed class ResizeResponse
 {
     public bool Accepted { get; set; }

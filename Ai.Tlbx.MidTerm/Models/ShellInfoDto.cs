@@ -1,5 +1,8 @@
 namespace Ai.Tlbx.MidTerm.Models;
 
+/// <summary>
+/// Shell type information returned by the shells API.
+/// </summary>
 public sealed class ShellInfoDto
 {
     public string Type { get; set; } = string.Empty;

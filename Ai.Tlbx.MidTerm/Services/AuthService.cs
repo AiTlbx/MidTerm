@@ -5,6 +5,10 @@ using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
+/// <summary>
+/// Provides authentication services including password hashing, session token management, and rate limiting.
+/// Uses PBKDF2 (100K iterations, SHA256) for password hashing and HMAC-SHA256 for session tokens.
+/// </summary>
 public sealed class AuthService
 {
     private const int Iterations = 100_000;
@@ -28,6 +32,9 @@ public sealed class AuthService
         }
     }
 
+    /// <summary>
+    /// Hashes a password using PBKDF2 with a random salt.
+    /// </summary>
     public string HashPassword(string password)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltSize);
@@ -41,6 +48,9 @@ public sealed class AuthService
         return $"$PBKDF2${Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
     }
 
+    /// <summary>
+    /// Verifies a password against a stored hash. Handles pending passwords from installer.
+    /// </summary>
     public bool VerifyPassword(string password, string? storedHash)
     {
         if (string.IsNullOrEmpty(storedHash) || string.IsNullOrEmpty(password))
@@ -96,6 +106,9 @@ public sealed class AuthService
         return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
     }
 
+    /// <summary>
+    /// Creates a new HMAC-signed session token valid for 3 weeks.
+    /// </summary>
     public string CreateSessionToken()
     {
         var settings = _settingsService.Load();
@@ -107,6 +120,9 @@ public sealed class AuthService
         return $"{timestamp}:{signature}";
     }
 
+    /// <summary>
+    /// Validates a session token's signature and expiration.
+    /// </summary>
     public bool ValidateSessionToken(string? token)
     {
         if (string.IsNullOrEmpty(token))
@@ -138,6 +154,9 @@ public sealed class AuthService
             Encoding.UTF8.GetBytes(expectedSignature));
     }
 
+    /// <summary>
+    /// Checks if an IP address is currently rate-limited.
+    /// </summary>
     public bool IsRateLimited(string ip)
     {
         if (!_rateLimits.TryGetValue(ip, out var entry))
@@ -154,6 +173,9 @@ public sealed class AuthService
         return true;
     }
 
+    /// <summary>
+    /// Records a failed login attempt. After 5 failures: 30s lockout. After 10: 5min lockout.
+    /// </summary>
     public void RecordFailedAttempt(string ip)
     {
         var entry = _rateLimits.GetOrAdd(ip, _ => new RateLimitEntry());
@@ -169,11 +191,17 @@ public sealed class AuthService
         }
     }
 
+    /// <summary>
+    /// Clears all failed login attempts for an IP address.
+    /// </summary>
     public void ResetAttempts(string ip)
     {
         _rateLimits.TryRemove(ip, out _);
     }
 
+    /// <summary>
+    /// Gets the remaining lockout time for an IP address, or null if not locked out.
+    /// </summary>
     public TimeSpan? GetRemainingLockout(string ip)
     {
         if (!_rateLimits.TryGetValue(ip, out var entry))
@@ -185,6 +213,9 @@ public sealed class AuthService
         return remaining > TimeSpan.Zero ? remaining : null;
     }
 
+    /// <summary>
+    /// Invalidates all existing sessions by rotating the session secret.
+    /// </summary>
     public void InvalidateAllSessions()
     {
         var settings = _settingsService.Load();

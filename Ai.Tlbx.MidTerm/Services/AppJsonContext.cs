@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
+using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Settings;
 using Microsoft.AspNetCore.Mvc;
 
@@ -50,51 +51,9 @@ public partial class AppJsonContext : JsonSerializerContext
 {
 }
 
-public sealed class LoginRequest
-{
-    public string Password { get; init; } = "";
-}
-
-public sealed class ChangePasswordRequest
-{
-    public string? CurrentPassword { get; init; }
-    public string NewPassword { get; init; } = "";
-}
-
-public sealed class AuthResponse
-{
-    public bool Success { get; init; }
-    public string? Error { get; init; }
-}
-
-public sealed class AuthStatusResponse
-{
-    public bool AuthenticationEnabled { get; init; }
-    public bool PasswordSet { get; init; }
-}
-
-public sealed class StateUpdate
-{
-    public SessionListDto? Sessions { get; init; }
-    public UpdateInfo? Update { get; init; }
-}
-
-public sealed class SystemHealth
-{
-    public bool Healthy { get; init; }
-    public string Mode { get; init; } = "";
-    public int SessionCount { get; init; }
-    public string Version { get; init; } = "";
-    public int WebProcessId { get; init; }
-    public long UptimeSeconds { get; init; }
-    public string Platform { get; init; } = "";
-    public string? TtyHostVersion { get; init; }
-    public string? TtyHostExpected { get; init; }
-    public bool? TtyHostCompatible { get; init; }
-    public int? WindowsBuildNumber { get; init; }
-}
-
-// Log streaming message types
+/// <summary>
+/// Message for subscribing to log streams.
+/// </summary>
 public sealed class LogSubscribeMessage
 {
     public string Action { get; init; } = "";    // "subscribe" | "unsubscribe" | "history"

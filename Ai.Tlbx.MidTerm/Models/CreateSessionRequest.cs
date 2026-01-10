@@ -1,5 +1,8 @@
 namespace Ai.Tlbx.MidTerm.Models;
 
+/// <summary>
+/// Request payload for creating a new terminal session.
+/// </summary>
 public sealed class CreateSessionRequest
 {
     public int Cols { get; set; } = 120;

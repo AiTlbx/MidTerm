@@ -1,5 +1,8 @@
 namespace Ai.Tlbx.MidTerm.Models;
 
+/// <summary>
+/// Request payload for resizing a terminal session.
+/// </summary>
 public sealed class ResizeRequest
 {
     public int Cols { get; set; }

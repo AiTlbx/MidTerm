@@ -1,5 +1,8 @@
 namespace Ai.Tlbx.MidTerm.Common.Shells;
 
+/// <summary>
+/// Configuration interface for shell types supported by MidTerm.
+/// </summary>
 public interface IShellConfiguration
 {
     ShellType ShellType { get; }
@@ -12,6 +15,9 @@ public interface IShellConfiguration
     bool IsAvailable();
 }
 
+/// <summary>
+/// Base class for shell configurations with common environment setup and path resolution.
+/// </summary>
 public abstract class ShellConfigurationBase : IShellConfiguration
 {
     public abstract ShellType ShellType { get; }
@@ -118,6 +124,7 @@ public abstract class ShellConfigurationBase : IShellConfiguration
     }
 }
 
+/// <summary>PowerShell 7 (pwsh) shell configuration with OSC-7 CWD tracking.</summary>
 public sealed class PwshShellConfiguration : ShellConfigurationBase
 {
     private const string StartupScript =
@@ -131,6 +138,7 @@ public sealed class PwshShellConfiguration : ShellConfigurationBase
     public override string[] Arguments => ["-NoLogo", "-NoExit", "-Command", StartupScript];
 }
 
+/// <summary>Windows PowerShell 5.x shell configuration with OSC-7 CWD tracking.</summary>
 public sealed class PowerShellShellConfiguration : ShellConfigurationBase
 {
     private const string StartupScript =
@@ -149,6 +157,7 @@ public sealed class PowerShellShellConfiguration : ShellConfigurationBase
     }
 }
 
+/// <summary>Windows Command Prompt (cmd.exe) shell configuration.</summary>
 public sealed class CmdShellConfiguration : ShellConfigurationBase
 {
     public override ShellType ShellType => ShellType.Cmd;
@@ -163,6 +172,7 @@ public sealed class CmdShellConfiguration : ShellConfigurationBase
     }
 }
 
+/// <summary>Bash shell configuration for Linux/macOS with OSC-7 CWD tracking.</summary>
 public sealed class BashShellConfiguration : ShellConfigurationBase
 {
     public override ShellType ShellType => ShellType.Bash;
@@ -184,6 +194,7 @@ public sealed class BashShellConfiguration : ShellConfigurationBase
     }
 }
 
+/// <summary>Zsh shell configuration for Linux/macOS with OSC-7 CWD tracking.</summary>
 public sealed class ZshShellConfiguration : ShellConfigurationBase
 {
     public override ShellType ShellType => ShellType.Zsh;

@@ -6,14 +6,6 @@ using Ai.Tlbx.MidTerm.Services;
 
 namespace Ai.Tlbx.MidTerm.Settings;
 
-public enum SettingsLoadStatus
-{
-    Default,
-    LoadedFromFile,
-    MigratedFromOld,
-    ErrorFallbackToDefault
-}
-
 public sealed class SettingsService
 {
     private readonly string _settingsPath;

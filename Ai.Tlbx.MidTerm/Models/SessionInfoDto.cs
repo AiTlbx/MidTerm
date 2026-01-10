@@ -1,5 +1,8 @@
 namespace Ai.Tlbx.MidTerm.Models;
 
+/// <summary>
+/// Terminal session information returned by the API.
+/// </summary>
 public sealed class SessionInfoDto
 {
     public string Id { get; set; } = string.Empty;

@@ -153,6 +153,9 @@ public static class TtyHostProtocol
     }
 }
 
+/// <summary>
+/// Message types for the TtyHost IPC protocol.
+/// </summary>
 public enum TtyHostMessageType : byte
 {
     GetInfo = 0x01,
@@ -173,6 +176,9 @@ public enum TtyHostMessageType : byte
     StateChange = 0x40
 }
 
+/// <summary>
+/// Session metadata exchanged between mt and mthost.
+/// </summary>
 public sealed class SessionInfo
 {
     public string Id { get; set; } = string.Empty;
@@ -190,6 +196,9 @@ public sealed class SessionInfo
     public string? TtyHostVersion { get; set; }
 }
 
+/// <summary>
+/// Payload for session state change notifications.
+/// </summary>
 public sealed class StateChangePayload
 {
     public bool IsRunning { get; set; }

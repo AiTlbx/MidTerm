@@ -357,6 +357,7 @@ public static class Program
         finally
         {
             clientCts.Cancel();
+            // Await heartbeat completion; exceptions are expected during cancellation
             try { await heartbeatTask.ConfigureAwait(false); } catch { }
             try { client.Dispose(); }
             catch (Exception disposeEx) { Log.Exception(disposeEx, "HandleClient.ClientDispose"); }

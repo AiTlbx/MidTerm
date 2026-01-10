@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Models.Update;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -495,57 +496,6 @@ public sealed class UpdateService : IDisposable
         _httpClient.Dispose();
         _updateListeners.Clear();
     }
-}
-
-public enum UpdateType
-{
-    None,
-    WebOnly,
-    Full
-}
-
-public sealed class UpdateInfo
-{
-    public bool Available { get; init; }
-    public string CurrentVersion { get; init; } = "";
-    public string LatestVersion { get; init; } = "";
-    public string ReleaseUrl { get; init; } = "";
-    public string? DownloadUrl { get; init; }
-    public string? AssetName { get; init; }
-    public string? ReleaseNotes { get; init; }
-    public UpdateType Type { get; init; } = UpdateType.Full;
-    public bool SessionsPreserved => Type == UpdateType.WebOnly;
-
-    // Local development support (MIDTERM_ENVIRONMENT=THELAIR)
-    public string? Environment { get; init; }
-    public LocalUpdateInfo? LocalUpdate { get; init; }
-}
-
-public sealed class LocalUpdateInfo
-{
-    public bool Available { get; init; }
-    public string Version { get; init; } = "";
-    public string Path { get; init; } = "";
-    public UpdateType Type { get; init; } = UpdateType.Full;
-    public bool SessionsPreserved => Type == UpdateType.WebOnly;
-}
-
-public sealed class VersionManifest
-{
-    public string Web { get; set; } = "";
-    public string Pty { get; set; } = "";
-    public int Protocol { get; set; } = 1;
-    public string MinCompatiblePty { get; set; } = "";
-}
-
-public sealed class UpdateResult
-{
-    public bool Found { get; set; }
-    public bool Success { get; set; }
-    public string Message { get; set; } = "";
-    public string Details { get; set; } = "";
-    public string Timestamp { get; set; } = "";
-    public string LogFile { get; set; } = "";
 }
 
 internal sealed class GitHubRelease

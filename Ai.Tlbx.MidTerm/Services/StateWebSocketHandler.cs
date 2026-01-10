@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Models;
+using Ai.Tlbx.MidTerm.Models.Update;
 
 namespace Ai.Tlbx.MidTerm.Services;
 

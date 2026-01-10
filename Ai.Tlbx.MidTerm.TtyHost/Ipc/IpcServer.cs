@@ -72,7 +72,7 @@ public sealed class UnixSocketServer : IIpcServer
     {
         _socketPath = socketPath;
 
-        // Clean up any stale socket file
+        // Clean up any stale socket file; ignore errors (file may be locked or already gone)
         try
         {
             if (File.Exists(_socketPath))
