@@ -185,11 +185,11 @@ function Generate-Certificate
         {
             try
             {
-                # Load the PEM certificate
+                # Load the PEM certificate - extract base64 and create cert via constructor (not Import)
                 $certContent = Get-Content $certPath -Raw
-                $certBytes = [System.Text.Encoding]::UTF8.GetBytes($certContent)
-                $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
-                $cert.Import([Convert]::FromBase64String(($certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", "")))
+                $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
+                $certBytes = [Convert]::FromBase64String($base64)
+                $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
 
                 # Import to Trusted Root - requires admin
                 $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
@@ -750,6 +750,9 @@ if ($ServiceMode)
     Write-Host "  Latest version: $version" -ForegroundColor White
     Write-Host ""
     Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
+    Write-Host ""
+    Write-Host "Press any key to close this window..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     exit
 }
 
