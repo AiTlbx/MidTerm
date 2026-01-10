@@ -750,10 +750,7 @@ if ($ServiceMode)
     Write-Host "  Latest version: $version" -ForegroundColor White
     Write-Host ""
     Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress
-    Write-Host ""
-    Write-Host "Press any key to close this window..." -ForegroundColor Gray
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit
+    return
 }
 
 # Capture current user info BEFORE any potential elevation
@@ -837,7 +834,7 @@ if ($asService)
 
         Start-Process pwsh -ArgumentList $arguments -Verb RunAs -Wait
         Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
-        exit
+        return
     }
 
     # Already admin, proceed with install
