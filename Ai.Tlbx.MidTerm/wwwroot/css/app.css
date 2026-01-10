@@ -1654,6 +1654,19 @@ html, body {
     font-weight: 600;
 }
 
+.update-changelog-link {
+    color: var(--text-muted);
+    font-size: 10px;
+    cursor: pointer;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.update-changelog-link:hover {
+    color: var(--accent-green);
+    text-decoration: underline;
+}
+
 .update-btn {
     width: 100%;
     padding: 6px 12px;

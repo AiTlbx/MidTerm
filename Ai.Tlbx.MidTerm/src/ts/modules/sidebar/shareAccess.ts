@@ -34,10 +34,10 @@ interface SharePacketInfo {
 
 export function initShareAccessButton(): void {
   const el = document.getElementById('btn-share-access');
-  console.log('[shareAccess] initShareAccessButton: element found =', !!el);
+  log.info(() => `initShareAccessButton: element found = ${!!el}`);
   if (el) {
     el.addEventListener('click', () => {
-      console.log('[shareAccess] Share Access button clicked');
+      log.info(() => 'Share Access button clicked');
       openShareEmail();
     });
   }

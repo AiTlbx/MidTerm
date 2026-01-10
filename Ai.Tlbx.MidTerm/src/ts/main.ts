@@ -122,7 +122,7 @@ async function init(): Promise<void> {
   // Initialize logging first
   await initLogStorage();
   setLogLevel(LogLevel.Info);
-  setConsoleLogging(false);
+  setConsoleLogging(true);
   log.info(() => 'MidTerm frontend initializing');
 
   cacheDOMElements();
@@ -548,6 +548,7 @@ function bindEvents(): void {
   bindClick('btn-apply-update', applyUpdate);
   bindClick('btn-show-changelog', showChangelog);
   bindClick('btn-close-changelog', closeChangelog);
+  bindClick('update-changelog-link', showChangelog);
 
   const changelogBackdrop = document.querySelector('#changelog-modal .modal-backdrop');
   if (changelogBackdrop) {
