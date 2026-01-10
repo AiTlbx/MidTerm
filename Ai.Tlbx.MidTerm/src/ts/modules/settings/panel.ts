@@ -56,6 +56,7 @@ export function openSettings(): void {
   initSettingsTabs();
   fetchSettings();
   fetchSystemStatus();
+  fetchCertificateInfo();
 }
 
 /**
@@ -220,4 +221,42 @@ export function checkSystemHealth(): void {
       }
     })
     .catch(() => {});
+}
+
+/**
+ * Fetch and display certificate info in the Security settings tab
+ */
+export function fetchCertificateInfo(): void {
+  const fingerprintEl = document.getElementById('settings-cert-fingerprint');
+  const validityEl = document.getElementById('settings-cert-validity');
+
+  if (!fingerprintEl && !validityEl) return;
+
+  fetch('/api/certificate/share-packet')
+    .then((response) => {
+      if (!response.ok) throw new Error('Failed to fetch certificate info');
+      return response.json();
+    })
+    .then((info) => {
+      if (fingerprintEl) {
+        fingerprintEl.textContent = info.certificate.fingerprintFormatted;
+      }
+      if (validityEl) {
+        const notBefore = new Date(info.certificate.notBefore);
+        const notAfter = new Date(info.certificate.notAfter);
+        const dateOpts: Intl.DateTimeFormatOptions = {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        };
+        validityEl.textContent =
+          notBefore.toLocaleDateString(undefined, dateOpts) +
+          ' - ' +
+          notAfter.toLocaleDateString(undefined, dateOpts);
+      }
+    })
+    .catch(() => {
+      if (fingerprintEl) fingerprintEl.textContent = 'Error loading';
+      if (validityEl) validityEl.textContent = '-';
+    });
 }

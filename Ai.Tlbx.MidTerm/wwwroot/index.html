@@ -50,6 +50,10 @@
                     <button id="update-btn" class="update-btn">Update & Restart</button>
                     <div class="update-note">Sessions will be closed</div>
                 </div>
+                <button id="btn-share-access" class="share-access-btn" title="Share connection info via email">
+                    <span class="icon">&#xe925;</span>
+                    Share Access
+                </button>
                 <div class="network-list" id="network-list"></div>
                 <div class="footer-row">
                     <span class="footer-sessions">Sessions: <span id="session-count">0</span></span>
@@ -370,6 +374,27 @@
                                         </select>
                                     </div>
                                     <p class="setting-hint">When running as a system service, terminals spawn as this user instead of the service account.</p>
+                                </div>
+
+                                <div class="settings-section">
+                                    <h3>HTTPS Certificate</h3>
+                                    <div class="setting-row">
+                                        <label>Fingerprint</label>
+                                        <code class="cert-fingerprint-inline" id="settings-cert-fingerprint">Loading...</code>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Valid Until</label>
+                                        <span id="settings-cert-validity">-</span>
+                                    </div>
+                                    <div class="setting-row">
+                                        <label>Trust on Other Devices</label>
+                                        <a href="/trust" target="_blank" class="btn-secondary">Open Trust Page</a>
+                                    </div>
+                                    <p class="setting-hint">
+                                        <strong>Fingerprint verification:</strong> When connecting from a new device,
+                                        click the padlock icon in your browser and compare the SHA-256 fingerprint with
+                                        this one. Matching fingerprints confirm you're connecting to the real server.
+                                    </p>
                                 </div>
                             </section>
 

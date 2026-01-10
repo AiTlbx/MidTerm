@@ -845,6 +845,67 @@ public class Program
             return Results.Json(certService.GetInfo(), AppJsonContext.Default.CertificateInfoResponse);
         });
 
+        app.MapGet("/api/certificate/download/pem", () =>
+        {
+            var certService = app.Services.GetRequiredService<CertificateInfoService>();
+            var pemBytes = certService.ExportPemBytes();
+            if (pemBytes is null)
+            {
+                return Results.NotFound("Certificate not available");
+            }
+            return Results.File(pemBytes, "application/x-pem-file", "midterm.pem");
+        });
+
+        app.MapGet("/api/certificate/download/mobileconfig", (HttpContext context) =>
+        {
+            var certService = app.Services.GetRequiredService<CertificateInfoService>();
+            var hostname = context.Request.Host.Host;
+            var configBytes = certService.GenerateMobileConfig(hostname);
+            if (configBytes is null)
+            {
+                return Results.NotFound("Certificate not available");
+            }
+            return Results.File(configBytes, "application/x-apple-aspen-config", "midterm.mobileconfig");
+        });
+
+        app.MapGet("/api/certificate/share-packet", (HttpContext context) =>
+        {
+            var certService = app.Services.GetRequiredService<CertificateInfoService>();
+            var downloadInfo = certService.GetDownloadInfo();
+
+            // Build endpoints from current network interfaces
+            var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                .Where(ni => ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
+                             && ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                .Where(ni => ni.Name.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) ||
+                             ni.Name.Contains("VPN", StringComparison.OrdinalIgnoreCase) ||
+                             (!ni.Name.Contains("VMware", StringComparison.OrdinalIgnoreCase) &&
+                              !ni.Name.StartsWith("vEthernet", StringComparison.OrdinalIgnoreCase) &&
+                              !ni.Name.Contains("VirtualBox", StringComparison.OrdinalIgnoreCase) &&
+                              !ni.Name.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase)))
+                .SelectMany(ni => ni.GetIPProperties().UnicastAddresses
+                    .Where(addr => addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    .Select(addr => new NetworkEndpointInfo
+                    {
+                        Name = ni.Name,
+                        Url = $"https://{addr.Address}:{context.Request.Host.Port ?? 2000}"
+                    }))
+                .ToArray();
+
+            var hostPort = context.Request.Host.Port ?? 2000;
+            var firstIp = interfaces.FirstOrDefault()?.Url.Split("://")[1].Split(":")[0] ?? "localhost";
+
+            var sharePacket = new SharePacketInfo
+            {
+                Certificate = downloadInfo,
+                Endpoints = interfaces,
+                TrustPageUrl = $"https://{firstIp}:{hostPort}/trust",
+                Port = hostPort
+            };
+
+            return Results.Json(sharePacket, AppJsonContext.Default.SharePacketInfo);
+        });
+
         app.MapGet("/api/update/check", async () =>
         {
             var update = await updateService.CheckForUpdateAsync();

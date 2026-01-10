@@ -51,7 +51,8 @@ import {
   collapseSidebar,
   expandSidebar,
   restoreSidebarState,
-  setupSidebarResize
+  setupSidebarResize,
+  initShareAccessButton
 } from './modules/sidebar';
 import {
   toggleSettings,
@@ -139,6 +140,7 @@ async function init(): Promise<void> {
   bindEvents();
   bindAuthEvents();
   bindSearchEvents();
+  initShareAccessButton();
   setupResizeObserver();
   setupVisualViewport();
 

@@ -145,6 +145,49 @@ function Prompt-Password
     exit 1
 }
 
+function Show-CertificateFingerprint
+{
+    param(
+        [string]$CertPath
+    )
+
+    if (-not $CertPath -or -not (Test-Path $CertPath))
+    {
+        return
+    }
+
+    try
+    {
+        # Load the PEM certificate
+        $certContent = Get-Content $CertPath -Raw
+        $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
+        $certBytes = [Convert]::FromBase64String($base64)
+
+        # Compute SHA-256 fingerprint
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $hash = $sha256.ComputeHash($certBytes)
+        $fingerprint = [BitConverter]::ToString($hash) -replace "-", ":"
+
+        Write-Host ""
+        Write-Host "  ================================================" -ForegroundColor Cyan
+        Write-Host "  CERTIFICATE FINGERPRINT - SAVE THIS!" -ForegroundColor Cyan
+        Write-Host "  ================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  $fingerprint" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  When connecting from other devices, verify the" -ForegroundColor Gray
+        Write-Host "  fingerprint in your browser matches this one." -ForegroundColor Gray
+        Write-Host "  (Click padlock icon > Certificate > SHA-256)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  Never enter passwords if fingerprints don't match." -ForegroundColor White
+        Write-Host ""
+    }
+    catch
+    {
+        Write-Host "  Could not compute certificate fingerprint: $_" -ForegroundColor Yellow
+    }
+}
+
 function Generate-Certificate
 {
     param(
@@ -619,6 +662,11 @@ function Install-MidTerm
     if (-not $CertPath)
     {
         Write-Host "  Warning: Certificate generation failed. App will use fallback certificate." -ForegroundColor Yellow
+    }
+    else
+    {
+        # Show fingerprint so user can verify connections from other devices
+        Show-CertificateFingerprint -CertPath $CertPath
     }
 
     if ($AsService)

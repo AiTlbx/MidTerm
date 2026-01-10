@@ -151,8 +151,10 @@ public static class AuthEndpoints
     {
         return path == "/login" ||
                path == "/login.html" ||
+               path == "/trust" ||
+               path == "/trust.html" ||
                path == "/api/health" ||
-               path == "/api/certificate/info" ||
+               path.StartsWith("/api/certificate/") ||
                path.StartsWith("/api/auth/") ||
                path.StartsWith("/css/") ||
                path.StartsWith("/js/") ||

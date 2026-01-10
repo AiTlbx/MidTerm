@@ -285,6 +285,34 @@ prompt_network_config() {
     echo -e "  ${GREEN}HTTPS: Enabled${NC}"
 }
 
+show_certificate_fingerprint() {
+    local cert_path="$1"
+
+    if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
+        return
+    fi
+
+    # Compute SHA-256 fingerprint using openssl
+    local fingerprint
+    fingerprint=$(openssl x509 -in "$cert_path" -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)
+
+    if [ -n "$fingerprint" ]; then
+        echo ""
+        echo -e "  ${CYAN}================================================${NC}"
+        echo -e "  ${CYAN}CERTIFICATE FINGERPRINT - SAVE THIS!${NC}"
+        echo -e "  ${CYAN}================================================${NC}"
+        echo ""
+        echo -e "  ${YELLOW}$fingerprint${NC}"
+        echo ""
+        echo -e "  ${GRAY}When connecting from other devices, verify the${NC}"
+        echo -e "  ${GRAY}fingerprint in your browser matches this one.${NC}"
+        echo -e "  ${GRAY}(Click padlock icon > Certificate > SHA-256)${NC}"
+        echo ""
+        echo -e "  Never enter passwords if fingerprints don't match."
+        echo ""
+    fi
+}
+
 generate_certificate() {
     local install_dir="$1"
     local settings_dir="$2"
@@ -493,6 +521,9 @@ install_as_service() {
     # Generate certificate now that binary is installed
     if ! generate_certificate "$install_dir" "$settings_dir"; then
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
+    else
+        # Show fingerprint so user can verify connections from other devices
+        show_certificate_fingerprint "$CERT_PATH"
     fi
 
     # Write settings with runAsUser info
@@ -660,6 +691,9 @@ install_as_user() {
     # Generate certificate
     if ! generate_certificate "$install_dir" "$settings_dir"; then
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
+    else
+        # Show fingerprint so user can verify connections from other devices
+        show_certificate_fingerprint "$CERT_PATH"
     fi
 
     # Write user settings with password

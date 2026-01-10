@@ -2622,3 +2622,329 @@ html, body {
     height: 100%;
     color: var(--text-secondary);
 }
+
+/* Trust Page */
+.trust-page {
+    min-height: 100vh;
+    background-color: var(--bg-primary);
+    padding: 20px;
+}
+
+.trust-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.trust-header {
+    text-align: center;
+    margin-bottom: 32px;
+    padding: 24px 0;
+}
+
+.trust-header h1 {
+    margin: 0 0 8px 0;
+    font-size: 28px;
+    color: var(--text-primary);
+}
+
+.trust-header p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.trust-section {
+    background-color: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 20px;
+}
+
+.trust-section h2 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 12px;
+}
+
+.trust-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.fingerprint-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.fingerprint-display {
+    flex: 1;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    color: var(--accent-green);
+    background-color: var(--bg-primary);
+    padding: 12px 16px;
+    border-radius: 6px;
+    word-break: break-all;
+    line-height: 1.6;
+}
+
+.copy-btn {
+    padding: 8px 16px;
+    background-color: var(--btn-secondary);
+    color: var(--text-primary);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.copy-btn:hover {
+    background-color: var(--btn-secondary-hover);
+}
+
+.trust-hint {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.platform-detected {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-bottom: 16px;
+}
+
+.platform-detected span {
+    color: var(--accent-blue);
+    font-weight: 500;
+}
+
+.platform-panel {
+    margin-top: 16px;
+}
+
+.platform-panel.hidden {
+    display: none;
+}
+
+.install-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background-color: var(--btn-primary);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 20px;
+}
+
+.install-btn:hover {
+    background-color: var(--btn-primary-hover);
+}
+
+.install-btn.secondary {
+    background-color: var(--btn-secondary);
+    color: var(--text-primary);
+}
+
+.install-btn.secondary:hover {
+    background-color: var(--btn-secondary-hover);
+}
+
+.install-steps {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+.install-steps li {
+    margin-bottom: 8px;
+}
+
+.install-steps strong {
+    color: var(--text-primary);
+}
+
+.install-steps code {
+    background-color: var(--bg-primary);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.install-note {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-style: italic;
+    margin-top: 12px;
+}
+
+.os-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.os-tab {
+    padding: 8px 16px;
+    background-color: var(--btn-secondary);
+    color: var(--text-secondary);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.os-tab:hover {
+    background-color: var(--btn-secondary-hover);
+}
+
+.os-tab.active {
+    background-color: var(--accent-blue);
+    color: white;
+}
+
+.os-instructions {
+    padding: 16px;
+    background-color: var(--bg-primary);
+    border-radius: 6px;
+}
+
+.os-instructions.hidden {
+    display: none;
+}
+
+.os-instructions p {
+    margin: 0 0 12px 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.command-block {
+    display: block;
+    background-color: var(--bg-sidebar);
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11px;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.warning-box {
+    background-color: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: 6px;
+    padding: 16px;
+    margin-top: 16px;
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.warning-box strong {
+    color: #ffc107;
+}
+
+.endpoints-list {
+    margin-bottom: 16px;
+}
+
+.endpoint-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background-color: var(--bg-primary);
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.endpoint-name {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.endpoint-url {
+    color: var(--accent-blue);
+    font-size: 12px;
+    text-decoration: none;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+
+.endpoint-url:hover {
+    text-decoration: underline;
+}
+
+.cert-validity {
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: right;
+}
+
+.trust-footer {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.back-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.back-link:hover {
+    color: var(--accent-blue);
+}
+
+/* Share Access Button */
+.share-access-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    background-color: var(--btn-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.share-access-btn:hover {
+    background-color: var(--btn-secondary-hover);
+}
+
+.share-access-btn .icon {
+    font-size: 14px;
+}
+
+/* Certificate fingerprint inline display in settings */
+.cert-fingerprint-inline {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 10px;
+    color: var(--accent-green);
+    background-color: var(--bg-primary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    word-break: break-all;
+    max-width: 280px;
+    display: inline-block;
+}
