@@ -91,6 +91,8 @@ public static class EndpointSetup
             var certService = app.Services.GetRequiredService<CertificateInfoService>();
             var downloadInfo = certService.GetDownloadInfo();
 
+            var hostPort = context.Request.Host.Port ?? 2000;
+
             var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
                 .Where(ni => ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
                              && ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
@@ -105,11 +107,9 @@ public static class EndpointSetup
                     .Select(addr => new NetworkEndpointInfo
                     {
                         Name = ni.Name,
-                        Url = $"https://{addr.Address}:{context.Request.Host.Port ?? 2000}"
+                        Url = $"https://{addr.Address}:{hostPort}"
                     }))
                 .ToArray();
-
-            var hostPort = context.Request.Host.Port ?? 2000;
             var firstIp = interfaces.FirstOrDefault()?.Url.Split("://")[1].Split(":")[0] ?? "localhost";
 
             var sharePacket = new SharePacketInfo
@@ -265,6 +265,7 @@ public static class EndpointSetup
                         Name = ni.Name,
                         Ip = addr.Address.ToString()
                     }))
+                .Prepend(new NetworkInterfaceDto { Name = "Localhost", Ip = "localhost" })
                 .ToList();
             return Results.Json(interfaces, AppJsonContext.Default.ListNetworkInterfaceDto);
         });

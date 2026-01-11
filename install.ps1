@@ -145,6 +145,109 @@ function Prompt-Password
     exit 1
 }
 
+function Test-ExistingCertificate
+{
+    param(
+        [string]$SettingsDir
+    )
+
+    $certPath = Join-Path $SettingsDir "midterm.pem"
+    $keyPath = Join-Path $SettingsDir "keys" "midterm.dpapi"
+
+    # Check if both cert and key exist
+    if (-not (Test-Path $certPath))
+    {
+        return $null
+    }
+
+    if (-not (Test-Path $keyPath))
+    {
+        Write-Host "  Warning: Certificate exists but private key is missing" -ForegroundColor Yellow
+        return $null
+    }
+
+    try
+    {
+        # Load and validate the certificate
+        $certContent = Get-Content $certPath -Raw
+        $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
+        $certBytes = [Convert]::FromBase64String($base64)
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
+
+        # Check if cert is still valid (not expired, and has at least 30 days left)
+        $now = Get-Date
+        if ($cert.NotAfter -lt $now)
+        {
+            Write-Host "  Warning: Existing certificate has expired" -ForegroundColor Yellow
+            return $null
+        }
+
+        if ($cert.NotAfter -lt $now.AddDays(30))
+        {
+            Write-Host "  Warning: Existing certificate expires in less than 30 days" -ForegroundColor Yellow
+            return $null
+        }
+
+        return @{
+            Path = $certPath
+            Certificate = $cert
+            Thumbprint = $cert.Thumbprint
+            NotAfter = $cert.NotAfter
+        }
+    }
+    catch
+    {
+        Write-Host "  Warning: Could not validate existing certificate: $_" -ForegroundColor Yellow
+        return $null
+    }
+}
+
+function Remove-OldMidTermCertificates
+{
+    param(
+        [string]$ExceptThumbprint = $null
+    )
+
+    try
+    {
+        $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+        $rootStore.Open("ReadWrite")
+
+        $oldCerts = $rootStore.Certificates | Where-Object { $_.Subject -eq "CN=MidTerm" }
+        $removed = 0
+
+        foreach ($old in $oldCerts)
+        {
+            if ($ExceptThumbprint -and $old.Thumbprint -eq $ExceptThumbprint)
+            {
+                continue  # Keep the current cert
+            }
+
+            try
+            {
+                $rootStore.Remove($old)
+                $removed++
+                Write-Host "  Removed old certificate: $($old.Thumbprint.Substring(0, 8))..." -ForegroundColor Gray
+            }
+            catch
+            {
+                Write-Host "  Warning: Could not remove old certificate: $_" -ForegroundColor Yellow
+            }
+        }
+
+        $rootStore.Close()
+
+        if ($removed -gt 0)
+        {
+            Write-Host "  Cleaned up $removed old MidTerm certificate(s) from trusted store" -ForegroundColor Green
+        }
+    }
+    catch
+    {
+        Write-Host "  Warning: Could not clean up old certificates: $_" -ForegroundColor Yellow
+    }
+}
+
 function Show-CertificateFingerprint
 {
     param(
@@ -197,80 +300,104 @@ function Generate-Certificate
         [bool]$TrustCert = $false
     )
 
-    Write-Host "  Generating HTTPS certificate with OS-protected private key..." -ForegroundColor Gray
-
-    $mtPath = Join-Path $InstallDir "mt.exe"
-    if (-not (Test-Path $mtPath))
+    # First check if a valid certificate already exists
+    $existingCert = Test-ExistingCertificate -SettingsDir $SettingsDir
+    if ($existingCert)
     {
-        Write-Host "  Error: mt.exe not found at $mtPath" -ForegroundColor Red
-        return $null
+        Write-Host "  Existing valid certificate found (expires $($existingCert.NotAfter.ToString('yyyy-MM-dd')))" -ForegroundColor Green
+        $certPath = $existingCert.Path
+        $certThumbprint = $existingCert.Thumbprint
+        $wasGenerated = $false
     }
-
-    try
+    else
     {
-        # Use mt.exe --generate-cert to generate certificate with DPAPI-protected key
-        # Pass --service-mode for service installs so it uses ProgramData instead of user profile
-        $certArgs = if ($IsService) { @("--generate-cert", "--service-mode") } else { @("--generate-cert") }
-        $output = & $mtPath @certArgs 2>&1
-        $exitCode = $LASTEXITCODE
+        Write-Host "  Generating HTTPS certificate with OS-protected private key..." -ForegroundColor Gray
 
-        if ($exitCode -ne 0)
+        $mtPath = Join-Path $InstallDir "mt.exe"
+        if (-not (Test-Path $mtPath))
         {
-            Write-Host "  Failed to generate certificate: $output" -ForegroundColor Red
+            Write-Host "  Error: mt.exe not found at $mtPath" -ForegroundColor Red
             return $null
         }
 
-        # Parse output for certificate path
-        $certPath = $null
-        foreach ($line in $output)
+        try
         {
-            if ($line -match "Location:\s*(.+\.pem)")
-            {
-                $certPath = $Matches[1].Trim()
-            }
-        }
+            # Use mt.exe --generate-cert to generate certificate with DPAPI-protected key
+            # Pass --service-mode for service installs so it uses ProgramData instead of user profile
+            # Pass --force to regenerate since we already checked validity above
+            $certArgs = if ($IsService) { @("--generate-cert", "--service-mode", "--force") } else { @("--generate-cert", "--force") }
+            $output = & $mtPath @certArgs 2>&1
+            $exitCode = $LASTEXITCODE
 
-        if (-not $certPath)
+            if ($exitCode -ne 0)
+            {
+                Write-Host "  Failed to generate certificate: $output" -ForegroundColor Red
+                return $null
+            }
+
+            # Parse output for certificate path
+            $certPath = $null
+            foreach ($line in $output)
+            {
+                if ($line -match "Location:\s*(.+\.pem)")
+                {
+                    $certPath = $Matches[1].Trim()
+                }
+            }
+
+            if (-not $certPath)
+            {
+                # Default path (matches what mt.exe generates)
+                $certPath = Join-Path $SettingsDir "midterm.pem"
+            }
+
+            Write-Host "  Certificate generated with DPAPI-protected private key" -ForegroundColor Green
+            $wasGenerated = $true
+
+            # Get the thumbprint of the new cert
+            $certContent = Get-Content $certPath -Raw
+            $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
+            $certBytes = [Convert]::FromBase64String($base64)
+            $newCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
+            $certThumbprint = $newCert.Thumbprint
+        }
+        catch
         {
-            # Default path (matches what mt.exe generates)
-            $certPath = Join-Path $SettingsDir "midterm.pem"
+            Write-Host "  Failed to generate certificate: $_" -ForegroundColor Red
+            return $null
         }
-
-        Write-Host "  Certificate generated with DPAPI-protected private key" -ForegroundColor Green
-
-        # Trust the certificate if requested (decision made before elevation)
-        if ($TrustCert)
-        {
-            Write-Host "  Adding certificate to trusted root store..." -ForegroundColor Gray
-            try
-            {
-                # Load the PEM certificate - extract base64 and create cert via constructor (not Import)
-                $certContent = Get-Content $certPath -Raw
-                $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
-                $certBytes = [Convert]::FromBase64String($base64)
-                $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
-
-                # Import to Trusted Root - requires admin
-                $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
-                $rootStore.Open("ReadWrite")
-                $rootStore.Add($cert)
-                $rootStore.Close()
-                Write-Host "  Certificate trusted successfully" -ForegroundColor Green
-            }
-            catch
-            {
-                Write-Host "  Could not trust certificate: $_" -ForegroundColor Yellow
-                Write-Host "  You may see browser warnings until manually trusted" -ForegroundColor Gray
-            }
-        }
-
-        return $certPath
     }
-    catch
+
+    # Trust the certificate if requested (decision made before elevation)
+    if ($TrustCert)
     {
-        Write-Host "  Failed to generate certificate: $_" -ForegroundColor Red
-        return $null
+        # First, remove ALL old MidTerm certs from trusted store to avoid accumulation
+        Remove-OldMidTermCertificates -ExceptThumbprint $null  # Remove all, we'll add the current one
+
+        Write-Host "  Adding certificate to trusted root store..." -ForegroundColor Gray
+        try
+        {
+            # Load the PEM certificate - extract base64 and create cert via constructor (not Import)
+            $certContent = Get-Content $certPath -Raw
+            $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
+            $certBytes = [Convert]::FromBase64String($base64)
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
+
+            # Import to Trusted Root - requires admin
+            $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+            $rootStore.Open("ReadWrite")
+            $rootStore.Add($cert)
+            $rootStore.Close()
+            Write-Host "  Certificate trusted successfully" -ForegroundColor Green
+        }
+        catch
+        {
+            Write-Host "  Could not trust certificate: $_" -ForegroundColor Yellow
+            Write-Host "  You may see browser warnings until manually trusted" -ForegroundColor Gray
+        }
     }
+
+    return $certPath
 }
 
 function Prompt-NetworkConfig

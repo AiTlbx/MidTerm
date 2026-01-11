@@ -80,30 +80,29 @@
                 </div>
 
                 <div class="os-instructions" id="windows-instructions">
-                    <p>Run as Administrator in PowerShell:</p>
-                    <code class="command-block">certutil -addstore Root "<span id="cert-path-win">C:\ProgramData\MidTerm\midterm.pem</span>"</code>
-                    <p>Or download and install manually:</p>
-                    <button type="button" class="install-btn secondary" id="btn-download-pem-desktop">
+                    <button type="button" class="install-btn" id="btn-download-pem-desktop">
                         Download Certificate
                     </button>
+                    <p>Then run as Administrator in the download folder:</p>
+                    <code class="command-block">certutil -addstore Root midterm.pem</code>
                 </div>
 
                 <div class="os-instructions hidden" id="macos-instructions">
-                    <p>Run in Terminal:</p>
-                    <code class="command-block">sudo security add-trusted-cert -d -r trustRoot \
-    -k /Library/Keychains/System.keychain midterm.pem</code>
-                    <button type="button" class="install-btn secondary" id="btn-download-pem-macos">
+                    <button type="button" class="install-btn" id="btn-download-pem-macos">
                         Download Certificate
                     </button>
+                    <p>Then run in Terminal from the download folder:</p>
+                    <code class="command-block">sudo security add-trusted-cert -d -r trustRoot \
+    -k /Library/Keychains/System.keychain midterm.pem</code>
                 </div>
 
                 <div class="os-instructions hidden" id="linux-instructions">
-                    <p>Run in Terminal:</p>
-                    <code class="command-block">sudo cp midterm.pem /usr/local/share/ca-certificates/midterm.crt
-sudo update-ca-certificates</code>
-                    <button type="button" class="install-btn secondary" id="btn-download-pem-linux">
+                    <button type="button" class="install-btn" id="btn-download-pem-linux">
                         Download Certificate
                     </button>
+                    <p>Then run in Terminal from the download folder:</p>
+                    <code class="command-block">sudo cp midterm.pem /usr/local/share/ca-certificates/midterm.crt
+sudo update-ca-certificates</code>
                 </div>
             </div>
         </section>
@@ -127,7 +126,7 @@ sudo update-ca-certificates</code>
 
         <!-- Connection info -->
         <section class="trust-section endpoints-section">
-            <h2>Available Endpoints</h2>
+            <h2>Trusted Addresses in Certificate</h2>
             <div id="endpoints-list" class="endpoints-list">
                 <p>Loading...</p>
             </div>
@@ -247,17 +246,18 @@ sudo update-ca-certificates</code>
                             year: 'numeric', month: 'long', day: 'numeric'
                         });
 
-                    // Display endpoints
+                    // Display trusted addresses from certificate SANs
                     const endpointsList = document.getElementById('endpoints-list');
-                    if (info.endpoints && info.endpoints.length > 0) {
-                        endpointsList.innerHTML = info.endpoints.map(ep =>
+                    const cert = info.certificate;
+                    const allAddresses = [...(cert.dnsNames || []), ...(cert.ipAddresses || [])];
+                    if (allAddresses.length > 0) {
+                        endpointsList.innerHTML = allAddresses.map(addr =>
                             `<div class="endpoint-item">
-                                <span class="endpoint-name">${ep.name}</span>
-                                <a href="${ep.url}" class="endpoint-url">${ep.url}</a>
+                                <span class="endpoint-addr">${addr}</span>
                             </div>`
                         ).join('');
                     } else {
-                        endpointsList.innerHTML = '<p>No network endpoints available</p>';
+                        endpointsList.innerHTML = '<p>No addresses in certificate</p>';
                     }
                 } catch (err) {
                     document.getElementById('fingerprint').textContent = 'Error loading certificate info';

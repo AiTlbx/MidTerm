@@ -2725,6 +2725,7 @@ html, body {
     min-height: 100vh;
     background-color: var(--bg-primary);
     padding: 20px;
+    overflow: auto;
 }
 
 .trust-container {
@@ -2984,6 +2985,12 @@ html, body {
 
 .endpoint-url:hover {
     text-decoration: underline;
+}
+
+.endpoint-addr {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
 }
 
 .cert-validity {
