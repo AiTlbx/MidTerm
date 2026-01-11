@@ -144,3 +144,33 @@ export function setupSidebarResize(): void {
     setCookie(SIDEBAR_WIDTH_COOKIE, String(currentWidth));
   });
 }
+
+// =============================================================================
+// Fullscreen Toggle
+// =============================================================================
+
+/**
+ * Toggle browser fullscreen mode and resize active terminal
+ */
+export function toggleFullscreen(): void {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    document.documentElement.requestFullscreen();
+  }
+}
+
+/**
+ * Initialize fullscreen button and handle fullscreen change events
+ */
+export function initFullscreenButton(): void {
+  const btn = document.getElementById('btn-fullscreen');
+  if (!btn) return;
+
+  btn.addEventListener('click', toggleFullscreen);
+
+  // Rescale terminals when fullscreen changes
+  document.addEventListener('fullscreenchange', () => {
+    requestAnimationFrame(rescaleAllTerminals);
+  });
+}
