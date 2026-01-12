@@ -110,7 +110,8 @@
 
   <!-- Collect embedded resources AFTER frontend build using CreateItem -->
   <!-- CreateItem adds items during build execution (not project load time) -->
-  <Target Name="CollectFrontendResources" AfterTargets="BuildFrontend" BeforeTargets="PrepareResources">
+  <!-- Must run before CoreCompile for resources to be embedded in AOT builds -->
+  <Target Name="CollectFrontendResources" AfterTargets="BuildFrontend" BeforeTargets="CoreCompile">
     <!-- Debug: embed original files (exclude .br) -->
     <CreateItem Include="wwwroot\**\*" Exclude="wwwroot\**\*.br"
                 Condition="'$(IsPublishing)' != 'true'"

@@ -8,10 +8,22 @@ $ErrorActionPreference = 'Stop'
 $Source = 'C:\temp\mtlocalrelease'
 $Dest = 'C:\Program Files\MidTerm'
 
+Write-Host ""
+Write-Host "  MidTerm Local Deploy" -ForegroundColor Cyan
+Write-Host "  ====================" -ForegroundColor Cyan
+Write-Host ""
+
 if (-not (Test-Path "$Source\mt.exe")) {
     Write-Host "No local release found at $Source" -ForegroundColor Red
     exit 1
 }
+
+$mtSize = [math]::Round((Get-Item "$Source\mt.exe").Length / 1MB, 1)
+$mthostSize = [math]::Round((Get-Item "$Source\mthost.exe").Length / 1MB, 1)
+
+Write-Host "Source:      $Source" -ForegroundColor Gray
+Write-Host "Destination: $Dest" -ForegroundColor Gray
+Write-Host ""
 
 Write-Host "Stopping MidTerm service..." -ForegroundColor Gray
 Stop-Service MidTerm -ErrorAction SilentlyContinue
@@ -22,11 +34,14 @@ Start-Sleep 1
 
 Write-Host "Copying files..." -ForegroundColor Gray
 Copy-Item "$Source\mt.exe" "$Dest\mt.exe" -Force
+Write-Host "  mt.exe ($mtSize MB)" -ForegroundColor DarkGray
 Copy-Item "$Source\mthost.exe" "$Dest\mthost.exe" -Force
+Write-Host "  mthost.exe ($mthostSize MB)" -ForegroundColor DarkGray
 
 Write-Host "Starting MidTerm service..." -ForegroundColor Gray
 Start-Service MidTerm
 Start-Sleep 2
 
 $version = Invoke-RestMethod -Uri 'https://localhost:2000/api/version' -SkipCertificateCheck -ErrorAction SilentlyContinue
+Write-Host ""
 Write-Host "Deployed: $version" -ForegroundColor Green
