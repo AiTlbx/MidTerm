@@ -136,6 +136,13 @@ public class Program
 
         settingsService.AddSettingsListener(newSettings =>
         {
+            // Propagate log level changes immediately
+            if (Log.MinLevel != newSettings.LogLevel)
+            {
+                Log.Info(() => $"Log level changed: {Log.MinLevel} -> {newSettings.LogLevel}");
+                Log.MinLevel = newSettings.LogLevel;
+            }
+
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);
             if (isValid)
             {

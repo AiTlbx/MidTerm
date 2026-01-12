@@ -419,41 +419,55 @@
                             <section class="settings-panel hidden" data-panel="diagnostics">
                                 <h2>Diagnostics</h2>
 
-                                <div class="settings-section">
-                                    <h3>Logging</h3>
-                                    <div class="setting-row">
-                                        <label for="setting-log-level">Log Level</label>
+                                <!-- Capture Settings -->
+                                <div class="settings-section diag-capture-section">
+                                    <h3>Server Capture Level</h3>
+                                    <div class="diag-capture-row">
                                         <select id="setting-log-level">
-                                            <option value="exception">Exception</option>
-                                            <option value="error">Error</option>
-                                            <option value="warn">Warn (default)</option>
-                                            <option value="info">Info</option>
-                                            <option value="verbose">Verbose</option>
+                                            <option value="exception">Exception only</option>
+                                            <option value="error">Error+</option>
+                                            <option value="warn">Warn+ (default)</option>
+                                            <option value="info">Info+</option>
+                                            <option value="verbose">Verbose (all)</option>
                                         </select>
+                                        <span class="diag-capture-hint">Changes apply immediately to server logging</span>
                                     </div>
-                                    <p class="setting-hint">Set verbosity level for backend logging. Frontend logs are stored in your browser.</p>
+                                </div>
 
-                                    <div class="diagnostics-tabs">
-                                        <button class="diag-tab active" data-tab="frontend">Frontend</button>
-                                        <button class="diag-tab" data-tab="server">Server</button>
-                                        <button class="diag-tab" data-tab="sessions">Sessions</button>
+                                <!-- Log Viewer -->
+                                <div class="settings-section diag-viewer-section">
+                                    <div class="diag-viewer-header">
+                                        <h3>Log Viewer</h3>
+                                        <div class="diag-source-tabs">
+                                            <button class="diag-tab active" data-tab="server">Server</button>
+                                            <button class="diag-tab" data-tab="sessions">Sessions</button>
+                                        </div>
                                     </div>
 
-                                    <div class="diagnostics-controls">
-                                        <select id="diag-level-filter" title="Minimum level">
-                                            <option value="4">All</option>
-                                            <option value="3">Info+</option>
-                                            <option value="2" selected>Warn+</option>
-                                            <option value="1">Error+</option>
-                                            <option value="0">Exception</option>
-                                        </select>
-                                        <input type="text" id="diag-search" placeholder="Search logs..." />
-                                        <label class="diag-live-tail-label">
-                                            <input type="checkbox" id="diag-live-tail" checked />
-                                            Live
+                                    <div class="diag-filter-bar">
+                                        <label class="diag-filter-label">
+                                            Show:
+                                            <select id="diag-level-filter">
+                                                <option value="4">All levels</option>
+                                                <option value="3">Info+</option>
+                                                <option value="2" selected>Warn+</option>
+                                                <option value="1">Error+</option>
+                                                <option value="0">Exception</option>
+                                            </select>
                                         </label>
-                                        <button id="diag-copy-all" class="btn-small" title="Copy all logs">Copy</button>
-                                        <button id="diag-clear" class="btn-small" title="Clear (frontend only)">Clear</button>
+                                        <input type="text" id="diag-search" placeholder="Search..." />
+                                        <div class="diag-filter-actions">
+                                            <label class="diag-live-tail-label" title="Auto-scroll to new entries">
+                                                <input type="checkbox" id="diag-live-tail" checked />
+                                                Live
+                                            </label>
+                                            <button id="diag-copy-all" class="btn-icon" title="Copy all visible logs">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div id="diag-session-select" class="diag-session-select hidden">
@@ -466,8 +480,9 @@
                                         <div class="diag-log-content" id="diag-log-content"></div>
                                     </div>
 
-                                    <div class="diag-status">
+                                    <div class="diag-status-bar">
                                         <span id="diag-entry-count">0 entries</span>
+                                        <span id="diag-connection-status"></span>
                                     </div>
                                 </div>
                             </section>

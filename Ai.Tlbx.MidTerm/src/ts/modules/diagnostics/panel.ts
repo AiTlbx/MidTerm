@@ -2,11 +2,10 @@
  * Diagnostics Panel Module
  *
  * Handles the diagnostics log viewer UI in the settings panel.
- * Supports Frontend (IndexedDB), Server (WebSocket), and Session logs.
+ * Displays Server and Session logs via WebSocket.
  */
 
-import { LogLevel, LOG_LEVEL_NAMES } from '../logging';
-import { readLogEntries, clearLogs } from '../logging';
+import { LogLevel } from '../logging';
 import {
   connectLogsWebSocket,
   disconnectLogsWebSocket,
@@ -27,7 +26,7 @@ import {
   type LogSessionInfo,
 } from './logsChannel';
 
-type DiagnosticsTab = 'frontend' | 'server' | 'sessions';
+type DiagnosticsTab = 'server' | 'sessions';
 
 interface DisplayEntry {
   timestamp: string;
@@ -36,12 +35,11 @@ interface DisplayEntry {
   message: string;
 }
 
-let currentTab: DiagnosticsTab = 'frontend';
+let currentTab: DiagnosticsTab = 'server';
 let minLevel: LogLevel = LogLevel.Warn;
 let searchFilter = '';
 let liveTail = true;
 let displayedEntries: DisplayEntry[] = [];
-let refreshInterval: number | null = null;
 let selectedSessionId: string | null = null;
 let sessionsList: LogSessionInfo[] = [];
 
@@ -52,7 +50,11 @@ export function initDiagnosticsPanel(): void {
   bindTabEvents();
   bindControlEvents();
   setupWebSocketCallbacks();
-  startRefreshLoop();
+
+  // Connect immediately since we default to server tab
+  connectLogsWebSocket();
+  subscribeMt();
+  requestHistory('mt');
 }
 
 /**
@@ -116,30 +118,22 @@ function switchTab(tab: DiagnosticsTab): void {
     sessionSelect.classList.toggle('hidden', tab !== 'sessions');
   }
 
-  // Show/hide clear button (only for frontend)
-  const clearBtn = document.getElementById('diag-clear');
-  if (clearBtn) {
-    clearBtn.style.display = tab === 'frontend' ? '' : 'none';
-  }
-
   // Clear and refresh
   displayedEntries = [];
 
   // Connect/subscribe based on tab
-  if (tab === 'server' || tab === 'sessions') {
-    if (!isConnected()) {
-      connectLogsWebSocket();
-    }
+  if (!isConnected()) {
+    connectLogsWebSocket();
+  }
 
-    if (tab === 'server') {
-      subscribeMt();
-      requestHistory('mt');
-    } else if (tab === 'sessions') {
-      requestSessions();
-      if (selectedSessionId) {
-        subscribeSession(selectedSessionId);
-        requestHistory('mthost', selectedSessionId);
-      }
+  if (tab === 'server') {
+    subscribeMt();
+    requestHistory('mt');
+  } else if (tab === 'sessions') {
+    requestSessions();
+    if (selectedSessionId) {
+      subscribeSession(selectedSessionId);
+      requestHistory('mthost', selectedSessionId);
     }
   }
 
@@ -183,17 +177,6 @@ function bindControlEvents(): void {
   const copyBtn = document.getElementById('diag-copy-all');
   if (copyBtn) {
     copyBtn.addEventListener('click', copyAllLogs);
-  }
-
-  const clearBtn = document.getElementById('diag-clear');
-  if (clearBtn) {
-    clearBtn.addEventListener('click', async () => {
-      if (currentTab === 'frontend') {
-        await clearLogs();
-        displayedEntries = [];
-        refreshLogs();
-      }
-    });
   }
 
   const sessionPicker = document.getElementById('diag-session-picker') as HTMLSelectElement | null;
@@ -344,50 +327,14 @@ function matchesSearch(entry: DisplayEntry): boolean {
 }
 
 /**
- * Start the refresh loop for live updates (frontend only)
- */
-function startRefreshLoop(): void {
-  if (refreshInterval) return;
-  refreshInterval = window.setInterval(() => {
-    if (liveTail && currentTab === 'frontend') {
-      refreshLogs();
-    }
-  }, 1000);
-}
-
-/**
  * Refresh logs from the current source
  */
-async function refreshLogs(): Promise<void> {
+function refreshLogs(): void {
   const content = document.getElementById('diag-log-content');
   const countEl = document.getElementById('diag-entry-count');
   if (!content) return;
 
-  if (currentTab === 'frontend') {
-    try {
-      const entries = await readLogEntries({ minLevel, limit: 500 });
-
-      // Apply search filter
-      let filtered = entries;
-      if (searchFilter) {
-        filtered = entries.filter(
-          (e) =>
-            e.message.toLowerCase().includes(searchFilter) ||
-            e.module.toLowerCase().includes(searchFilter),
-        );
-      }
-
-      // Convert to display format and reverse for oldest first
-      displayedEntries = filtered.reverse().map((e) => ({
-        timestamp: new Date(e.timestamp).toISOString(),
-        level: LOG_LEVEL_NAMES[e.level].toLowerCase(),
-        module: e.module,
-        message: e.message,
-      }));
-    } catch {
-      displayedEntries = [];
-    }
-  } else if (currentTab === 'server') {
+  if (currentTab === 'server') {
     if (!isConnected()) {
       content.innerHTML = '<div class="diag-connecting">Connecting to server...</div>';
       if (countEl) countEl.textContent = '0 entries';
@@ -485,12 +432,8 @@ async function copyAllLogs(): Promise<void> {
 }
 
 /**
- * Stop the refresh loop (call when settings panel closes)
+ * Cleanup when settings panel closes
  */
 export function stopDiagnosticsRefresh(): void {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
-  }
   disconnectLogsWebSocket();
 }
