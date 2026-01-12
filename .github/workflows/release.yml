@@ -7,6 +7,8 @@ on:
 
 env:
   DOTNET_VERSION: '10.0.x'
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
   build:
@@ -29,34 +31,33 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      # 1. Install npm dependencies (required for frontend-build.ps1)
       - name: Install npm packages
         run: npm ci
 
-      # 2. Build frontend (TypeScript + Brotli via unified script)
+      # Build frontend ONCE here - dotnet publish will skip via SkipFrontendBuild
       - name: Build frontend
         shell: pwsh
         run: |
           $version = (Get-Content version.json | ConvertFrom-Json).web
-          cd Ai.Tlbx.MidTerm
-          ./frontend-build.ps1 -Publish -Version $version
+          ./Ai.Tlbx.MidTerm/frontend-build.ps1 -Publish -Version $version
 
-      # 3. Build binaries (reproducible builds enabled via ContinuousIntegrationBuild)
-      - name: Build mt
-        run: dotnet publish Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} /p:IsPublishing=true /p:ContinuousIntegrationBuild=true
+      # Build binaries with SkipFrontendBuild to avoid double frontend build
+      - name: Build mt + mthost
+        run: |
+          dotnet publish Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+          dotnet publish Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
 
-      - name: Build mthost
-        run: dotnet publish Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} /p:IsPublishing=true /p:ContinuousIntegrationBuild=true
-
-      # 4. Stage and generate checksums
-      - name: Stage
+      - name: Stage artifacts
         shell: bash
         run: |
           mkdir -p staging
@@ -64,15 +65,13 @@ jobs:
           cp Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/
           cp version.json staging/
 
-          # Generate SHA256 checksums for reproducible build verification
-          # Use shasum on macOS, sha256sum on Linux/Windows
           cd staging
           if command -v sha256sum &> /dev/null; then
             sha256sum mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
           else
             shasum -a 256 mt${{ matrix.ext }} mthost${{ matrix.ext }} > SHA256SUMS.txt
           fi
-          echo "SHA256 checksums:"
+          echo "=== ${{ matrix.rid }} ==="
           cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
@@ -98,19 +97,15 @@ jobs:
       - name: Package
         run: |
           cd artifacts
-          cd win-x64 && zip ../mt-win-x64.zip mt.exe mthost.exe version.json SHA256SUMS.txt && cd ..
-          cd osx-arm64 && tar -czvf ../mt-osx-arm64.tar.gz mt mthost version.json SHA256SUMS.txt && cd ..
-          cd osx-x64 && tar -czvf ../mt-osx-x64.tar.gz mt mthost version.json SHA256SUMS.txt && cd ..
-          cd linux-x64 && tar -czvf ../mt-linux-x64.tar.gz mt mthost version.json SHA256SUMS.txt && cd ..
+          zip -j mt-win-x64.zip win-x64/*
+          tar -czvf mt-osx-arm64.tar.gz -C osx-arm64 .
+          tar -czvf mt-osx-x64.tar.gz -C osx-x64 .
+          tar -czvf mt-linux-x64.tar.gz -C linux-x64 .
 
-          # Create combined checksums file for all platforms
-          echo "# SHA256 Checksums for Reproducible Build Verification" > checksums.txt
-          echo "# Build with: dotnet publish -c Release -r <rid> /p:IsPublishing=true /p:ContinuousIntegrationBuild=true" >> checksums.txt
-          echo "" >> checksums.txt
+          echo "# SHA256 Checksums" > checksums.txt
           for rid in win-x64 osx-arm64 osx-x64 linux-x64; do
             echo "## $rid" >> checksums.txt
             cat $rid/SHA256SUMS.txt >> checksums.txt
-            echo "" >> checksums.txt
           done
           cat checksums.txt
 

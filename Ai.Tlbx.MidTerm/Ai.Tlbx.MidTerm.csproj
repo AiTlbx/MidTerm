@@ -84,7 +84,7 @@
   <!-- ============================================ -->
 
   <!-- Read version from version.json - single source of truth -->
-  <Target Name="ReadVersionJson" BeforeTargets="BuildFrontend;GetAssemblyVersion">
+  <Target Name="ReadVersionJson" BeforeTargets="EnsureFrontend;GetAssemblyVersion">
     <Exec Command="node -p &quot;require('./version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/.." ConsoleToMsBuild="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
     </Exec>
@@ -97,50 +97,61 @@
   <PropertyGroup>
     <FrontendPublishFlag Condition="'$(IsPublishing)' == 'true'">-Publish</FrontendPublishFlag>
     <FrontendPublishFlag Condition="'$(IsPublishing)' != 'true'"></FrontendPublishFlag>
+    <!-- Capture if terminal.min.js exists at project load time (for re-invocation check) -->
+    <_TerminalJsExistsAtLoad Condition="Exists('wwwroot\js\terminal.min.js')">true</_TerminalJsExistsAtLoad>
   </PropertyGroup>
 
-  <!-- Single frontend build target: calls frontend-build.ps1 -->
-  <!-- TypeScript errors use "pretty false" for MSBuild-compatible format -->
-  <!-- ConsoleToMsBuild="true" forwards errors to VS Error List -->
-  <Target Name="BuildFrontend" BeforeTargets="BeforeCompile" DependsOnTargets="ReadVersionJson">
-    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Version $(WebVersion) $(FrontendPublishFlag)"
+  <!--
+    Frontend build with MSBuild re-invocation pattern.
+
+    Problem: Static ItemGroups are evaluated BEFORE targets run, but .br files
+    are created BY a target. Chicken-and-egg.
+
+    Solution: Build frontend, then re-invoke MSBuild. The second invocation
+    evaluates ItemGroups fresh and sees the generated files.
+
+    _FrontendReady=true prevents infinite recursion.
+    SkipFrontendBuild=true (CI) skips the target entirely when frontend was pre-built.
+  -->
+
+  <!-- Debug builds: run frontend build, only re-invoke if terminal.min.js is missing -->
+  <Target Name="EnsureFrontendDebug" BeforeTargets="PrepareForBuild" DependsOnTargets="ReadVersionJson"
+          Condition="'$(_FrontendReady)' != 'true' And '$(SkipFrontendBuild)' != 'true' And '$(IsPublishing)' != 'true'">
+
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Version $(WebVersion)"
           WorkingDirectory="$(MSBuildProjectDirectory)"
           ConsoleToMsBuild="true" />
+
+    <!-- Only re-invoke if terminal.min.js didn't exist at project load (first build after clean) -->
+    <MSBuild Projects="$(MSBuildProjectFile)"
+             Targets="Build"
+             Properties="_FrontendReady=true;Configuration=$(Configuration)"
+             Condition="'$(_TerminalJsExistsAtLoad)' != 'true'" />
+    <Error Text="_REINVOKE_SUCCESS_" Condition="'$(_TerminalJsExistsAtLoad)' != 'true'" />
   </Target>
 
-  <!-- ============================================ -->
-  <!-- EMBEDDED RESOURCES - READ THIS CAREFULLY!   -->
-  <!-- ============================================ -->
-  <!--
-    CRITICAL: These MUST be static ItemGroups, NOT inside a Target!
+  <!-- Publish builds: always re-invoke because .br files are generated fresh -->
+  <Target Name="EnsureFrontendPublish" BeforeTargets="PrepareForBuild" DependsOnTargets="ReadVersionJson"
+          Condition="'$(_FrontendReady)' != 'true' And '$(SkipFrontendBuild)' != 'true' And '$(IsPublishing)' == 'true'">
 
-    WHY: ItemGroups inside Targets do NOT work for EmbeddedResource in AOT builds.
-         We tried CreateItem and ItemGroup-inside-Target - both result in 0 resources
-         being embedded in the final AOT binary. Only static ItemGroups work.
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Version $(WebVersion) -Publish"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMsBuild="true" />
 
-    REQUIREMENT: Files must EXIST when MSBuild evaluates the project (before targets run).
+    <MSBuild Projects="$(MSBuildProjectFile)"
+             Targets="Publish"
+             Properties="_FrontendReady=true;Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);IsPublishing=$(IsPublishing);ContinuousIntegrationBuild=$(ContinuousIntegrationBuild)" />
+    <Error Text="_REINVOKE_SUCCESS_" Condition="true" />
+  </Target>
 
-    WORKFLOW:
-      - Debug (F5 in VS): BuildFrontend target creates terminal.min.js, then static
-        ItemGroup picks up wwwroot files. Works because BuildFrontend runs early.
-      - Publish: release-local.ps1 / release.yml call frontend-build.ps1 BEFORE
-        dotnet publish, so .br files exist when MSBuild evaluates the ItemGroup.
-
-    IF YOU GET 404 ERRORS AFTER PUBLISH:
-      1. Check mt.exe size - should be ~19MB with resources, ~17MB without
-      2. Verify frontend-build.ps1 -Publish runs BEFORE dotnet publish in your script
-      3. Verify .br files exist in wwwroot before dotnet publish starts
-      4. DO NOT try to "fix" this by moving ItemGroups into Targets - it won't work!
-  -->
+  <!-- Embedded resources - static ItemGroups evaluated at project load -->
+  <!-- After re-invocation, these see the freshly generated files -->
   <ItemGroup Condition="'$(IsPublishing)' != 'true'">
-    <!-- Debug: embed original files (exclude .br) -->
     <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\**\*.br" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(IsPublishing)' == 'true'">
-    <!-- Publish: embed Brotli-compressed versions of text assets -->
     <EmbeddedResource Include="wwwroot\**\*.br" />
-    <!-- Publish: embed non-compressible originals (fonts, images, favicon) -->
     <EmbeddedResource Include="wwwroot\**\*"
                       Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br" />
   </ItemGroup>
