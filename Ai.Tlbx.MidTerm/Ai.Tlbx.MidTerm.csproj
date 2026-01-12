@@ -108,23 +108,20 @@
           ConsoleToMsBuild="true" />
   </Target>
 
-  <!-- Collect embedded resources AFTER frontend build -->
-  <!-- ItemGroup inside Target is evaluated during build, not at project load -->
-  <!-- Must run before CoreCompile for resources to be embedded in AOT builds -->
-  <Target Name="CollectFrontendResources" AfterTargets="BuildFrontend" BeforeTargets="CoreCompile">
-    <ItemGroup Condition="'$(IsPublishing)' != 'true'">
-      <!-- Debug: embed original files (exclude .br) -->
-      <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\**\*.br" />
-    </ItemGroup>
+  <!-- Static embedded resources - files must exist at project evaluation time -->
+  <!-- Debug builds: original files (frontend-build.ps1 creates terminal.min.js) -->
+  <!-- Publish builds: .br files (release scripts run frontend-build.ps1 -Publish before dotnet publish) -->
+  <ItemGroup Condition="'$(IsPublishing)' != 'true'">
+    <EmbeddedResource Include="wwwroot\**\*" Exclude="wwwroot\**\*.br" />
+  </ItemGroup>
 
-    <ItemGroup Condition="'$(IsPublishing)' == 'true'">
-      <!-- Publish: embed .br files for compressible assets -->
-      <EmbeddedResource Include="wwwroot\**\*.br" />
-      <!-- Publish: embed non-compressible originals (fonts, images, etc.) -->
-      <EmbeddedResource Include="wwwroot\**\*"
-                        Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br" />
-    </ItemGroup>
-  </Target>
+  <ItemGroup Condition="'$(IsPublishing)' == 'true'">
+    <!-- Brotli-compressed versions of text assets -->
+    <EmbeddedResource Include="wwwroot\**\*.br" />
+    <!-- Non-compressible originals (fonts, images, favicon) -->
+    <EmbeddedResource Include="wwwroot\**\*"
+                      Exclude="wwwroot\**\*.js;wwwroot\**\*.css;wwwroot\**\*.html;wwwroot\**\*.txt;wwwroot\**\*.json;wwwroot\**\*.map;wwwroot\**\*.svg;wwwroot\**\*.br" />
+  </ItemGroup>
 
   <!-- Clean generated frontend files -->
   <Target Name="CleanFrontend" AfterTargets="Clean">
