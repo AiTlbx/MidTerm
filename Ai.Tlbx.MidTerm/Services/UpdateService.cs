@@ -13,6 +13,7 @@ public sealed class UpdateService : IDisposable
     private const string LocalReleasePath = @"C:\temp\mtlocalrelease";
     private const string DevEnvironmentName = "THELAIR";
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan DevCheckInterval = TimeSpan.FromMinutes(2);
 
     private readonly HttpClient _httpClient;
     private readonly ConcurrentDictionary<string, Action<UpdateInfo>> _updateListeners = new();
@@ -33,7 +34,8 @@ public sealed class UpdateService : IDisposable
 
         _currentVersion = GetCurrentVersion();
         _installedManifest = GetInstalledManifest();
-        _checkTimer = new Timer(OnCheckTimer, null, TimeSpan.FromSeconds(10), CheckInterval);
+        var interval = IsDevEnvironment ? DevCheckInterval : CheckInterval;
+        _checkTimer = new Timer(OnCheckTimer, null, TimeSpan.FromSeconds(10), interval);
     }
 
     private static string GetCurrentVersion()
