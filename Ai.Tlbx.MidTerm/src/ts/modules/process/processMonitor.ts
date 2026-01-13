@@ -71,7 +71,7 @@ export function handleProcessEvent(sessionId: string, payload: ProcessEventPaylo
     state.showRacingLog = true;
     notifyStateChange(sessionId, state);
 
-    log.verbose(() => `Process exec: ${payload.Name} (${payload.Pid})`);
+    log.info(() => `Racing log now has ${state.recentProcesses.length} entries for ${sessionId}`);
   } else if (payload.Type === 'Exit') {
     log.verbose(() => `Process exit: ${payload.Pid}`);
   }
