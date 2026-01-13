@@ -39,6 +39,7 @@ export function getProcessState(sessionId: string): ProcessState {
     state = {
       foregroundPid: null,
       foregroundName: null,
+      foregroundCommandLine: null,
       foregroundCwd: null,
       recentProcesses: [],
       showRacingLog: false,
@@ -85,11 +86,15 @@ export function handleForegroundChange(sessionId: string, payload: ForegroundCha
 
   state.foregroundPid = payload.Pid;
   state.foregroundName = payload.Name;
+  state.foregroundCommandLine = payload.CommandLine ?? null;
   state.foregroundCwd = payload.Cwd ?? null;
 
   notifyStateChange(sessionId, state);
 
-  log.verbose(() => `Foreground: ${payload.Name} (${payload.Pid}) in ${payload.Cwd}`);
+  log.verbose(
+    () =>
+      `Foreground: ${payload.Name} (${payload.Pid}) cmd=${payload.CommandLine} in ${payload.Cwd}`,
+  );
 }
 
 /**
@@ -147,10 +152,15 @@ export function isRacingLogVisible(sessionId: string): boolean {
 /**
  * Get foreground process display info.
  */
-export function getForegroundInfo(sessionId: string): { name: string | null; cwd: string | null } {
+export function getForegroundInfo(sessionId: string): {
+  name: string | null;
+  commandLine: string | null;
+  cwd: string | null;
+} {
   const state = processStates.get(sessionId);
   return {
     name: state?.foregroundName ?? null,
+    commandLine: state?.foregroundCommandLine ?? null,
     cwd: state?.foregroundCwd ?? null,
   };
 }

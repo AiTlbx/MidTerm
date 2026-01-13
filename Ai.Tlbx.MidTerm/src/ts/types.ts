@@ -57,6 +57,7 @@ export interface ForegroundChangePayload {
 export interface ProcessState {
   foregroundPid: number | null;
   foregroundName: string | null;
+  foregroundCommandLine: string | null;
   foregroundCwd: string | null;
   recentProcesses: RacingLogEntry[];
   showRacingLog: boolean;

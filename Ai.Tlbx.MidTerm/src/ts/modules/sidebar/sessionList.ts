@@ -75,11 +75,11 @@ function updateSessionProcessInfo(sessionId: string): void {
   if (fgInfo.name) {
     const fgIndicator = document.createElement('span');
     fgIndicator.className = 'session-foreground';
+    const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
+    const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
     const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
-    fgIndicator.textContent = `\u25B6 ${fgInfo.name}${cwdDisplay}`;
-    if (fgInfo.cwd) {
-      fgIndicator.title = fgInfo.cwd;
-    }
+    fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
+    fgIndicator.title = `${fgInfo.commandLine ?? fgInfo.name}\n${fgInfo.cwd ?? ''}`;
     processInfoEl.appendChild(fgIndicator);
   }
 
@@ -232,11 +232,11 @@ export function renderSessionList(): void {
     if (fgInfo.name) {
       const fgIndicator = document.createElement('span');
       fgIndicator.className = 'session-foreground';
+      const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
+      const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
       const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
-      fgIndicator.textContent = `\u25B6 ${fgInfo.name}${cwdDisplay}`;
-      if (fgInfo.cwd) {
-        fgIndicator.title = fgInfo.cwd;
-      }
+      fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
+      fgIndicator.title = `${fgInfo.commandLine ?? fgInfo.name}\n${fgInfo.cwd ?? ''}`;
       processInfo.appendChild(fgIndicator);
     }
 

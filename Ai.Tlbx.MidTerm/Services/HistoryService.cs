@@ -17,6 +17,7 @@ public sealed class HistoryService
     public HistoryService(SettingsService settingsService)
     {
         _historyPath = Path.Combine(settingsService.SettingsDirectory, "history.json");
+        Log.Info(() => $"HistoryService: path={_historyPath}");
         Load();
     }
 
@@ -68,18 +69,23 @@ public sealed class HistoryService
 
     public void RecordEntry(string shellType, string executable, string? commandLine, string workingDirectory)
     {
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}");
+
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
+            Log.Info(() => "RecordEntry skipped: empty executable or workingDirectory");
             return;
         }
 
         // Don't record shell as subprocess (e.g., "pwsh" when running pwsh)
         if (executable.Equals(shellType, StringComparison.OrdinalIgnoreCase))
         {
+            Log.Info(() => $"RecordEntry skipped: exe matches shell ({executable})");
             return;
         }
 
         var id = GenerateId(shellType, executable, commandLine, workingDirectory);
+        Log.Info(() => $"RecordEntry: recording id={id}");
 
         lock (_lock)
         {
