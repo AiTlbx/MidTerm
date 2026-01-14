@@ -146,7 +146,7 @@ export const ICONS = {
   update: '\ue91b', // arrow_right
   searchPrev: '\ue913', // keyboard_arrow_up
   searchNext: '\ue910', // keyboard_arrow_down
-  save: '\ue90f', // save
+  save: '\ue929', // save-disk
   interrupt: '\ue9b5', // power
   terminal: '\uea81', // terminal
   warning: '\uea07', // warning
