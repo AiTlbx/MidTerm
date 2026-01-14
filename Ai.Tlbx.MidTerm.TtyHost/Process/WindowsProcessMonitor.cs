@@ -352,8 +352,8 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     }
 
     /// <summary>
-    /// Strips the path from the executable in a command line, keeping just the filename and arguments.
-    /// Example: "C:\Windows\system32\edit.exe" file.txt → edit.exe file.txt
+    /// Strips the path and .exe extension from a command line, keeping just the command name and arguments.
+    /// Example: "C:\Windows\system32\edit.exe" file.txt → edit file.txt
     /// </summary>
     private static string? StripExecutablePath(string? commandLine)
     {
@@ -369,6 +369,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         }
 
         int exeEnd;
+        ReadOnlySpan<char> exeName;
         if (cmd[0] == '"')
         {
             // Quoted executable: find closing quote
@@ -379,12 +380,8 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
             }
             var exePath = cmd.Slice(1, closeQuote);
             var lastSlash = exePath.LastIndexOfAny(['\\', '/']);
-            var exeName = lastSlash >= 0 ? exePath.Slice(lastSlash + 1) : exePath;
+            exeName = lastSlash >= 0 ? exePath.Slice(lastSlash + 1) : exePath;
             exeEnd = closeQuote + 2; // Skip past closing quote
-
-            // Get arguments (everything after the quoted path)
-            var args = cmd.Length > exeEnd ? cmd.Slice(exeEnd).TrimStart() : ReadOnlySpan<char>.Empty;
-            return args.IsEmpty ? exeName.ToString() : $"{exeName} {args}";
         }
         else
         {
@@ -392,11 +389,17 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
             exeEnd = cmd.IndexOf(' ');
             var exePath = exeEnd >= 0 ? cmd.Slice(0, exeEnd) : cmd;
             var lastSlash = exePath.LastIndexOfAny(['\\', '/']);
-            var exeName = lastSlash >= 0 ? exePath.Slice(lastSlash + 1) : exePath;
-
-            var args = exeEnd >= 0 ? cmd.Slice(exeEnd + 1).TrimStart() : ReadOnlySpan<char>.Empty;
-            return args.IsEmpty ? exeName.ToString() : $"{exeName} {args}";
+            exeName = lastSlash >= 0 ? exePath.Slice(lastSlash + 1) : exePath;
         }
+
+        // Strip .exe extension
+        if (exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            exeName = exeName.Slice(0, exeName.Length - 4);
+        }
+
+        var args = exeEnd >= 0 && cmd.Length > exeEnd ? cmd.Slice(exeEnd).TrimStart() : ReadOnlySpan<char>.Empty;
+        return args.IsEmpty ? exeName.ToString() : $"{exeName} {args}";
     }
 
     public IReadOnlyList<int> GetChildProcesses(int pid)
