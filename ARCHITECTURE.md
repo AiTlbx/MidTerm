@@ -47,9 +47,11 @@ Binary size: 15-25MB depending on platform. Startup: instant. Memory: stable aft
 
 ### Frontend: Vanilla TypeScript
 
-The UI is TypeScript without React, Vue, or other frameworks.
+The UI is TypeScript without React, Vue, or other frameworks. State management uses nanostores (~1KB), a minimal reactive library that adds computed stores without framework overhead.
 
-**Module-level state**: Global variables in `state.ts` hold application state. Changes happen through setter functions (`setSessions()`, `setActiveSessionId()`).
+**Reactive state**: nanostores in `stores/index.ts` provides atoms, maps, and computed stores for session and UI state.
+
+**Ephemeral state**: `state.ts` holds WebSocket instances, DOM cache, and timers.
 
 **Callback registration**: Modules register functions with each other at startup. `stateChannel.ts` calls `renderSessionList()` without importing the sidebar module. Wiring happens in `main.ts`:
 
@@ -63,7 +65,7 @@ registerStateCallbacks({
 });
 ```
 
-**Explicit rendering**: When state changes, code explicitly calls render functions. No automatic reactivity, no subscription tracking.
+**Minimal reactivity**: Computed stores automatically update derived state (e.g., sorted session list). Rendering is still explicit—modules read via `.get()` and call render functions manually. Only one `.subscribe()` call exists (for connection indicator).
 
 **Direct DOM manipulation**: xterm.js requires imperative control. Event handlers attach directly. Elements are created and appended as needed.
 
@@ -201,16 +203,27 @@ else
 
 ### Frontend State Management
 
-State lives in module-level variables. No reactive framework, no store pattern.
+State is split between nanostores (reactive) and module-level variables (ephemeral).
+
+**Nanostores (`stores/index.ts`)** - ~1KB reactive library:
+- `atom<T>` for simple values (`$activeSessionId`, `$settingsOpen`)
+- `map<Record>` for collections (`$sessions`)
+- `computed` for derived state (`$sessionList` auto-sorts when `$sessions` changes)
+
+**Ephemeral state (`state.ts`)** - Non-reactive:
+- WebSocket instances, DOM cache, timers, pending buffers
 
 ```typescript
-// state.ts
-export let sessions: Session[] = [];
-export let activeSessionId: string | null = null;
+// stores/index.ts
+export const $sessions = map<Record<string, Session>>({});
+export const $activeSessionId = atom<string | null>(null);
+export const $sessionList = computed([$sessions], sessions =>
+  Object.values(sessions).sort((a, b) => a._order - b._order)
+);
 
-export function setSessions(newSessions: Session[]): void {
-    sessions = newSessions;
-}
+// Reading state
+const id = $activeSessionId.get();
+const session = getSession(id);
 ```
 
 Modules communicate via callback registration:
@@ -218,22 +231,23 @@ Modules communicate via callback registration:
 ```typescript
 // stateChannel.ts (WebSocket handler)
 function handleStateUpdate(newSessions: Session[]): void {
-    setSessions(newSessions);
-    renderSessionList();      // Callback registered by sidebar module
-    updateEmptyState();       // Callback registered by main module
+    setSessions(newSessions);    // Updates $sessions store
+    renderSessionList();         // Explicit render call
+    updateEmptyState();
 }
 ```
 
-Data flow is explicit:
+Data flow:
 ```
 WebSocket message
     → handleStateUpdate()
-        → setSessions()
-        → renderSessionList()
+        → setSessions()        // Updates $sessions store
+        → $sessionList         // Recomputes automatically
+        → renderSessionList()  // Explicit render call
             → DOM mutations
 ```
 
-No subscriptions, no watchers, no proxy magic. Each state change is traceable via grep.
+Nanostores handles derived state automatically. Explicit render calls remain—no hidden re-renders.
 
 ## Design Philosophy
 
@@ -242,17 +256,18 @@ No subscriptions, no watchers, no proxy magic. Each state change is traceable vi
 The right amount of complexity is the minimum needed for the current task.
 
 - Three similar lines of code > premature abstraction
-- Global state is explicit and traceable > hidden reactivity
+- Minimal reactivity (computed stores) > full reactive frameworks
+- State changes traceable via `.get()`/`.set()` calls
 - Direct function calls > message buses
 
 ### Explicit Over Implicit
 
 Every state change has a traceable call path.
 
-- No automatic re-renders
-- No subscription triggers
-- No effect cascades
-- DOM updates happen when code says they happen
+- Computed stores update derived state automatically
+- Rendering remains explicit—no automatic re-renders
+- Only one subscription in codebase (connection indicator)
+- DOM updates happen when code calls render functions
 
 ### Platform-Native Over Cross-Platform Abstraction
 
@@ -264,15 +279,15 @@ Use platform APIs directly rather than abstracting to a lowest common denominato
 
 ## Design Trade-offs
 
-### State Management Without Frameworks
+### Minimal State Management
 
-The decision to use module-level state instead of React/Redux has specific implications:
+The decision to use nanostores (~1KB) instead of React/Redux has specific implications:
 
-**Debugging**: `grep setSessions` locates every state mutation. Developers familiar with explicit control flow will find the codebase navigable. Call stacks show the exact path from WebSocket message to DOM update.
+**Debugging**: `grep '\$sessions'` locates store usage. `grep 'setSession'` finds mutations. Call stacks show the path from WebSocket message to store update to explicit render call.
 
 **Coupling**: The callback registration pattern in `main.ts` serves as the dependency graph. Modules don't import each other; they receive function references at startup. This achieves the decoupling that dependency injection provides, without the container.
 
-**Trade-off**: New contributors expecting reactive patterns will need to trace explicit render calls. The architecture assumes familiarity with imperative programming.
+**Trade-off**: nanostores adds one concept (stores with `.get()`/`.set()`) but keeps the explicit render pattern. New contributors see reactive derived state without the complexity of full frameworks.
 
 ### Native AOT vs Runtime Alternatives
 
@@ -319,7 +334,8 @@ The test project (`Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
 | AOT JSON | `Ai.Tlbx.MidTerm/Services/AppJsonContext.cs` |
 | PTY (Windows) | `Ai.Tlbx.MidTerm.TtyHost/Pty/ConPty/` |
 | PTY (Unix) | `Ai.Tlbx.MidTerm.TtyHost/Pty/UnixPty.cs` |
-| Frontend state | `Ai.Tlbx.MidTerm/src/ts/state.ts` |
+| Frontend stores | `Ai.Tlbx.MidTerm/src/ts/stores/index.ts` |
+| Ephemeral state | `Ai.Tlbx.MidTerm/src/ts/state.ts` |
 | Frontend wiring | `Ai.Tlbx.MidTerm/src/ts/main.ts` |
 | Mux client (TS) | `Ai.Tlbx.MidTerm/src/ts/modules/comms/muxChannel.ts` |
 | State client (TS) | `Ai.Tlbx.MidTerm/src/ts/modules/comms/stateChannel.ts` |

@@ -85,7 +85,9 @@ Ai.Tlbx.MidTerm/              Web Server (mt.exe)
 │   ├── main.ts                     Entry point, initialization
 │   ├── types.ts                    Shared interfaces and types
 │   ├── constants.ts                Protocol constants, themes
-│   ├── state.ts                    Application state management
+│   ├── state.ts                    Ephemeral state (WebSockets, DOM, timers)
+│   ├── stores/
+│   │   └── index.ts                Reactive state (nanostores)
 │   ├── modules/
 │   │   ├── comms/                  WebSocket communication
 │   │   ├── terminal/               xterm.js lifecycle and scaling
@@ -212,6 +214,7 @@ Example:
  */
 
 import type { TerminalState, Session } from '../types';
+import { $activeSessionId, getSession, setSession } from '../stores';
 import { state } from '../state';
 
 const MAX_SCROLLBACK = 10000;
@@ -220,6 +223,31 @@ export function createTerminal(sessionId: string, session: Session): TerminalSta
   // Implementation
 }
 ```
+
+## Frontend State Management
+
+The frontend uses [nanostores](https://github.com/nanostores/nanostores) (~1KB) for reactive state and `state.ts` for ephemeral infrastructure.
+
+**Nanostores (`stores/index.ts`)** - Reactive UI and session state:
+- `$sessions` (map) - All sessions keyed by ID
+- `$activeSessionId` (atom) - Currently selected session
+- `$sessionList` (computed) - Sessions sorted by `_order`
+- `$connectionStatus` (computed) - 'connected' | 'disconnected' | 'reconnecting'
+- UI flags: `$settingsOpen`, `$sidebarOpen`, `$sidebarCollapsed`
+
+**Ephemeral state (`state.ts`)** - Non-reactive infrastructure:
+- WebSocket instances, DOM element cache, timers, pending frame buffers
+
+**Usage pattern:**
+```typescript
+import { $activeSessionId, getSession } from '../stores';
+
+const id = $activeSessionId.get();      // Read
+$activeSessionId.set(newId);            // Write
+// Computed stores update automatically
+```
+
+**Naming:** Dollar prefix (`$storeName`) for all stores.
 
 ## Platform-Specific
 
