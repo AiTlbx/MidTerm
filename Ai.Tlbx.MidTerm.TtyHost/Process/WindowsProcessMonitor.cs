@@ -126,7 +126,8 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                 {
                     previousForeground = foreground;
                     var fgName = GetProcessName(foreground);
-                    var fgCwd = GetProcessCwd(foreground);
+                    // Fall back to shell's CWD if foreground process CWD is unavailable
+                    var fgCwd = GetProcessCwd(foreground) ?? GetProcessCwd(_rootPid);
                     var fgCmd = GetProcessCommandLine(foreground);
 
                     OnForegroundChanged?.Invoke(new ForegroundProcessInfo
@@ -181,33 +182,38 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                     return null;
                 }
 
-                var peb = new PEB();
-                if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, ref peb, Marshal.SizeOf<PEB>(), out _))
+                // Read PEB to get ProcessParameters pointer (offset 0x20 on x64)
+                var pebData = new byte[0x30];
+                if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, pebData.Length, out _))
+                {
+                    return null;
+                }
+                var procParamsPtr = (IntPtr)BitConverter.ToInt64(pebData, 0x20);
+                if (procParamsPtr == IntPtr.Zero)
                 {
                     return null;
                 }
 
-                if (peb.ProcessParameters == IntPtr.Zero)
+                // Read RTL_USER_PROCESS_PARAMETERS - CurrentDirectory (CURDIR) is at offset 0x38 on x64
+                // CURDIR structure: UNICODE_STRING DosPath (16 bytes) + HANDLE Handle (8 bytes)
+                // UNICODE_STRING: Length (2) + MaxLength (2) + padding (4) + Buffer ptr (8)
+                var paramsData = new byte[0x50];
+                if (!ReadProcessMemory(hProcess, procParamsPtr, paramsData, paramsData.Length, out _))
                 {
                     return null;
                 }
 
-                var processParams = new RTL_USER_PROCESS_PARAMETERS();
-                if (!ReadProcessMemory(hProcess, peb.ProcessParameters, ref processParams,
-                    Marshal.SizeOf<RTL_USER_PROCESS_PARAMETERS>(), out _))
+                // CurrentDirectory.DosPath at offset 0x38
+                var cwdLength = BitConverter.ToUInt16(paramsData, 0x38);
+                var cwdBufferPtr = (IntPtr)BitConverter.ToInt64(paramsData, 0x38 + 8);
+
+                if (cwdLength == 0 || cwdBufferPtr == IntPtr.Zero)
                 {
                     return null;
                 }
 
-                if (processParams.CurrentDirectory.DosPath.Length == 0 ||
-                    processParams.CurrentDirectory.DosPath.Buffer == IntPtr.Zero)
-                {
-                    return null;
-                }
-
-                var buffer = new byte[processParams.CurrentDirectory.DosPath.Length];
-                if (!ReadProcessMemory(hProcess, processParams.CurrentDirectory.DosPath.Buffer,
-                    buffer, buffer.Length, out _))
+                var buffer = new byte[cwdLength];
+                if (!ReadProcessMemory(hProcess, cwdBufferPtr, buffer, buffer.Length, out _))
                 {
                     return null;
                 }
@@ -298,33 +304,36 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                     return null;
                 }
 
-                var peb = new PEB();
-                if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, ref peb, Marshal.SizeOf<PEB>(), out _))
+                // Read PEB to get ProcessParameters pointer (offset 0x20 on x64)
+                var pebData = new byte[0x30];
+                if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, pebData.Length, out _))
+                {
+                    return null;
+                }
+                var procParamsPtr = (IntPtr)BitConverter.ToInt64(pebData, 0x20);
+                if (procParamsPtr == IntPtr.Zero)
                 {
                     return null;
                 }
 
-                if (peb.ProcessParameters == IntPtr.Zero)
+                // Read RTL_USER_PROCESS_PARAMETERS - CommandLine (UNICODE_STRING) is at offset 0x70 on x64
+                var paramsData = new byte[0x80];
+                if (!ReadProcessMemory(hProcess, procParamsPtr, paramsData, paramsData.Length, out _))
                 {
                     return null;
                 }
 
-                var processParams = new RTL_USER_PROCESS_PARAMETERS();
-                if (!ReadProcessMemory(hProcess, peb.ProcessParameters, ref processParams,
-                    Marshal.SizeOf<RTL_USER_PROCESS_PARAMETERS>(), out _))
+                // CommandLine at offset 0x70: UNICODE_STRING (Length ushort, MaxLength ushort, padding, Buffer IntPtr)
+                var cmdLength = BitConverter.ToUInt16(paramsData, 0x70);
+                var cmdBufferPtr = (IntPtr)BitConverter.ToInt64(paramsData, 0x70 + 8);
+
+                if (cmdLength == 0 || cmdBufferPtr == IntPtr.Zero)
                 {
                     return null;
                 }
 
-                if (processParams.CommandLine.Length == 0 ||
-                    processParams.CommandLine.Buffer == IntPtr.Zero)
-                {
-                    return null;
-                }
-
-                var buffer = new byte[processParams.CommandLine.Length];
-                if (!ReadProcessMemory(hProcess, processParams.CommandLine.Buffer,
-                    buffer, buffer.Length, out _))
+                var buffer = new byte[cmdLength];
+                if (!ReadProcessMemory(hProcess, cmdBufferPtr, buffer, buffer.Length, out _))
                 {
                     return null;
                 }
@@ -559,24 +568,6 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     private static extern bool ReadProcessMemory(
         IntPtr hProcess,
         IntPtr lpBaseAddress,
-        ref PEB lpBuffer,
-        int dwSize,
-        out int lpNumberOfBytesRead);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ReadProcessMemory(
-        IntPtr hProcess,
-        IntPtr lpBaseAddress,
-        ref RTL_USER_PROCESS_PARAMETERS lpBuffer,
-        int dwSize,
-        out int lpNumberOfBytesRead);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ReadProcessMemory(
-        IntPtr hProcess,
-        IntPtr lpBaseAddress,
         byte[] lpBuffer,
         int dwSize,
         out int lpNumberOfBytesRead);
@@ -606,82 +597,6 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         public IntPtr Reserved2_1;
         public IntPtr UniqueProcessId;
         public IntPtr Reserved3;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct UNICODE_STRING
-    {
-        public ushort Length;
-        public ushort MaximumLength;
-        public IntPtr Buffer;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct CURDIR
-    {
-        public UNICODE_STRING DosPath;
-        public IntPtr Handle;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PEB
-    {
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
-        public byte[] Reserved1;
-        public byte BeingDebugged;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 1)]
-        public byte[] Reserved2;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
-        public IntPtr[] Reserved3;
-        public IntPtr Ldr;
-        public IntPtr ProcessParameters;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RTL_USER_PROCESS_PARAMETERS
-    {
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
-        public byte[] Reserved1;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 10)]
-        public IntPtr[] Reserved2;
-        public UNICODE_STRING ImagePathName;
-        public UNICODE_STRING CommandLine;
-        public IntPtr Environment;
-        public uint StartingX;
-        public uint StartingY;
-        public uint CountX;
-        public uint CountY;
-        public uint CountCharsX;
-        public uint CountCharsY;
-        public uint FillAttribute;
-        public uint WindowFlags;
-        public uint ShowWindowFlags;
-        public UNICODE_STRING WindowTitle;
-        public UNICODE_STRING DesktopInfo;
-        public UNICODE_STRING ShellInfo;
-        public UNICODE_STRING RuntimeData;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
-        public RTL_DRIVE_LETTER_CURDIR[] CurrentDirectores;
-        public ulong EnvironmentSize;
-        public ulong EnvironmentVersion;
-        public IntPtr PackageDependencyData;
-        public uint ProcessGroupId;
-        public uint LoaderThreads;
-        public UNICODE_STRING RedirectionDllName;
-        public UNICODE_STRING HeapPartitionName;
-        public IntPtr DefaultThreadpoolCpuSetMasks;
-        public uint DefaultThreadpoolCpuSetMaskCount;
-        public uint DefaultThreadpoolThreadMaximum;
-        public CURDIR CurrentDirectory;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RTL_DRIVE_LETTER_CURDIR
-    {
-        public ushort Flags;
-        public ushort Length;
-        public uint TimeStamp;
-        public UNICODE_STRING DosPath;
     }
 
     #endregion
