@@ -602,10 +602,14 @@ function showBellNotification(sessionId: string): void {
     Notification.permission === 'granted' &&
     document.hidden
   ) {
-    new Notification('Bell: ' + title, {
-      body: 'Terminal bell triggered',
+    const notification = new Notification(title, {
+      body: 'Needs your attention',
       icon: '/favicon.ico',
     });
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
   }
 
   if (bellStyle === 'visual' || bellStyle === 'both') {
