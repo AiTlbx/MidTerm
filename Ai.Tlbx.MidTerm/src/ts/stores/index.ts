@@ -40,10 +40,10 @@ export const $renamingSessionId = atom<string | null>(null);
 
 /**
  * Sessions as a sorted array for rendering.
- * Sorted by creation order (first in list is oldest).
+ * Sorted by _order to preserve server ordering.
  */
 export const $sessionList = computed($sessions, (sessions) => {
-  return Object.values(sessions);
+  return Object.values(sessions).sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
 });
 
 /** Current active session object (derived) */
@@ -144,9 +144,12 @@ export function getSession(sessionId: string): Session | undefined {
 /**
  * Update a session in the store.
  * Creates if doesn't exist, updates if exists.
+ * Preserves _order for existing sessions, assigns high order for new ones.
  */
 export function setSession(session: Session): void {
-  $sessions.setKey(session.id, session);
+  const existing = $sessions.get()[session.id];
+  const order = session._order ?? existing?._order ?? Date.now();
+  $sessions.setKey(session.id, { ...session, _order: order });
 }
 
 /**
@@ -161,12 +164,13 @@ export function removeSession(sessionId: string): void {
 /**
  * Set all sessions (replaces entire collection).
  * Used when receiving session list from server.
+ * Assigns _order based on array index to preserve server ordering.
  */
 export function setSessions(sessionList: Session[]): void {
   const sessionsMap: Record<string, Session> = {};
-  for (const session of sessionList) {
-    sessionsMap[session.id] = session;
-  }
+  sessionList.forEach((session, i) => {
+    sessionsMap[session.id] = { ...session, _order: i };
+  });
   $sessions.set(sessionsMap);
 }
 

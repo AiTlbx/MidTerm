@@ -304,7 +304,8 @@ function createSession(): void {
       removeSession(tempId);
 
       newlyCreatedSessions.add(session.id);
-      selectSession(session.id);
+      // Wait for session to appear in store (WebSocket update race condition)
+      selectSessionWithRetry(session.id);
     })
     .catch((e) => {
       // Remove temporary session on error
@@ -314,6 +315,32 @@ function createSession(): void {
       updateEmptyState();
       log.error(() => `Failed to create session: ${e}`);
     });
+}
+
+/**
+ * Select session with retry - handles race condition where WebSocket
+ * state update hasn't arrived yet after API creates the session.
+ */
+function selectSessionWithRetry(sessionId: string, attempt = 0): void {
+  const maxAttempts = 10;
+  const retryDelay = 100;
+
+  // Check if session exists in store
+  if (getSession(sessionId)) {
+    selectSession(sessionId);
+    return;
+  }
+
+  // Retry if not found yet
+  if (attempt < maxAttempts) {
+    setTimeout(() => selectSessionWithRetry(sessionId, attempt + 1), retryDelay);
+  } else {
+    // Give up after max attempts - select anyway, terminal will work once WS update arrives
+    log.warn(
+      () => `Session ${sessionId} not in store after ${maxAttempts} attempts, selecting anyway`,
+    );
+    selectSession(sessionId);
+  }
 }
 
 function selectSession(sessionId: string, options?: { closeSettingsPanel?: boolean }): void {

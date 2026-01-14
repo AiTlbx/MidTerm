@@ -25,6 +25,8 @@ export interface Session {
   foregroundPid?: number;
   foregroundName?: string;
   foregroundCommandLine?: string;
+  /** Client-side ordering index (preserves server order) */
+  _order?: number;
 }
 
 // =============================================================================
