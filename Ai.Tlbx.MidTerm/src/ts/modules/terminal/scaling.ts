@@ -195,10 +195,12 @@ export function setupResizeObserver(): void {
 export function setupVisualViewport(): void {
   if (!window.visualViewport || !dom.terminalsArea) return;
 
+  const visualViewport = window.visualViewport;
+  const terminalsArea = dom.terminalsArea;
   let lastHeight = 0;
 
   const updateViewportHeight = () => {
-    const vh = window.visualViewport!.height;
+    const vh = visualViewport.height;
     if (Math.abs(vh - lastHeight) < 1) return;
     lastHeight = vh;
 
@@ -211,9 +213,9 @@ export function setupVisualViewport(): void {
     }
 
     const availableHeight = Math.floor((vh - headerHeight) * 0.99);
-    dom.terminalsArea!.style.height = availableHeight + 'px';
+    terminalsArea.style.height = availableHeight + 'px';
   };
 
-  window.visualViewport.addEventListener('resize', updateViewportHeight);
+  visualViewport.addEventListener('resize', updateViewportHeight);
   updateViewportHeight();
 }

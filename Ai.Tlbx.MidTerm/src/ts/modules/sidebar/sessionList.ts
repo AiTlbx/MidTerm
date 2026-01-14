@@ -174,10 +174,171 @@ export function getSessionDisplayName(session: Session): string {
 // =============================================================================
 
 /**
+ * Create a session item DOM element
+ */
+function createSessionItem(
+  session: Session,
+  isActive: boolean,
+  isPending: boolean,
+): HTMLDivElement {
+  const item = document.createElement('div');
+  item.className = 'session-item' + (isActive ? ' active' : '') + (isPending ? ' pending' : '');
+  item.dataset.sessionId = session.id;
+
+  if (!isPending) {
+    item.addEventListener('click', () => {
+      closeMobileActionMenu();
+      if (callbacks) {
+        callbacks.onSelect(session.id);
+        callbacks.onCloseSidebar();
+      }
+    });
+  }
+
+  const info = document.createElement('div');
+  info.className = 'session-info';
+
+  if (isPending) {
+    const spinner = document.createElement('span');
+    spinner.className = 'session-spinner';
+    info.appendChild(spinner);
+  }
+
+  const displayInfo = getSessionDisplayInfo(session);
+
+  const title = document.createElement('span');
+  title.className = 'session-title truncate';
+  title.textContent = displayInfo.primary;
+  info.appendChild(title);
+
+  if (displayInfo.secondary) {
+    item.classList.add('two-line');
+    const subtitle = document.createElement('span');
+    subtitle.className = 'session-subtitle truncate';
+    subtitle.textContent = displayInfo.secondary;
+    info.appendChild(subtitle);
+  }
+
+  // Process indicator container
+  const processInfo = document.createElement('div');
+  processInfo.className = 'session-process-info';
+  processInfo.dataset.sessionId = session.id;
+
+  // Foreground process indicator
+  const fgInfo = getForegroundInfo(session.id);
+  if (fgInfo.name) {
+    const fgIndicator = document.createElement('span');
+    fgIndicator.className = 'session-foreground truncate';
+    const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
+    const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
+    const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
+    fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
+    fgIndicator.title = `${fgInfo.commandLine ?? fgInfo.name}\n${fgInfo.cwd ?? ''}`;
+    processInfo.appendChild(fgIndicator);
+  }
+
+  // Racing subprocess log (single line, full history on hover)
+  const racingText = getRacingLogText(session.id);
+  if (racingText && isRacingLogVisible(session.id)) {
+    const racingLog = document.createElement('span');
+    racingLog.className = 'session-racing-log truncate';
+    racingLog.textContent = `\u26A1 ${racingText}`;
+    racingLog.title = getFullRacingLog(session.id);
+    processInfo.appendChild(racingLog);
+  }
+
+  // Always add processInfo container so updateSessionProcessInfo can find it later
+  info.appendChild(processInfo);
+
+  const actions = document.createElement('div');
+  actions.className = 'session-actions';
+
+  if (!isPending) {
+    const resizeBtn = document.createElement('button');
+    resizeBtn.className = 'session-resize';
+    resizeBtn.innerHTML = icon('resize');
+    resizeBtn.title = 'Fit to screen';
+    resizeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      if (callbacks) {
+        callbacks.onResize(session.id);
+      }
+    });
+
+    const renameBtn = document.createElement('button');
+    renameBtn.className = 'session-rename';
+    renameBtn.innerHTML = icon('rename');
+    renameBtn.title = 'Rename session';
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      if (callbacks) {
+        callbacks.onRename(session.id);
+      }
+    });
+
+    const snapshotBtn = document.createElement('button');
+    snapshotBtn.className = 'session-snapshot';
+    snapshotBtn.innerHTML = icon('save');
+    snapshotBtn.title = 'Snapshot to history (debug)';
+    snapshotBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      if (callbacks) {
+        callbacks.onSnapshot(session.id);
+      }
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'session-close';
+    closeBtn.innerHTML = icon('close');
+    closeBtn.title = 'Close session';
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      if (callbacks) {
+        callbacks.onDelete(session.id);
+      }
+    });
+
+    actions.appendChild(resizeBtn);
+    actions.appendChild(renameBtn);
+    actions.appendChild(snapshotBtn);
+    actions.appendChild(closeBtn);
+  }
+
+  item.appendChild(info);
+
+  // Mobile menu button (toggles action bar visibility)
+  if (!isPending) {
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'session-menu-btn';
+    menuBtn.innerHTML = icon('more');
+    menuBtn.title = 'Actions';
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = item.classList.contains('menu-open');
+      closeMobileActionMenu();
+      if (!isOpen) {
+        item.classList.add('menu-open');
+        showMobileBackdrop();
+      }
+    });
+    item.appendChild(menuBtn);
+  }
+
+  item.appendChild(actions);
+  return item;
+}
+
+/**
  * Render the session list in the sidebar
  */
 export function renderSessionList(): void {
   if (!dom.sessionList) return;
+
+  const sessionList = dom.sessionList;
 
   // Set flag to prevent blur handler from committing rename during DOM manipulation
   setSessionListRerendering(true);
@@ -190,13 +351,13 @@ export function renderSessionList(): void {
     // Find element being renamed (if any) - we'll keep it attached to prevent focus loss
     let renamingElement: HTMLElement | null = null;
     if (renamingId) {
-      renamingElement = dom.sessionList.querySelector(
+      renamingElement = sessionList.querySelector(
         `[data-session-id="${renamingId}"]`,
       ) as HTMLElement | null;
     }
 
     // Remove all children EXCEPT the renaming element (to prevent blur)
-    const children = Array.from(dom.sessionList.children);
+    const children = Array.from(sessionList.children);
     for (const child of children) {
       if (child !== renamingElement) {
         child.remove();
@@ -208,163 +369,13 @@ export function renderSessionList(): void {
       if (session.id === renamingId && renamingElement) {
         // Update active class in case it changed
         renamingElement.classList.toggle('active', session.id === activeSessionId);
-        dom.sessionList!.appendChild(renamingElement);
+        sessionList.appendChild(renamingElement);
         return;
       }
+
       const isPending = pendingSessions.has(session.id);
-      const item = document.createElement('div');
-      item.className =
-        'session-item' +
-        (session.id === activeSessionId ? ' active' : '') +
-        (isPending ? ' pending' : '');
-      item.dataset.sessionId = session.id;
-
-      if (!isPending) {
-        item.addEventListener('click', () => {
-          closeMobileActionMenu();
-          if (callbacks) {
-            callbacks.onSelect(session.id);
-            callbacks.onCloseSidebar();
-          }
-        });
-      }
-
-      const info = document.createElement('div');
-      info.className = 'session-info';
-
-      if (isPending) {
-        const spinner = document.createElement('span');
-        spinner.className = 'session-spinner';
-        info.appendChild(spinner);
-      }
-
-      const displayInfo = getSessionDisplayInfo(session);
-
-      const title = document.createElement('span');
-      title.className = 'session-title truncate';
-      title.textContent = displayInfo.primary;
-      info.appendChild(title);
-
-      if (displayInfo.secondary) {
-        item.classList.add('two-line');
-        const subtitle = document.createElement('span');
-        subtitle.className = 'session-subtitle truncate';
-        subtitle.textContent = displayInfo.secondary;
-        info.appendChild(subtitle);
-      }
-
-      // Process indicator container
-      const processInfo = document.createElement('div');
-      processInfo.className = 'session-process-info';
-      processInfo.dataset.sessionId = session.id;
-
-      // Foreground process indicator
-      const fgInfo = getForegroundInfo(session.id);
-      if (fgInfo.name) {
-        const fgIndicator = document.createElement('span');
-        fgIndicator.className = 'session-foreground truncate';
-        const cmdDisplay = fgInfo.commandLine ?? fgInfo.name;
-        const truncatedCmd =
-          cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
-        const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
-        fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
-        fgIndicator.title = `${fgInfo.commandLine ?? fgInfo.name}\n${fgInfo.cwd ?? ''}`;
-        processInfo.appendChild(fgIndicator);
-      }
-
-      // Racing subprocess log (single line, full history on hover)
-      const racingText = getRacingLogText(session.id);
-      if (racingText && isRacingLogVisible(session.id)) {
-        const racingLog = document.createElement('span');
-        racingLog.className = 'session-racing-log truncate';
-        racingLog.textContent = `\u26A1 ${racingText}`;
-        racingLog.title = getFullRacingLog(session.id);
-        processInfo.appendChild(racingLog);
-      }
-
-      // Always add processInfo container so updateSessionProcessInfo can find it later
-      info.appendChild(processInfo);
-
-      const actions = document.createElement('div');
-      actions.className = 'session-actions';
-
-      if (!isPending) {
-        const resizeBtn = document.createElement('button');
-        resizeBtn.className = 'session-resize';
-        resizeBtn.innerHTML = icon('resize');
-        resizeBtn.title = 'Fit to screen';
-        resizeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeMobileActionMenu();
-          if (callbacks) {
-            callbacks.onResize(session.id);
-          }
-        });
-
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'session-rename';
-        renameBtn.innerHTML = icon('rename');
-        renameBtn.title = 'Rename session';
-        renameBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeMobileActionMenu();
-          if (callbacks) {
-            callbacks.onRename(session.id);
-          }
-        });
-
-        const snapshotBtn = document.createElement('button');
-        snapshotBtn.className = 'session-snapshot';
-        snapshotBtn.innerHTML = icon('save');
-        snapshotBtn.title = 'Snapshot to history (debug)';
-        snapshotBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeMobileActionMenu();
-          if (callbacks) {
-            callbacks.onSnapshot(session.id);
-          }
-        });
-
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'session-close';
-        closeBtn.innerHTML = icon('close');
-        closeBtn.title = 'Close session';
-        closeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeMobileActionMenu();
-          if (callbacks) {
-            callbacks.onDelete(session.id);
-          }
-        });
-
-        actions.appendChild(resizeBtn);
-        actions.appendChild(renameBtn);
-        actions.appendChild(snapshotBtn);
-        actions.appendChild(closeBtn);
-      }
-
-      item.appendChild(info);
-
-      // Mobile menu button (toggles action bar visibility)
-      if (!isPending) {
-        const menuBtn = document.createElement('button');
-        menuBtn.className = 'session-menu-btn';
-        menuBtn.innerHTML = icon('more');
-        menuBtn.title = 'Actions';
-        menuBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const isOpen = item.classList.contains('menu-open');
-          closeMobileActionMenu();
-          if (!isOpen) {
-            item.classList.add('menu-open');
-            showMobileBackdrop();
-          }
-        });
-        item.appendChild(menuBtn);
-      }
-
-      item.appendChild(actions);
-      dom.sessionList!.appendChild(item);
+      const item = createSessionItem(session, session.id === activeSessionId, isPending);
+      sessionList.appendChild(item);
     });
 
     // Count only non-pending sessions
