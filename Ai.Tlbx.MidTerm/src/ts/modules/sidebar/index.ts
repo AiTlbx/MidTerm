@@ -9,3 +9,4 @@ export * from './sessionList';
 export * from './collapse';
 export * from './shareAccess';
 export * from './networkSection';
+export * from './sidebarUpdater';

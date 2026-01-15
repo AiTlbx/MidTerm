@@ -6,8 +6,8 @@
  */
 
 import type { Session, ProcessState } from '../../types';
-import { pendingSessions, dom, setSessionListRerendering } from '../../state';
-import { $settingsOpen, $activeSessionId, $sessionList, $renamingSessionId } from '../../stores';
+import { pendingSessions, dom } from '../../state';
+import { $settingsOpen, $activeSessionId, $sessionList } from '../../stores';
 import { icon } from '../../constants';
 import {
   registerProcessStateCallback,
@@ -352,58 +352,29 @@ function createSessionItem(
 }
 
 /**
- * Render the session list in the sidebar
+ * Render the session list in the sidebar.
+ * This is a full re-render - use surgical updates for data-only changes.
  */
 export function renderSessionList(): void {
   if (!dom.sessionList) return;
 
   const sessionList = dom.sessionList;
+  const sessions = $sessionList.get();
+  const activeSessionId = $activeSessionId.get();
 
-  // Set flag to prevent blur handler from committing rename during DOM manipulation
-  setSessionListRerendering(true);
+  // Clear and rebuild
+  sessionList.innerHTML = '';
 
-  try {
-    const sessions = $sessionList.get();
-    const activeSessionId = $activeSessionId.get();
-    const renamingId = $renamingSessionId.get();
+  sessions.forEach((session) => {
+    const isPending = pendingSessions.has(session.id);
+    const item = createSessionItem(session, session.id === activeSessionId, isPending);
+    sessionList.appendChild(item);
+  });
 
-    // Find element being renamed (if any) - we'll keep it attached to prevent focus loss
-    let renamingElement: HTMLElement | null = null;
-    if (renamingId) {
-      renamingElement = sessionList.querySelector(
-        `[data-session-id="${renamingId}"]`,
-      ) as HTMLElement | null;
-    }
-
-    // Remove all children EXCEPT the renaming element (to prevent blur)
-    const children = Array.from(sessionList.children);
-    for (const child of children) {
-      if (child !== renamingElement) {
-        child.remove();
-      }
-    }
-
-    sessions.forEach((session) => {
-      // Reuse preserved element for the session being renamed
-      if (session.id === renamingId && renamingElement) {
-        // Update active class in case it changed
-        renamingElement.classList.toggle('active', session.id === activeSessionId);
-        sessionList.appendChild(renamingElement);
-        return;
-      }
-
-      const isPending = pendingSessions.has(session.id);
-      const item = createSessionItem(session, session.id === activeSessionId, isPending);
-      sessionList.appendChild(item);
-    });
-
-    // Count only non-pending sessions
-    const realSessionCount = sessions.filter((s) => !pendingSessions.has(s.id)).length;
-    if (dom.sessionCount) {
-      dom.sessionCount.textContent = String(realSessionCount);
-    }
-  } finally {
-    setSessionListRerendering(false);
+  // Count only non-pending sessions
+  const realSessionCount = sessions.filter((s) => !pendingSessions.has(s.id)).length;
+  if (dom.sessionCount) {
+    dom.sessionCount.textContent = String(realSessionCount);
   }
 }
 

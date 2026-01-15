@@ -56,6 +56,7 @@ import {
   initShareAccessButton,
   initNetworkSection,
   initializeSessionList,
+  initializeSidebarUpdater,
 } from './modules/sidebar';
 import {
   toggleSettings,
@@ -88,7 +89,6 @@ import {
   currentSettings,
   dom,
   setFontsReadyPromise,
-  isSessionListRerendering,
   newlyCreatedSessions,
   pendingSessions,
 } from './state';
@@ -149,6 +149,7 @@ async function init(): Promise<void> {
   restoreSidebarState();
   setupSidebarResize();
   initializeSessionList();
+  initializeSidebarUpdater();
   initializeCommandHistory();
   initHistoryDropdown(spawnFromHistory);
 
@@ -461,8 +462,6 @@ function startInlineRename(sessionId: string): void {
   let committed = false;
   function finishRename(): void {
     if (committed) return;
-    // Skip if blur was triggered by re-render (element will be reattached)
-    if (isSessionListRerendering) return;
     committed = true;
     $renamingSessionId.set(null);
     renameSession(sessionId, input.value);
@@ -471,8 +470,6 @@ function startInlineRename(sessionId: string): void {
 
   function cancelRename(): void {
     if (committed) return;
-    // Skip if triggered by re-render
-    if (isSessionListRerendering) return;
     committed = true;
     $renamingSessionId.set(null);
     input.replaceWith(titleSpan as Node);

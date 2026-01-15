@@ -61,9 +61,6 @@ export const sessionsNeedingResync = new Set<string>();
 /** Font loading promise */
 export let fontsReadyPromise: Promise<void> | null = null;
 
-/** True during session list re-render (prevents blur from committing rename) */
-export let isSessionListRerendering = false;
-
 // =============================================================================
 // DOM Element Cache
 // =============================================================================
@@ -123,10 +120,6 @@ export function setFontsReadyPromise(promise: Promise<void>): void {
 
 export function setWindowsBuildNumber(build: number | null): void {
   windowsBuildNumber = build;
-}
-
-export function setSessionListRerendering(value: boolean): void {
-  isSessionListRerendering = value;
 }
 
 // =============================================================================
