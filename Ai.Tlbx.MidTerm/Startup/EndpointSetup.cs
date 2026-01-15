@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
@@ -182,7 +183,7 @@ public static class EndpointSetup
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Update execution failed: {ex.Message}");
+                    Log.Error(() => $"Update execution failed: {ex.Message}");
                 }
             });
 

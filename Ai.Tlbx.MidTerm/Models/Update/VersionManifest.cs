@@ -13,4 +13,10 @@ public sealed class VersionManifest
     public int Protocol { get; set; } = 1;
     /// <summary>Minimum compatible PTY version for web-only updates.</summary>
     public string MinCompatiblePty { get; set; } = "";
+
+    /// <summary>SHA256 checksums of binary files (filename -> hex hash).</summary>
+    public Dictionary<string, string>? Checksums { get; set; }
+
+    /// <summary>Ed25519 signature of the checksums JSON (base64 encoded).</summary>
+    public string? Signature { get; set; }
 }

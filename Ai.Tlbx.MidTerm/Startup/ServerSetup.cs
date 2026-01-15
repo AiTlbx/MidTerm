@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Services;
@@ -176,6 +177,17 @@ public static class ServerSetup
             headers["X-Frame-Options"] = "DENY";
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+
+            // Content Security Policy - strict but allows xterm.js inline styles
+            var csp = "default-src 'self'; " +
+                      "script-src 'self'; " +
+                      "style-src 'self' 'unsafe-inline'; " +
+                      "img-src 'self' data:; " +
+                      "font-src 'self' data:; " +
+                      "connect-src 'self' wss: https://api.github.com; " +
+                      "frame-ancestors 'none'";
+            headers.ContentSecurityPolicy = csp;
+
             await next();
         });
 

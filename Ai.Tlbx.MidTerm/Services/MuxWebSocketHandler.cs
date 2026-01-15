@@ -204,7 +204,7 @@ public sealed class MuxWebSocketHandler
             var buffer = await _sessionManager.GetBufferAsync(sessionId);
             if (buffer is null)
             {
-                Console.WriteLine($"[MuxHandler] BufferRequest for {sessionId}: IPC returned null (session disconnected?)");
+                Log.Warn(() => $"MuxHandler: BufferRequest for {sessionId}: IPC returned null (session disconnected?)");
                 return;
             }
             if (buffer.Length > 0)

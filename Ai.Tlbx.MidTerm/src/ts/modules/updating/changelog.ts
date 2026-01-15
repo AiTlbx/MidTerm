@@ -159,17 +159,29 @@ function escapeRegex(str: string): string {
 }
 
 /**
+ * Format markdown links with URL scheme validation.
+ * Only allows http/https URLs to prevent XSS via javascript: URLs.
+ */
+function formatMarkdownLinks(escapedText: string): string {
+  return escapedText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text: string, url: string) => {
+    if (/^https?:\/\//i.test(url)) {
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    }
+    return `${text} (${url})`;
+  });
+}
+
+/**
  * Format markdown text to HTML (basic subset)
  *
  * Supports: headers (## and ###), bold (**text**),
  * links [text](url), and bullet lists (- item)
  */
 export function formatMarkdown(text: string): string {
-  return escapeHtml(text)
+  return formatMarkdownLinks(escapeHtml(text))
     .replace(/^### (.+)$/gm, '<h4>$1</h4>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
     .replace(/\n{3,}/g, '\n\n') // Collapse 3+ newlines to 2

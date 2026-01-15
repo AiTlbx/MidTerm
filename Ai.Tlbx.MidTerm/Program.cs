@@ -163,7 +163,7 @@ public class Program
             }
             else
             {
-                Console.WriteLine($"[Settings] Ignoring invalid RunAsUser from file: {newSettings.RunAsUser}");
+                Log.Warn(() => $"Settings: Ignoring invalid RunAsUser from file: {newSettings.RunAsUser}");
             }
         });
 
@@ -182,7 +182,7 @@ public class Program
 
         lifetime.ApplicationStopping.Register(() =>
         {
-            Console.WriteLine("Shutdown requested, cleaning up...");
+            Log.Info(() => "Shutdown requested, cleaning up...");
             var cleanupTask = Task.Run(async () =>
             {
                 try
@@ -193,11 +193,11 @@ public class Program
                 }
                 catch (OperationCanceledException)
                 {
-                    Console.WriteLine("Cleanup timed out, forcing exit");
+                    Log.Warn(() => "Cleanup timed out, forcing exit");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Cleanup error: {ex.Message}");
+                    Log.Warn(() => $"Cleanup error: {ex.Message}");
                 }
                 finally
                 {

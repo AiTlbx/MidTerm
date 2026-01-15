@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Reflection;
+using System.Security;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Update;
 
@@ -10,8 +11,12 @@ public sealed class UpdateService : IDisposable
 {
     private const string RepoOwner = "AiTlbx";
     private const string RepoName = "MidTerm";
-    private const string LocalReleasePath = @"C:\temp\mtlocalrelease";
     private const string DevEnvironmentName = "THELAIR";
+
+    // Dev-only local update path - uses secure ProgramData folder instead of world-writable temp
+    private static string LocalReleasePath => OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "MidTerm", "localrelease")
+        : Path.Combine("/var/lib/midterm", "localrelease");
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan DevCheckInterval = TimeSpan.FromMinutes(2);
 
@@ -359,6 +364,20 @@ public sealed class UpdateService : IDisposable
                 ExtractTarGz(downloadPath, extractDir);
             }
 
+            // Verify update integrity using checksums and signature from version.json
+            var manifestPath = Path.Combine(extractDir, "version.json");
+            if (File.Exists(manifestPath))
+            {
+                var manifestJson = await File.ReadAllTextAsync(manifestPath);
+                var manifest = JsonSerializer.Deserialize<VersionManifest>(manifestJson, VersionManifestContext.Default.VersionManifest);
+                if (manifest is not null && !UpdateVerification.VerifyUpdate(extractDir, manifest))
+                {
+                    // Verification failed - clean up and reject update
+                    try { Directory.Delete(tempDir, true); } catch { }
+                    return null;
+                }
+            }
+
             return extractDir;
         }
         catch
@@ -395,6 +414,16 @@ public sealed class UpdateService : IDisposable
             var size = string.IsNullOrEmpty(sizeStr) ? 0L : Convert.ToInt64(sizeStr, 8);
 
             var filePath = Path.Combine(extractDir, name);
+
+            // Security: Validate path stays within extract directory (prevent path traversal)
+            var fullPath = Path.GetFullPath(filePath);
+            var fullExtractDir = Path.GetFullPath(extractDir);
+            if (!fullPath.StartsWith(fullExtractDir + Path.DirectorySeparatorChar) &&
+                fullPath != fullExtractDir)
+            {
+                throw new SecurityException($"Path traversal detected in archive: {name}");
+            }
+
             var typeFlag = header[156];
 
             if (typeFlag == '5' || name.EndsWith('/'))

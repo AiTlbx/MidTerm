@@ -50,7 +50,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public void UpdateRunAsUser(string? runAsUser)
     {
         _runAsUser = runAsUser;
-        Console.WriteLine($"[TtyHostSessionManager] RunAsUser updated to: {runAsUser ?? "(none)"}");
+        Log.Info(() => $"TtyHostSessionManager: RunAsUser updated to: {runAsUser ?? "(none)"}");
     }
 
     public async Task SetLogLevelForAllAsync(LogSeverity level, CancellationToken ct = default)
@@ -70,10 +70,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     /// </summary>
     public async Task DiscoverExistingSessionsAsync(CancellationToken ct = default)
     {
-        Console.WriteLine("[TtyHostSessionManager] Discovering existing sessions...");
+        Log.Info(() => "TtyHostSessionManager: Discovering existing sessions...");
 
         var existingEndpoints = GetExistingEndpoints();
-        Console.WriteLine($"[TtyHostSessionManager] Found {existingEndpoints.Count} IPC endpoints");
+        Log.Info(() => $"TtyHostSessionManager: Found {existingEndpoints.Count} IPC endpoints");
 
         foreach (var (sessionId, hostPid) in existingEndpoints)
         {
@@ -89,25 +89,25 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                     break;
 
                 case DiscoveryResult.Incompatible incompatible:
-                    Console.WriteLine($"[TtyHostSessionManager] Session {sessionId} incompatible (v{incompatible.Version}), killing PID {hostPid}");
+                    Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} incompatible (v{incompatible.Version}), killing PID {hostPid}");
                     KillProcess(hostPid);
                     CleanupEndpoint(sessionId, hostPid);
                     break;
 
                 case DiscoveryResult.Unresponsive:
-                    Console.WriteLine($"[TtyHostSessionManager] Session {sessionId} unresponsive, killing PID {hostPid}");
+                    Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} unresponsive, killing PID {hostPid}");
                     KillProcess(hostPid);
                     CleanupEndpoint(sessionId, hostPid);
                     break;
 
                 case DiscoveryResult.NoProcess:
-                    Console.WriteLine($"[TtyHostSessionManager] Session {sessionId} has stale endpoint (PID {hostPid} not running)");
+                    Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} has stale endpoint (PID {hostPid} not running)");
                     CleanupEndpoint(sessionId, hostPid);
                     break;
             }
         }
 
-        Console.WriteLine($"[TtyHostSessionManager] Discovered {_clients.Count} active sessions");
+        Log.Info(() => $"TtyHostSessionManager: Discovered {_clients.Count} active sessions");
     }
 
     private async Task<DiscoveryResult> TryConnectToSessionAsync(string sessionId, int hostPid, CancellationToken ct)
@@ -142,13 +142,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             client.StartReadLoop();
             _clients[sessionId] = client;
             _sessionCache[sessionId] = info;
-            Console.WriteLine($"[TtyHostSessionManager] Reconnected to session {sessionId} (PID {hostPid})");
+            Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid})");
 
             return new DiscoveryResult.Connected();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[TtyHostSessionManager] Failed to connect to {sessionId}: {ex.Message}");
+            Log.Warn(() => $"TtyHostSessionManager: Failed to connect to {sessionId}: {ex.Message}");
             Log.Exception(ex, $"TtyHostSessionManager.TryConnect({sessionId})");
             await client.DisposeAsync().ConfigureAwait(false);
             return new DiscoveryResult.Unresponsive();
@@ -197,7 +197,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[TtyHostSessionManager] Endpoint enumeration failed: {ex.Message}");
+            Log.Warn(() => $"TtyHostSessionManager: Endpoint enumeration failed: {ex.Message}");
         }
 
         return endpoints;
@@ -214,13 +214,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             if (File.Exists(socketPath))
             {
                 File.Delete(socketPath);
-                Console.WriteLine($"[TtyHostSessionManager] Removed stale socket: {socketPath}");
+                Log.Info(() => $"TtyHostSessionManager: Removed stale socket: {socketPath}");
             }
 #endif
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[TtyHostSessionManager] Failed to cleanup endpoint {sessionId}: {ex.Message}");
+            Log.Warn(() => $"TtyHostSessionManager: Failed to cleanup endpoint {sessionId}: {ex.Message}");
         }
     }
 
@@ -264,7 +264,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         if (!connected)
         {
-            Console.WriteLine($"[TtyHostSessionManager] Failed to connect to new session {sessionId}, killing orphan process {hostPid}");
+            Log.Error(() => $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process {hostPid}");
             KillProcess(hostPid);
             await client.DisposeAsync().ConfigureAwait(false);
             return null;
@@ -273,7 +273,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
         if (info is null)
         {
-            Console.WriteLine($"[TtyHostSessionManager] Failed to get info for session {sessionId}, killing orphan process {hostPid}");
+            Log.Error(() => $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process {hostPid}");
             KillProcess(hostPid);
             await client.DisposeAsync().ConfigureAwait(false);
             return null;
@@ -288,7 +288,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         // Send current log level to new session
         await client.SetLogLevelAsync(Log.MinLevel, ct).ConfigureAwait(false);
 
-        Console.WriteLine($"[TtyHostSessionManager] Created session {sessionId} (PID {hostPid})");
+        Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {hostPid})");
         OnStateChanged?.Invoke(sessionId);
         NotifyStateChange();
 

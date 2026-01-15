@@ -94,6 +94,11 @@ jobs:
         with:
           path: artifacts
 
+      - name: Sign release artifacts
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+        run: pwsh ./tools/sign-release.ps1 -ArtifactsPath artifacts
+
       - name: Package
         run: |
           cd artifacts

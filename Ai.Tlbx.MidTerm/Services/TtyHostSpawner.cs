@@ -1,5 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Models.Update;
 #if WINDOWS
 using System.Runtime.Versioning;
 #endif
@@ -12,6 +16,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class TtyHostSpawner
 {
     private static readonly string TtyHostPath = GetTtyHostPath();
+    private static bool _integrityVerified;
+    private static readonly object _verifyLock = new();
 
     /// <summary>
     /// Gets the expected full path to mthost for this mt installation.
@@ -37,6 +43,83 @@ public static class TtyHostSpawner
         }
     }
 
+    /// <summary>
+    /// Verifies mthost binary integrity against version.json checksums.
+    /// Result is cached after first successful verification.
+    /// </summary>
+    private static bool VerifyMthostIntegrity()
+    {
+        // Fast path: already verified this session
+        if (_integrityVerified)
+        {
+            return true;
+        }
+
+        lock (_verifyLock)
+        {
+            if (_integrityVerified)
+            {
+                return true;
+            }
+
+            var installDir = Path.GetDirectoryName(TtyHostPath);
+            if (string.IsNullOrEmpty(installDir))
+            {
+                return true; // Can't verify, allow (dev mode)
+            }
+
+            var versionJsonPath = Path.Combine(installDir, "version.json");
+            if (!File.Exists(versionJsonPath))
+            {
+                // No version.json = dev mode or unsigned install, allow
+                _integrityVerified = true;
+                return true;
+            }
+
+            try
+            {
+                var json = File.ReadAllText(versionJsonPath);
+                var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
+
+                if (manifest?.Checksums is null || manifest.Checksums.Count == 0)
+                {
+                    // Unsigned release, allow
+                    _integrityVerified = true;
+                    return true;
+                }
+
+                var mthostName = OperatingSystem.IsWindows() ? "mthost.exe" : "mthost";
+                if (!manifest.Checksums.TryGetValue(mthostName, out var expectedHash))
+                {
+                    // mthost not in checksums (shouldn't happen), allow but warn
+                    Log.Warn(() => "TtyHostSpawner: mthost not in version.json checksums");
+                    _integrityVerified = true;
+                    return true;
+                }
+
+                // Compute actual hash
+                using var stream = File.OpenRead(TtyHostPath);
+                var actualHash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+
+                if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Error(() => $"TtyHostSpawner: mthost checksum mismatch! Expected: {expectedHash}, Actual: {actualHash}");
+                    return false;
+                }
+
+                Log.Info(() => "TtyHostSpawner: mthost integrity verified");
+                _integrityVerified = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"TtyHostSpawner: Could not verify mthost integrity: {ex.Message}");
+                // On error, allow but don't cache
+                return true;
+            }
+        }
+    }
+
     public static bool SpawnTtyHost(
         string sessionId,
         string? shellType,
@@ -50,7 +133,13 @@ public static class TtyHostSpawner
 
         if (!File.Exists(TtyHostPath))
         {
-            Console.WriteLine($"[TtyHostSpawner] mthost not found at: {TtyHostPath}");
+            Log.Error(() => $"TtyHostSpawner: mthost not found at: {TtyHostPath}");
+            return false;
+        }
+
+        if (!VerifyMthostIntegrity())
+        {
+            Log.Error(() => "TtyHostSpawner: mthost integrity check failed - refusing to spawn");
             return false;
         }
 
@@ -99,7 +188,7 @@ public static class TtyHostSpawner
                 // SECURITY: Defensive re-validation before sudo command
                 if (!UserValidationService.IsValidUsernameFormat(runAsUser))
                 {
-                    Console.WriteLine($"[TtyHostSpawner] SECURITY: Rejected invalid username format: {runAsUser}");
+                    Log.Error(() => $"TtyHostSpawner SECURITY: Rejected invalid username format: {runAsUser}");
                     return false;
                 }
 
@@ -113,7 +202,7 @@ public static class TtyHostSpawner
                     RedirectStandardOutput = false,
                     RedirectStandardError = false
                 };
-                Console.WriteLine($"[TtyHostSpawner] Spawning as user: {runAsUser}");
+                Log.Info(() => $"TtyHostSpawner: Spawning as user: {runAsUser}");
             }
             else
             {
@@ -132,17 +221,17 @@ public static class TtyHostSpawner
             var process = Process.Start(psi);
             if (process is null)
             {
-                Console.WriteLine("[TtyHostSpawner] Process.Start returned null");
+                Log.Error(() => "TtyHostSpawner: Process.Start returned null");
                 return false;
             }
 
             processId = process.Id;
-            Console.WriteLine($"[TtyHostSpawner] Spawned mthost (PID: {processId})");
+            Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[TtyHostSpawner] Failed to spawn: {ex.Message}");
+            Log.Error(() => $"TtyHostSpawner: Failed to spawn: {ex.Message}");
             return false;
         }
     }
@@ -187,7 +276,7 @@ public static class TtyHostSpawner
 
         if (!success)
         {
-            Console.WriteLine($"[TtyHostSpawner] CreateProcess failed: {Marshal.GetLastWin32Error()}");
+            Log.Error(() => $"TtyHostSpawner: CreateProcess failed: {Marshal.GetLastWin32Error()}");
             return false;
         }
 
@@ -195,7 +284,8 @@ public static class TtyHostSpawner
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
 
-        Console.WriteLine($"[TtyHostSpawner] Spawned mthost (PID: {processId})");
+        var pid = processId;
+        Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {pid})");
         return true;
     }
 
@@ -207,13 +297,13 @@ public static class TtyHostSpawner
         var sessionId = WTSGetActiveConsoleSessionId();
         if (sessionId == 0xFFFFFFFF)
         {
-            Console.WriteLine("[TtyHostSpawner] No active console session");
+            Log.Error(() => "TtyHostSpawner: No active console session");
             return false;
         }
 
         if (!WTSQueryUserToken(sessionId, out var userToken))
         {
-            Console.WriteLine($"[TtyHostSpawner] WTSQueryUserToken failed: {Marshal.GetLastWin32Error()}");
+            Log.Error(() => $"TtyHostSpawner: WTSQueryUserToken failed: {Marshal.GetLastWin32Error()}");
             return false;
         }
 
@@ -221,7 +311,7 @@ public static class TtyHostSpawner
         {
             if (!CreateEnvironmentBlock(out var envBlock, userToken, false))
             {
-                Console.WriteLine($"[TtyHostSpawner] CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}");
+                Log.Error(() => $"TtyHostSpawner: CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}");
                 return false;
             }
 
@@ -250,7 +340,7 @@ public static class TtyHostSpawner
 
                     if (!success)
                     {
-                        Console.WriteLine($"[TtyHostSpawner] CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}");
+                        Log.Error(() => $"TtyHostSpawner: CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}");
                         return false;
                     }
 
@@ -258,7 +348,9 @@ public static class TtyHostSpawner
                     CloseHandle(pi.hThread);
                     CloseHandle(pi.hProcess);
 
-                    Console.WriteLine($"[TtyHostSpawner] Spawned mthost as user (PID: {processId}, Session: {sessionId})");
+                    var pid = processId;
+                    var sess = sessionId;
+                    Log.Info(() => $"TtyHostSpawner: Spawned mthost as user (PID: {pid}, Session: {sess})");
                     return true;
                 }
                 finally
