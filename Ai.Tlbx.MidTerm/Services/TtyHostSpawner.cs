@@ -226,7 +226,7 @@ public static class TtyHostSpawner
             }
 
             processId = process.Id;
-            Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {processId})");
+            Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
             return true;
         }
         catch (Exception ex)
