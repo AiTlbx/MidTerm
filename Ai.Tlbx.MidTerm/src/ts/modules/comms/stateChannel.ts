@@ -36,7 +36,6 @@ let createTerminalForSession: (
   sessionId: string,
   sessionInfo: Session | undefined,
 ) => void = () => {};
-let renderSessionList: () => void = () => {};
 let updateEmptyState: () => void = () => {};
 let selectSession: (
   sessionId: string,
@@ -52,7 +51,6 @@ export function registerStateCallbacks(callbacks: {
   destroyTerminalForSession?: (sessionId: string) => void;
   applyTerminalScaling?: (sessionId: string, state: TerminalState) => void;
   createTerminalForSession?: (sessionId: string, sessionInfo: Session | undefined) => void;
-  renderSessionList?: () => void;
   updateEmptyState?: () => void;
   selectSession?: (sessionId: string, options?: { closeSettingsPanel?: boolean }) => void;
   updateMobileTitle?: () => void;
@@ -63,7 +61,6 @@ export function registerStateCallbacks(callbacks: {
   if (callbacks.applyTerminalScaling) applyTerminalScaling = callbacks.applyTerminalScaling;
   if (callbacks.createTerminalForSession)
     createTerminalForSession = callbacks.createTerminalForSession;
-  if (callbacks.renderSessionList) renderSessionList = callbacks.renderSessionList;
   if (callbacks.updateEmptyState) updateEmptyState = callbacks.updateEmptyState;
   if (callbacks.selectSession) selectSession = callbacks.selectSession;
   if (callbacks.updateMobileTitle) updateMobileTitle = callbacks.updateMobileTitle;
@@ -149,8 +146,8 @@ export function handleStateUpdate(newSessions: Session[]): void {
     }
   });
 
+  // Update store - sidebarUpdater subscription handles rendering
   setSessions(newSessions);
-  renderSessionList();
   updateEmptyState();
 
   // Auto-select first session if none active (but not if settings are open)

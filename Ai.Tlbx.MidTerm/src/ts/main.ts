@@ -42,7 +42,6 @@ import {
   scrollToBottom,
 } from './modules/terminal';
 import {
-  renderSessionList,
   updateEmptyState,
   updateMobileTitle,
   getSessionDisplayName,
@@ -192,7 +191,6 @@ function registerCallbacks(): void {
     destroyTerminalForSession,
     applyTerminalScaling,
     createTerminalForSession,
-    renderSessionList,
     updateEmptyState,
     selectSession,
     updateMobileTitle,
@@ -291,7 +289,7 @@ function createSession(): void {
   };
   setSession(tempSession);
   pendingSessions.add(tempId);
-  renderSessionList();
+  // Subscription handles renderSessionList via store change
   closeSidebar();
 
   fetch('/api/sessions', {
@@ -313,8 +311,7 @@ function createSession(): void {
       // Remove temporary session on error
       pendingSessions.delete(tempId);
       removeSession(tempId);
-      renderSessionList();
-      updateEmptyState();
+      // Subscription handles renderSessionList and updateEmptyState via store change
       log.error(() => `Failed to create session: ${e}`);
     });
 }
@@ -373,8 +370,7 @@ function selectSession(sessionId: string, options?: { closeSettingsPanel?: boole
     }
   });
 
-  renderSessionList();
-  updateMobileTitle();
+  // Subscription handles renderSessionList and updateMobileTitle via $activeSessionId change
   dom.emptyState?.classList.add('hidden');
 }
 
@@ -395,9 +391,7 @@ function deleteSession(sessionId: string): void {
     }
   }
 
-  renderSessionList();
-  updateEmptyState();
-  updateMobileTitle();
+  // Subscription handles renderSessionList, updateEmptyState, updateMobileTitle via store change
 
   // Send delete request to server
   fetch('/api/sessions/' + sessionId, { method: 'DELETE' }).catch((e) => {
@@ -418,8 +412,7 @@ function renameSession(sessionId: string, newName: string | null): void {
 
   // Optimistic UI update via store
   setSession({ ...session, name: nameToSend, manuallyNamed: true });
-  renderSessionList();
-  updateMobileTitle();
+  // Subscription handles renderSessionList and updateMobileTitle via store change
 
   fetch('/api/sessions/' + sessionId + '/name', {
     method: 'PUT',
@@ -431,8 +424,7 @@ function renameSession(sessionId: string, newName: string | null): void {
     if (currentSession) {
       setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
     }
-    renderSessionList();
-    updateMobileTitle();
+    // Subscription handles renderSessionList and updateMobileTitle via store change
     log.error(() => `Failed to rename session ${sessionId}: ${e}`);
   });
 }

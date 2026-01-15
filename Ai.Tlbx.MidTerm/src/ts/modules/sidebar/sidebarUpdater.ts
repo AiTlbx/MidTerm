@@ -214,11 +214,12 @@ export function initializeSidebarUpdater(): void {
     }
   });
 
-  // Subscribe to active session changes for active class updates
+  // Subscribe to active session changes for active class and title updates
   $activeSessionId.subscribe((activeId) => {
     const isRenaming = $renamingSessionId.get() !== null;
     if (isRenaming) return;
     updateActiveStates(activeId);
+    updateMobileTitle();
   });
 
   // When rename ends, flush deferred updates
