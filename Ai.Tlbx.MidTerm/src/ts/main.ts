@@ -229,7 +229,6 @@ function registerCallbacks(): void {
     onDelete: deleteSession,
     onRename: startInlineRename,
     onResize: fitSessionToScreen,
-    onSnapshot: snapshotSession,
     onCloseSidebar: closeSidebar,
   });
 }
@@ -505,28 +504,6 @@ function promptRenameSession(sessionId: string): void {
   if (newName !== null) {
     renameSession(sessionId, newName);
   }
-}
-
-function snapshotSession(sessionId: string): void {
-  fetch(`/api/sessions/${sessionId}/snapshot`, { method: 'POST' })
-    .then((r) => r.json())
-    .then((result) => {
-      // Log result to console for debugging
-      console.log('[Snapshot Result]', result);
-      if (result.recorded) {
-        alert(
-          `Snapshot recorded!\n\nExecutable: ${result.foregroundName}\nCommand: ${result.foregroundCommandLine || '(none)'}\nDirectory: ${result.currentDirectory}`,
-        );
-      } else {
-        alert(
-          `Snapshot NOT recorded.\n\nReason: ${result.skipReason}\n\nDebug info:\n- ShellType: ${result.shellType}\n- ForegroundName: ${result.foregroundName || '(none)'}\n- ForegroundCommandLine: ${result.foregroundCommandLine || '(none)'}\n- ForegroundPid: ${result.foregroundPid || '(none)'}\n- CurrentDirectory: ${result.currentDirectory || '(none)'}`,
-        );
-      }
-    })
-    .catch((e) => {
-      log.error(() => `Failed to snapshot session ${sessionId}: ${e}`);
-      alert(`Snapshot failed: ${e}`);
-    });
 }
 
 function spawnFromHistory(entry: LaunchEntry): void {

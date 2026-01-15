@@ -3348,7 +3348,7 @@ html, body {
 }
 
 .network-section.collapsed .network-section-chevron {
-    transform: rotate(-90deg);
+    transform: rotate(180deg);
 }
 
 .network-section-content {

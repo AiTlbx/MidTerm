@@ -27,7 +27,6 @@ export interface SessionListCallbacks {
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
   onResize: (sessionId: string) => void;
-  onSnapshot: (sessionId: string) => void;
   onCloseSidebar: () => void;
 }
 
@@ -311,18 +310,6 @@ function createSessionItem(
       }
     });
 
-    const snapshotBtn = document.createElement('button');
-    snapshotBtn.className = 'session-snapshot';
-    snapshotBtn.innerHTML = icon('save');
-    snapshotBtn.title = 'Snapshot to history (debug)';
-    snapshotBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      if (callbacks) {
-        callbacks.onSnapshot(session.id);
-      }
-    });
-
     const closeBtn = document.createElement('button');
     closeBtn.className = 'session-close';
     closeBtn.innerHTML = icon('close');
@@ -337,7 +324,6 @@ function createSessionItem(
 
     actions.appendChild(resizeBtn);
     actions.appendChild(renameBtn);
-    actions.appendChild(snapshotBtn);
     actions.appendChild(closeBtn);
   }
 
