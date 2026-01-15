@@ -44,6 +44,16 @@ Ai.Tlbx.MidTerm/build-aot.cmd        # Windows
 ./Ai.Tlbx.MidTerm/build-aot-macos.sh # macOS
 ```
 
+## Asset Optimization
+
+When adding new PNG assets or periodically during maintenance, run pngcrush for lossless compression:
+
+```bash
+C:/Tools/pngcrush/pngcrush_1_8_11_w64.exe -ow -reduce -brute <file.png>
+```
+
+This typically saves 30-40% on PNG file sizes. Ask the user if they want to run this after adding new image assets.
+
 ## Testing
 
 When adding new functionality beyond styling changes, consider adding integration tests. The test project (`Ai.Tlbx.MidTerm.Tests/`) uses xUnit with `WebApplicationFactory` for HTTP/WebSocket testing.
