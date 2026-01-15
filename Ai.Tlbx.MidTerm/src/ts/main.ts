@@ -40,6 +40,7 @@ import {
   registerFileDropCallbacks,
   pasteToTerminal,
   scrollToBottom,
+  focusActiveTerminal,
 } from './modules/terminal';
 import {
   renderSessionList,
@@ -223,6 +224,7 @@ function registerCallbacks(): void {
     sendResize: (sessionId: string, terminal: { cols: number; rows: number }) => {
       sendResize(sessionId, terminal.cols, terminal.rows);
     },
+    focusActiveTerminal,
   });
 
   setSessionListCallbacks({
@@ -249,6 +251,8 @@ function setupVisibilityChangeHandler(): void {
       if (!$muxWsConnected.get()) {
         connectMuxWebSocket();
       }
+      // Refocus active terminal when page becomes visible
+      focusActiveTerminal();
     }
   });
 }

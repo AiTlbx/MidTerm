@@ -44,6 +44,32 @@ let requestBufferRefresh: (sessionId: string) => void = () => {};
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
 
+// Debounce timer for focus operations
+let focusDebounceTimer: number | null = null;
+
+/**
+ * Focus the active terminal, debounced to prevent rapid focus/blur cycles.
+ * Respects search panel - won't focus if search is visible.
+ */
+export function focusActiveTerminal(): void {
+  if (isSearchVisible()) return;
+
+  if (focusDebounceTimer !== null) {
+    window.clearTimeout(focusDebounceTimer);
+  }
+
+  focusDebounceTimer = window.setTimeout(() => {
+    focusDebounceTimer = null;
+    const activeId = $activeSessionId.get();
+    if (!activeId) return;
+
+    const state = sessionTerminals.get(activeId);
+    if (state?.opened) {
+      state.terminal.focus();
+    }
+  }, 50);
+}
+
 /**
  * Auto-update session name from shell title (with debounce)
  */
@@ -415,6 +441,18 @@ export function setupTerminalEvents(
   if (state) {
     state.contextMenuHandler = contextMenuHandler;
     state.pasteHandler = pasteHandler;
+  }
+
+  // Defensive refocus when terminal loses focus unexpectedly
+  const xtermElement = terminal.element;
+  if (xtermElement) {
+    xtermElement.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (!isSearchVisible() && $activeSessionId.get() === sessionId) {
+          focusActiveTerminal();
+        }
+      }, 100);
+    });
   }
 }
 

@@ -17,14 +17,17 @@ import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
 
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
+let focusActiveTerminal: () => void = () => {};
 
 /**
  * Register callbacks from other modules
  */
 export function registerScalingCallbacks(callbacks: {
   sendResize?: (sessionId: string, dimensions: { cols: number; rows: number }) => void;
+  focusActiveTerminal?: () => void;
 }): void {
   if (callbacks.sendResize) sendResize = callbacks.sendResize;
+  if (callbacks.focusActiveTerminal) focusActiveTerminal = callbacks.focusActiveTerminal;
 }
 
 /**
@@ -101,6 +104,7 @@ export function fitSessionToScreen(sessionId: string): void {
       if (wasHidden) {
         state.container.classList.add('hidden');
       }
+      focusActiveTerminal();
     });
     return;
   }
@@ -131,6 +135,7 @@ export function fitSessionToScreen(sessionId: string): void {
     if (wasHidden) {
       state.container.classList.add('hidden');
     }
+    focusActiveTerminal();
   });
 }
 
