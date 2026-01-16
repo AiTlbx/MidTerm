@@ -1,6 +1,6 @@
 #!/bin/bash
 # MidTerm macOS/Linux Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.sh | bash
+# Usage: curl -fsSL https://aitlbx.github.io/MidTerm/install.sh | bash
 
 set -e
 

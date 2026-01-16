@@ -59,12 +59,12 @@ Your PC                          Anywhere
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.sh | bash
+curl -fsSL https://aitlbx.github.io/MidTerm/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.ps1 | iex
+irm https://aitlbx.github.io/MidTerm/install.ps1 | iex
 ```
 
 The installer will:

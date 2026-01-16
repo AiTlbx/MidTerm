@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # MidTerm Windows Installer
-# Usage: irm https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.ps1 | iex
+# Usage: irm https://aitlbx.github.io/MidTerm/install.ps1 | iex
 
 param(
     [string]$RunAsUser,
