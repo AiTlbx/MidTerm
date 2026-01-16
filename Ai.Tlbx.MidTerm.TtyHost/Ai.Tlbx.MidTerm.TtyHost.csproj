@@ -60,6 +60,10 @@
     <EventSourceSupport>false</EventSourceSupport>
     <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
     <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
+    <Http3Support>false</Http3Support>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <MetricsSupport>false</MetricsSupport>
+    <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
   </PropertyGroup>
 
   <!-- Windows linker optimizations -->
