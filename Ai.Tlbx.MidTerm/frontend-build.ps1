@@ -92,29 +92,86 @@ $jsSize = (Get-Item $OutFile).Length
 Write-Host "  terminal.min.js ($([math]::Round($jsSize/1KB, 1)) KB)" -ForegroundColor DarkGray
 
 # ===========================================
-# PHASE 4: Copy binary assets (no compression)
+# PHASE 4: Copy binary assets
 # ===========================================
+# Binary asset compression notes (tested 2025-01):
+#   - woff2 files are already Brotli-compressed internally, so most don't benefit
+#   - EXCEPT Terminus.woff2 which has 62% reduction (unoptimized metadata?)
+#   - woff (older format, zlib) benefits ~49% from Brotli
+#   - ico files benefit ~49% (contains BMP data, not PNG)
+#   - png files don't benefit (already DEFLATE compressed)
+#   - Properly optimized woff2 (CascadiaCode, JetBrains) show 0-1% reduction
+#
+# Files worth compressing for publish (saves ~195 KB total):
+#   - Terminus.woff2: 297 KB -> 112 KB (62% reduction, 185 KB saved)
+#   - midFont.woff:    15 KB ->   8 KB (49% reduction, 7 KB saved)
+#   - favicon.ico:     15 KB ->   8 KB (49% reduction, 7 KB saved)
+
 Write-Host "Copying static assets..." -ForegroundColor Cyan
 
-# Fonts -> wwwroot/fonts/
-$fontsSource = Join-Path $StaticSource "fonts"
-Get-ChildItem -Path "$fontsSource\*" -Include @('*.woff', '*.woff2') | ForEach-Object {
-    Copy-Item $_.FullName -Destination (Join-Path $WwwRoot "fonts") -Force
-    Write-Host "  fonts/$($_.Name)" -ForegroundColor DarkGray
+# Binary files that benefit from Brotli compression (publish only)
+# These get both the original (debug) and .br version (publish)
+$compressibleBinaries = @(
+    @{ Src = "fonts/Terminus.woff2"; Dst = "fonts/Terminus.woff2" },
+    @{ Src = "fonts/midFont.woff"; Dst = "fonts/midFont.woff" },
+    @{ Src = "favicon/favicon.ico"; Dst = "favicon.ico" }
+)
+
+# Binary files that don't benefit from compression (already optimized)
+# woff2 uses Brotli internally, png uses DEFLATE
+$nonCompressibleBinaries = @(
+    @{ Pattern = "fonts/*.woff2"; Dst = "fonts"; Exclude = @("Terminus.woff2") },
+    @{ Pattern = "img/*.png"; Dst = "img" },
+    @{ Pattern = "favicon/*.png"; Dst = "" }
+)
+
+# Copy compressible binaries (always copy original, compress for publish)
+foreach ($file in $compressibleBinaries) {
+    $srcPath = Join-Path $StaticSource $file.Src
+    $dstPath = Join-Path $WwwRoot $file.Dst
+    $dstDir = Split-Path $dstPath -Parent
+    if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
+
+    Copy-Item $srcPath -Destination $dstPath -Force
+    Write-Host "  $($file.Dst)" -ForegroundColor DarkGray
 }
 
-# Images -> wwwroot/img/
-$imgSource = Join-Path $StaticSource "img"
-Get-ChildItem -Path "$imgSource\*" -Include @('*.png', '*.jpg', '*.gif', '*.svg', '*.webp') | ForEach-Object {
-    Copy-Item $_.FullName -Destination (Join-Path $WwwRoot "img") -Force
-    Write-Host "  img/$($_.Name)" -ForegroundColor DarkGray
+# Copy non-compressible binaries
+foreach ($spec in $nonCompressibleBinaries) {
+    $pattern = Join-Path $StaticSource $spec.Pattern
+    $exclude = if ($spec.Exclude) { $spec.Exclude } else { @() }
+
+    Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $exclude } | ForEach-Object {
+        $dstDir = if ($spec.Dst) { Join-Path $WwwRoot $spec.Dst } else { $WwwRoot }
+        Copy-Item $_.FullName -Destination $dstDir -Force
+        $relPath = if ($spec.Dst) { "$($spec.Dst)/$($_.Name)" } else { $_.Name }
+        Write-Host "  $relPath" -ForegroundColor DarkGray
+    }
 }
 
-# Favicons -> wwwroot/ (flattened)
-$faviconSource = Join-Path $StaticSource "favicon"
-Get-ChildItem -Path "$faviconSource\*" -Include @('*.png', '*.ico') | ForEach-Object {
-    Copy-Item $_.FullName -Destination $WwwRoot -Force
-    Write-Host "  $($_.Name)" -ForegroundColor DarkGray
+# Compress select binary files for publish (see notes above for rationale)
+if ($Publish) {
+    Write-Host "Compressing select binary assets..." -ForegroundColor Cyan
+    foreach ($file in $compressibleBinaries) {
+        $srcPath = Join-Path $WwwRoot $file.Dst
+        $dstPath = "$srcPath.br"
+
+        $bytes = [System.IO.File]::ReadAllBytes($srcPath)
+        $memStream = [System.IO.MemoryStream]::new()
+        $brotli = [System.IO.Compression.BrotliStream]::new($memStream, [System.IO.Compression.CompressionLevel]::SmallestSize)
+        $brotli.Write($bytes, 0, $bytes.Length)
+        $brotli.Close()
+        [System.IO.File]::WriteAllBytes($dstPath, $memStream.ToArray())
+
+        $srcSize = $bytes.Length
+        $dstSize = $memStream.ToArray().Length
+        $reduction = [math]::Round((1 - $dstSize / $srcSize) * 100)
+
+        Write-Host "  $($file.Dst) -> $($file.Dst).br ($srcSize -> $dstSize bytes, $reduction% reduction)" -ForegroundColor DarkGray
+
+        # Remove original for publish (only .br embedded)
+        Remove-Item $srcPath -Force
+    }
 }
 
 # ===========================================
@@ -196,6 +253,7 @@ Get-ChildItem -Path "$cssSource\*" -Include @('*.css') | ForEach-Object {
 }
 
 # Fonts text files (OFL.txt license) -> wwwroot/fonts/
+$fontsSource = Join-Path $StaticSource "fonts"
 Get-ChildItem -Path "$fontsSource\*" -Include @('*.txt') | ForEach-Object {
     $dstPath = Join-Path $WwwRoot "fonts/$($_.Name)"
     $result = Process-TextFile -Source $_.FullName -Destination $dstPath -Compress $Publish

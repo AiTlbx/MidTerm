@@ -150,13 +150,14 @@
     <EmbeddedResource Include="wwwroot\**\*" />
   </ItemGroup>
 
-  <!-- Publish: embed .br for text, originals for binary -->
+  <!-- Publish: embed .br for compressible files, originals for non-compressible binaries -->
+  <!-- Note: favicon.ico, midFont.woff, Terminus.woff2 are compressed (see frontend-build.ps1 notes) -->
+  <!-- Their originals are deleted after compression, so only .br versions exist at publish -->
   <ItemGroup Condition="'$(IsPublishing)' == 'true'">
     <EmbeddedResource Include="wwwroot\**\*.br" />
     <EmbeddedResource Include="wwwroot\**\*.png" />
-    <EmbeddedResource Include="wwwroot\**\*.ico" />
-    <EmbeddedResource Include="wwwroot\**\*.woff" />
-    <EmbeddedResource Include="wwwroot\**\*.woff2" />
+    <EmbeddedResource Include="wwwroot\fonts\CascadiaCode-Regular.woff2" />
+    <EmbeddedResource Include="wwwroot\fonts\JetBrainsMono-Regular.woff2" />
   </ItemGroup>
 
   <!-- Clean generated wwwroot folder -->
