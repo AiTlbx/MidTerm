@@ -91,7 +91,7 @@ public static class UpdateVerification
 
             using var ecdsa = ECDsa.Create();
             ecdsa.ImportSubjectPublicKeyInfo(publicKeyBytes, out _);
-            return ecdsa.VerifyData(messageBytes, signatureBytes, HashAlgorithmName.SHA256);
+            return ecdsa.VerifyData(messageBytes, signatureBytes, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
         }
         catch (Exception ex)
         {
