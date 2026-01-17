@@ -3564,7 +3564,9 @@ html, body {
     50% { opacity: 0.7; }
 }
 
-.voice-btn .icon {
+.voice-btn .icon,
+.voice-btn [class^="midFont-"],
+.voice-btn [class*=" midFont-"] {
     font-size: 14px;
 }
 

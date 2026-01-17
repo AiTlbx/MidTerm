@@ -14,6 +14,10 @@ let onAudioDataCallback = null;
 let onRecordingStateCallback = null;
 let onErrorCallback = null;
 
+// Debug counters
+let audioFrameCounter = 0;
+let lastFrameTime = 0;
+
 // Processing nodes
 let deEsserNode = null;
 let compressorNode = null;
@@ -264,17 +268,32 @@ async function startRecording(callback, intervalMs = 500, deviceId = null, targe
     compressorNode.release.value = 0.1;
 
     // Setup message handling
+    audioFrameCounter = 0;
+    lastFrameTime = performance.now();
     audioWorkletNode.port.onmessage = (event) => {
       if (event.data.audioData) {
         const pcm16Data = event.data.audioData;
         const buffer = pcm16Data.buffer;
         const bytes = new Uint8Array(buffer);
+
+        audioFrameCounter++;
+        const now = performance.now();
+        const elapsed = now - lastFrameTime;
+        lastFrameTime = now;
+
+        console.log(`[WebAudio] Frame #${audioFrameCounter}: ${bytes.byteLength} bytes, ${elapsed.toFixed(0)}ms since last`);
+
         let binary = '';
         for (let i = 0; i < bytes.byteLength; i++) {
           binary += String.fromCharCode(bytes[i]);
         }
         const base64Audio = btoa(binary);
-        onAudioDataCallback?.(base64Audio);
+
+        if (onAudioDataCallback) {
+          onAudioDataCallback(base64Audio);
+        } else {
+          console.warn('[WebAudio] No callback registered for audio data!');
+        }
       }
     };
 
@@ -305,7 +324,7 @@ async function startRecording(callback, intervalMs = 500, deviceId = null, targe
 }
 
 async function stopRecording() {
-  console.log('Attempting to stop recording');
+  console.log(`[WebAudio] Stopping recording (processed ${audioFrameCounter} frames)`);
   if (!isRecording) {
     console.warn('Recording not in progress');
     return;
