@@ -5,11 +5,26 @@
  * Communicates with the server API to persist settings changes.
  */
 
-import type { Settings, ThemeName, TerminalState, HealthResponse } from '../../types';
+import type {
+  Settings,
+  ThemeName,
+  TerminalState,
+  HealthResponse,
+  LogLevelSetting,
+} from '../../types';
 import { THEMES, TERMINAL_FONT_STACK, JS_BUILD_VERSION } from '../../constants';
 import { currentSettings, setCurrentSettings, dom, sessionTerminals } from '../../state';
 import { $settingsOpen } from '../../stores';
 import { setCookie } from '../../utils';
+import { setLogLevel, LogLevel } from '../logging';
+
+const LOG_LEVEL_MAP: Record<LogLevelSetting, LogLevel> = {
+  exception: LogLevel.Exception,
+  error: LogLevel.Error,
+  warn: LogLevel.Warn,
+  info: LogLevel.Info,
+  verbose: LogLevel.Verbose,
+};
 
 /**
  * Set the value of a form element by ID
@@ -197,6 +212,9 @@ export function applyReceivedSettings(settings: Settings): void {
   const theme = THEMES[settings.theme] || THEMES.dark;
   document.documentElement.style.setProperty('--terminal-bg', theme.background);
   setCookie('mm-theme', settings.theme);
+
+  const logLevel = LOG_LEVEL_MAP[settings.logLevel] ?? LogLevel.Warn;
+  setLogLevel(logLevel);
 
   applySettingsToTerminals();
 }
