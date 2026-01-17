@@ -199,7 +199,17 @@ export function createTerminalForSession(
   // This ensures xterm.js measures the correct font for canvas rendering
   (fontsReadyPromise ?? Promise.resolve()).then(() => {
     if (!sessionTerminals.has(sessionId)) return; // Session was deleted
-    terminal.open(container);
+
+    try {
+      terminal.open(container);
+    } catch (e) {
+      console.error(`Terminal ${sessionId} failed to open:`, e);
+      container.innerHTML =
+        '<div class="terminal-error">Terminal failed to initialize. <button onclick="location.reload()">Reload</button></div>';
+      container.classList.remove('hidden');
+      return;
+    }
+
     state.opened = true;
 
     // Load WebGL addon for GPU-accelerated rendering (with fallback)
@@ -593,11 +603,13 @@ export function refreshActiveTerminalBuffer(): void {
 }
 
 /**
- * Preload the terminal font for consistent rendering
+ * Preload the terminal font for consistent rendering.
+ * Has a 3-second timeout to prevent indefinite hangs if fonts fail to load.
  */
 export function preloadTerminalFont(): Promise<void> {
-  const promise = document.fonts.ready.then(() => {
-    // Trigger font load by measuring with the font family
+  const FONT_TIMEOUT_MS = 3000;
+
+  const fontLoadPromise = document.fonts.ready.then(() => {
     const testSpan = document.createElement('span');
     testSpan.style.fontFamily = TERMINAL_FONT_STACK;
     testSpan.style.position = 'absolute';
@@ -613,6 +625,11 @@ export function preloadTerminalFont(): Promise<void> {
     });
   });
 
+  const timeoutPromise = new Promise<void>((resolve) => {
+    setTimeout(resolve, FONT_TIMEOUT_MS);
+  });
+
+  const promise = Promise.race([fontLoadPromise, timeoutPromise]);
   setFontsReadyPromise(promise);
   return promise;
 }
