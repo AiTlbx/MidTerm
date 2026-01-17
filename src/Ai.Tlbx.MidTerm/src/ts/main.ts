@@ -472,9 +472,10 @@ function startInlineRename(sessionId: string): void {
   function finishRename(): void {
     if (committed) return;
     committed = true;
-    $renamingSessionId.set(null);
-    renameSession(sessionId, input.value);
+    const newName = input.value;
     input.replaceWith(titleSpan as Node);
+    $renamingSessionId.set(null);
+    renameSession(sessionId, newName);
   }
 
   function cancelRename(): void {

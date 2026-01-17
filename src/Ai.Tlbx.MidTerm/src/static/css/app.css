@@ -323,7 +323,34 @@ html, body {
 .session-foreground {
     font-size: 10.5px;
     color: var(--accent-cyan);
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
+}
+
+.fg-cwd {
+    flex: 1 1 0;
+    min-width: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+}
+
+.fg-separator {
+    flex: 0 0 auto;
+    padding: 0 2px;
+    opacity: 0.6;
+}
+
+.fg-process {
+    flex: 1 1 0;
+    min-width: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .session-racing-log {

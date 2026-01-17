@@ -59,6 +59,43 @@ function handleProcessStateChange(sessionId: string, _state: ProcessState): void
 }
 
 /**
+ * Create the foreground process indicator element
+ * Layout: ...directory> process...
+ * - Directory ellipsis from left (end of path is most important)
+ * - Process ellipsis from right (process name is most important)
+ */
+function createForegroundIndicator(
+  cwd: string | null | undefined,
+  commandLine: string | null | undefined,
+  processName: string,
+): HTMLElement {
+  const container = document.createElement('span');
+  container.className = 'session-foreground';
+
+  const cmdDisplay = stripExePath(commandLine ?? processName);
+  container.title = `${commandLine ?? processName}\n${cwd ?? ''}`;
+
+  if (cwd) {
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'fg-cwd';
+    cwdSpan.textContent = cwd;
+    container.appendChild(cwdSpan);
+
+    const separator = document.createElement('span');
+    separator.className = 'fg-separator';
+    separator.textContent = '>';
+    container.appendChild(separator);
+  }
+
+  const processSpan = document.createElement('span');
+  processSpan.className = 'fg-process';
+  processSpan.textContent = cmdDisplay;
+  container.appendChild(processSpan);
+
+  return container;
+}
+
+/**
  * Update process info display for a specific session
  */
 function updateSessionProcessInfo(sessionId: string): void {
@@ -74,13 +111,7 @@ function updateSessionProcessInfo(sessionId: string): void {
   // Foreground process indicator
   const fgInfo = getForegroundInfo(sessionId);
   if (fgInfo.name) {
-    const fgIndicator = document.createElement('span');
-    fgIndicator.className = 'session-foreground truncate';
-    const cmdDisplay = stripExePath(fgInfo.commandLine ?? fgInfo.name);
-    const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
-    const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
-    fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
-    fgIndicator.title = `${fgInfo.commandLine ?? fgInfo.name}\n${fgInfo.cwd ?? ''}`;
+    const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfoEl.appendChild(fgIndicator);
   }
 
@@ -98,17 +129,6 @@ function updateSessionProcessInfo(sessionId: string): void {
 // =============================================================================
 // Path Utilities
 // =============================================================================
-
-/**
- * Shorten a path for display (last 2 segments)
- */
-function shortenPath(path: string): string {
-  const parts = path.replace(/\\/g, '/').split('/');
-  if (parts.length <= 2) {
-    return path;
-  }
-  return parts.slice(-2).join('/');
-}
 
 /**
  * Strip executable path from command line, keeping just the exe name and arguments.
@@ -259,13 +279,7 @@ function createSessionItem(
   // Foreground process indicator
   const fgInfo = getForegroundInfo(session.id);
   if (fgInfo.name) {
-    const fgIndicator = document.createElement('span');
-    fgIndicator.className = 'session-foreground truncate';
-    const cmdDisplay = stripExePath(fgInfo.commandLine ?? fgInfo.name);
-    const truncatedCmd = cmdDisplay.length > 30 ? cmdDisplay.slice(0, 30) + '\u2026' : cmdDisplay;
-    const cwdDisplay = fgInfo.cwd ? ` \u2022 ${shortenPath(fgInfo.cwd)}` : '';
-    fgIndicator.textContent = `\u25B6 ${truncatedCmd}${cwdDisplay}`;
-    fgIndicator.title = `${fgInfo.commandLine ?? fgInfo.name}\n${fgInfo.cwd ?? ''}`;
+    const fgIndicator = createForegroundIndicator(fgInfo.cwd, fgInfo.commandLine, fgInfo.name);
     processInfo.appendChild(fgIndicator);
   }
 
