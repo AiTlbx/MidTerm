@@ -16,6 +16,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, SessionInfo> _sessionCache = new();
     private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
+    private readonly ConcurrentDictionary<string, int> _sessionOrder = new();
+    private int _nextOrder;
     private readonly string? _expectedTtyHostVersion;
     private readonly string? _minCompatibleVersion;
     private string? _runAsUser;
@@ -142,6 +144,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             client.StartReadLoop();
             _clients[sessionId] = client;
             _sessionCache[sessionId] = info;
+            _sessionOrder.TryAdd(sessionId, Interlocked.Increment(ref _nextOrder));
             Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid})");
 
             return new DiscoveryResult.Connected();
@@ -310,6 +313,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         client.StartReadLoop();
         _clients[sessionId] = client;
         _sessionCache[sessionId] = info;
+        _sessionOrder[sessionId] = Interlocked.Increment(ref _nextOrder);
 
         // Send current log level to new session
         await client.SetLogLevelAsync(Log.MinLevel, ct).ConfigureAwait(false);
@@ -382,8 +386,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 CurrentDirectory = s.CurrentDirectory,
                 ForegroundPid = s.ForegroundPid,
                 ForegroundName = s.ForegroundName,
-                ForegroundCommandLine = s.ForegroundCommandLine
-            }).OrderBy(s => s.CreatedAt).ToList()
+                ForegroundCommandLine = s.ForegroundCommandLine,
+                Order = _sessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue
+            }).OrderBy(s => s.Order).ToList()
         };
     }
 
@@ -395,6 +400,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         _sessionCache.TryRemove(sessionId, out _);
+        _sessionOrder.TryRemove(sessionId, out _);
         CleanupTempDirectory(sessionId);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
@@ -477,6 +483,27 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             NotifyStateChange();
             return true;
         }
+    }
+
+    public bool ReorderSessions(IList<string> sessionIds)
+    {
+        // Validate all sessions exist
+        foreach (var id in sessionIds)
+        {
+            if (!_sessionCache.ContainsKey(id))
+            {
+                return false;
+            }
+        }
+
+        // Assign new order values
+        for (var i = 0; i < sessionIds.Count; i++)
+        {
+            _sessionOrder[sessionIds[i]] = i;
+        }
+
+        NotifyStateChange();
+        return true;
     }
 
     public string AddStateListener(Action callback)
