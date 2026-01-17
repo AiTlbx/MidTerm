@@ -521,11 +521,10 @@ export function destroyTerminalForSession(sessionId: string): void {
   sessionsNeedingResync.delete(sessionId);
 }
 
-// Chunking constants for large pastes to prevent PTY buffer overflow
-// PSReadLine processes input slowly (syntax highlighting, history, etc.)
-// Small chunks + delay give it time to keep up
-const PASTE_CHUNK_SIZE = 128; // 128 byte chunks
-const PASTE_CHUNK_DELAY = 100; // 100ms between chunks
+// Chunking only needed for non-BPM shells as a safety margin
+// BPM shells handle bulk paste atomically via bracketed markers
+const PASTE_CHUNK_SIZE = 4096; // 4KB chunks
+const PASTE_CHUNK_DELAY = 5; // 5ms between chunks (only for non-BPM)
 
 /**
  * Send data in chunks with delays to prevent PTY buffer overflow.
@@ -545,8 +544,8 @@ async function sendChunked(sessionId: string, data: string): Promise<void> {
  * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
  * BPM state is tracked in muxChannel from live WebSocket data.
  *
- * Large pastes (> 4KB) are chunked with delays to prevent PTY buffer overflow
- * which can cause cursor corruption and data loss.
+ * BPM shells handle bulk paste atomically - no chunking needed.
+ * Non-BPM shells use chunking as a safety margin for legacy shells.
  *
  * @param isFilePath - If true, wrap content in quotes for file path handling.
  *                     This helps TUI apps like Claude Code detect file paths with spaces.
@@ -568,19 +567,10 @@ export function pasteToTerminal(
   const content = isFilePath ? '"' + data + '"' : data;
 
   if (bpmEnabled) {
-    // Wrap with bracketed paste sequences
-    const wrapped = '\x1b[200~' + content + '\x1b[201~';
-    if (wrapped.length > PASTE_CHUNK_SIZE) {
-      // Large paste: send BPM start, chunked content, BPM end
-      sendInput(sessionId, '\x1b[200~');
-      sendChunked(sessionId, content).then(() => {
-        sendInput(sessionId, '\x1b[201~');
-      });
-    } else {
-      sendInput(sessionId, wrapped);
-    }
+    // BPM shells handle bulk paste atomically - send everything at once
+    sendInput(sessionId, '\x1b[200~' + content + '\x1b[201~');
   } else {
-    // No bracketed paste mode
+    // Non-BPM: use chunking as safety margin for legacy shells
     if (content.length > PASTE_CHUNK_SIZE) {
       sendChunked(sessionId, content);
     } else {
