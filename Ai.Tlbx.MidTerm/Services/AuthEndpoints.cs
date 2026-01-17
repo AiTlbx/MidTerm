@@ -161,8 +161,11 @@ public static class AuthEndpoints
                path.StartsWith("/api/auth/") ||
                path.StartsWith("/css/") ||
                path.StartsWith("/js/") ||
+               path.StartsWith("/fonts/") ||
                path.EndsWith(".ico") ||
                path.EndsWith(".png") ||
-               path.EndsWith(".webmanifest");
+               path.EndsWith(".webmanifest") ||
+               path.EndsWith(".woff") ||
+               path.EndsWith(".woff2");
     }
 }

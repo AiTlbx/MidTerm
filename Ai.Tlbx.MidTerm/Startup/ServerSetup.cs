@@ -142,6 +142,10 @@ public static class ServerSetup
         contentTypeProvider.Mappings[".ico"] = "image/x-icon";
         contentTypeProvider.Mappings[".webmanifest"] = "application/manifest+json";
         contentTypeProvider.Mappings[".br"] = "application/octet-stream";
+        contentTypeProvider.Mappings[".woff"] = "font/woff";
+        contentTypeProvider.Mappings[".woff2"] = "font/woff2";
+        contentTypeProvider.Mappings[".ttf"] = "font/ttf";
+        contentTypeProvider.Mappings[".eot"] = "application/vnd.ms-fontobject";
 
         app.UseStaticFiles(new StaticFileOptions
         {
