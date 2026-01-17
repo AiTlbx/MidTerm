@@ -17,11 +17,13 @@ public sealed class AuthService
     private const int SessionTokenValidityHours = 24 * 3; // 3 days (sliding window refresh on activity)
 
     private readonly SettingsService _settingsService;
+    private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, RateLimitEntry> _rateLimits = new();
 
-    public AuthService(SettingsService settingsService)
+    public AuthService(SettingsService settingsService, TimeProvider? timeProvider = null)
     {
         _settingsService = settingsService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
 
         // Ensure session secret exists on startup so cookies survive restarts
         var settings = _settingsService.Load();
@@ -114,7 +116,7 @@ public sealed class AuthService
         var settings = _settingsService.Load();
         EnsureSessionSecret(settings);
 
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var timestamp = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
         var signature = ComputeHmac(timestamp.ToString(), settings.SessionSecret!);
 
         return $"{timestamp}:{signature}";
@@ -137,7 +139,7 @@ public sealed class AuthService
         }
 
         var tokenTime = DateTimeOffset.FromUnixTimeSeconds(timestamp);
-        if (DateTimeOffset.UtcNow - tokenTime > TimeSpan.FromHours(SessionTokenValidityHours))
+        if (_timeProvider.GetUtcNow() - tokenTime > TimeSpan.FromHours(SessionTokenValidityHours))
         {
             return false;
         }
@@ -164,7 +166,7 @@ public sealed class AuthService
             return false;
         }
 
-        if (DateTime.UtcNow > entry.BlockedUntil)
+        if (_timeProvider.GetUtcNow().DateTime > entry.BlockedUntil)
         {
             _rateLimits.TryRemove(ip, out _);
             return false;
@@ -183,11 +185,11 @@ public sealed class AuthService
 
         if (entry.FailedAttempts >= 10)
         {
-            entry.BlockedUntil = DateTime.UtcNow.AddMinutes(5);
+            entry.BlockedUntil = _timeProvider.GetUtcNow().DateTime.AddMinutes(5);
         }
         else if (entry.FailedAttempts >= 5)
         {
-            entry.BlockedUntil = DateTime.UtcNow.AddSeconds(30);
+            entry.BlockedUntil = _timeProvider.GetUtcNow().DateTime.AddSeconds(30);
         }
     }
 
@@ -209,7 +211,7 @@ public sealed class AuthService
             return null;
         }
 
-        var remaining = entry.BlockedUntil - DateTime.UtcNow;
+        var remaining = entry.BlockedUntil - _timeProvider.GetUtcNow().DateTime;
         return remaining > TimeSpan.Zero ? remaining : null;
     }
 

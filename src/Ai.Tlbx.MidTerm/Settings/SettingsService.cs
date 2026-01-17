@@ -28,6 +28,13 @@ public sealed class SettingsService
         _secretStorage = SecretStorageFactory.Create(SettingsDirectory, IsRunningAsService);
     }
 
+    internal SettingsService(string settingsDirectory)
+    {
+        IsRunningAsService = false;
+        _settingsPath = Path.Combine(settingsDirectory, "settings.json");
+        _secretStorage = SecretStorageFactory.Create(settingsDirectory, IsRunningAsService);
+    }
+
     private static string GetSettingsPath(bool isService)
     {
         if (isService)
