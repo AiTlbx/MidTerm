@@ -18,7 +18,7 @@ import {
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom, currentSettings } from '../../state';
 import { $activeSessionId, getSession } from '../../stores';
-import { debounce } from '../../utils';
+import { throttle } from '../../utils';
 
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
@@ -391,9 +391,9 @@ function rescaleAllTerminalsInternal(): void {
 }
 
 /**
- * Recalculate scaling for all open terminals (debounced for window resize)
+ * Recalculate scaling for all open terminals (throttled for smooth live updates during resize)
  */
-export const rescaleAllTerminals = debounce(rescaleAllTerminalsInternal, 100);
+export const rescaleAllTerminals = throttle(rescaleAllTerminalsInternal, 16);
 
 /**
  * Rescale terminals immediately (for sidebar collapse/expand)
