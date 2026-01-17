@@ -32,7 +32,6 @@ export function showChatPanel(): void {
   const panel = document.getElementById('chat-panel');
   if (panel) {
     panel.classList.remove('hidden');
-    document.body.classList.add('chat-panel-open');
     localStorage.setItem(STORAGE_KEY, 'true');
     log.info(() => 'Chat panel shown');
   }
@@ -45,7 +44,6 @@ export function hideChatPanel(): void {
   const panel = document.getElementById('chat-panel');
   if (panel) {
     panel.classList.add('hidden');
-    document.body.classList.remove('chat-panel-open');
     localStorage.setItem(STORAGE_KEY, 'false');
     log.info(() => 'Chat panel hidden');
   }

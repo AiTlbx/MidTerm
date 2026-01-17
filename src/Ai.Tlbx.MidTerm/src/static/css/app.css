@@ -3748,7 +3748,7 @@ html, body {
 
 .chat-panel {
     position: fixed;
-    left: 0;
+    left: 230px;
     top: 0;
     bottom: 0;
     width: 280px;
@@ -3756,12 +3756,23 @@ html, body {
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    z-index: 90;
-    transition: transform 0.2s ease;
+    z-index: 50;
+    transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
 .chat-panel.hidden {
-    transform: translateX(-100%);
+    transform: translateX(-280px);
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Adjust chat panel position when sidebar is collapsed */
+.terminal-page.sidebar-collapsed .chat-panel {
+    left: 0;
+}
+
+.terminal-page.sidebar-collapsed .chat-panel.hidden {
+    transform: translateX(-280px);
 }
 
 .chat-header {
@@ -3870,13 +3881,7 @@ html, body {
 }
 
 /* Adjust main content when chat panel is visible */
-body.chat-panel-open .main-content {
-    margin-left: 280px;
-}
-
-body.chat-panel-open .collapsed-title-bar {
-    left: 280px;
-}
+/* Chat panel overlays the terminals area - no margin adjustment needed */
 
 /* Certificate fingerprint inline display in settings */
 .cert-fingerprint-inline {
