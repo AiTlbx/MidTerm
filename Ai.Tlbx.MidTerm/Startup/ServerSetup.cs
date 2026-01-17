@@ -119,13 +119,19 @@ public static class ServerSetup
         var useCompressedFiles = true;
 #endif
 
-        // Rewrite clean URLs to .html files
+        // Rewrite clean URLs and consolidate icon requests
         app.Use(async (context, next) =>
         {
             var path = context.Request.Path.Value;
             if (path == "/trust" || path == "/login")
             {
                 context.Request.Path = path + ".html";
+            }
+            else if (path == "/apple-touch-icon.png" ||
+                     path == "/favicon-16x16.png" ||
+                     path == "/favicon-32x32.png")
+            {
+                context.Request.Path = "/android-chrome-192x192.png";
             }
             await next();
         });
