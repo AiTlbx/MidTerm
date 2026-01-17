@@ -10,7 +10,7 @@
 
   <!-- Link common sources for shared logging -->
   <ItemGroup>
-    <Compile Include="..\Ai.Tlbx.MidTerm.Common\**\*.cs" LinkBase="Common" />
+    <Compile Include="..\src\Ai.Tlbx.MidTerm.Common\**\*.cs" LinkBase="Common" />
   </ItemGroup>
 
   <!-- VoiceAssistant library reference (project reference for development) -->

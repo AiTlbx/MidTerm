@@ -291,7 +291,16 @@ public class VoiceControlMessage
 {
     public string Type { get; set; } = "";
     public string? Provider { get; set; }
+    public string? Voice { get; set; }
+    public double? Speed { get; set; }
     public int? SampleRate { get; set; }
     public string? Message { get; set; }
     public bool? Active { get; set; }
+
+    // Chat message fields
+    public string? Role { get; set; }
+    public string? Content { get; set; }
+    public string? ToolName { get; set; }
+    public string? Timestamp { get; set; }
+    public string? Status { get; set; }
 }

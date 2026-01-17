@@ -73,7 +73,7 @@ public sealed class VoiceWebSocketHandler
 
                     if (msg is not null)
                     {
-                        assistant = await ProcessControlMessageAsync(msg, assistant, audioHardware, clientId, cts);
+                        assistant = await ProcessControlMessageAsync(msg, assistant, audioHardware, ws, clientId, cts);
                     }
                 }
                 else if (result.MessageType == WebSocketMessageType.Binary)
@@ -108,13 +108,14 @@ public sealed class VoiceWebSocketHandler
         VoiceControlMessage msg,
         VoiceOrchestrator? assistant,
         WebSocketAudioHardware audioHardware,
+        WebSocket ws,
         string clientId,
         CancellationTokenSource cts)
     {
         switch (msg.Type?.ToLowerInvariant())
         {
             case "start":
-                return await HandleStartAsync(msg, assistant, audioHardware, clientId, cts.Token);
+                return await HandleStartAsync(msg, assistant, audioHardware, ws, clientId, cts.Token);
 
             case "stop":
                 if (assistant is not null)
@@ -134,12 +135,26 @@ public sealed class VoiceWebSocketHandler
         VoiceControlMessage msg,
         VoiceOrchestrator? existingAssistant,
         WebSocketAudioHardware audioHardware,
+        WebSocket ws,
         string clientId,
         CancellationToken cancellationToken)
     {
         if (existingAssistant is not null)
         {
             await existingAssistant.DisposeAsync();
+        }
+
+        // Parse selected voice settings from message
+        var selectedProvider = msg.Provider ?? "openai";
+        var selectedVoice = msg.Voice ?? "alloy";
+        var selectedSpeed = msg.Speed ?? 1.0;
+
+        Log.Info(() => $"[Voice] Client {clientId} requested: provider={selectedProvider}, voice={selectedVoice}, speed={selectedSpeed}");
+
+        // Currently only OpenAI is supported
+        if (selectedProvider != "openai")
+        {
+            throw new InvalidOperationException($"Provider '{selectedProvider}' is not yet supported. Only 'openai' is available.");
         }
 
         var apiKey = _sessionService.GetOpenAiApiKey();
@@ -183,19 +198,24 @@ public sealed class VoiceWebSocketHandler
         assistant.OnConnectionStatusChanged = status =>
         {
             Log.Info(() => $"[Voice] Client {clientId} status: {status}");
+            _ = SendStatusMessageAsync(ws, status.ToString(), cancellationToken);
         };
 
         assistant.OnMessageAdded = chatMessage =>
         {
             Log.Verbose(() => $"[Voice] Client {clientId} message: {chatMessage.Role} - {chatMessage.Content?.Substring(0, Math.Min(50, chatMessage.Content?.Length ?? 0))}...");
+            _ = SendChatMessageAsync(ws, chatMessage, cancellationToken);
         };
+
+        // Map selected voice to enum
+        var voiceEnum = ParseVoice(selectedVoice);
 
         var settings = new OpenAiVoiceSettings
         {
             Instructions = _sessionService.GetSystemPrompt(),
             Model = OpenAiRealtimeModel.Gpt4oRealtimePreview20250603,
-            Voice = AssistantVoice.Alloy,
-            TalkingSpeed = 1.0,
+            Voice = voiceEnum,
+            TalkingSpeed = Math.Clamp(selectedSpeed, 0.25, 1.5),
             TurnDetection = new TurnDetection
             {
                 Type = "server_vad",
@@ -205,10 +225,76 @@ public sealed class VoiceWebSocketHandler
             }
         };
 
-        Log.Info(() => $"[Voice] Client {clientId} starting session with OpenAI");
+        Log.Info(() => $"[Voice] Client {clientId} starting session with OpenAI (voice={voiceEnum}, speed={settings.TalkingSpeed})");
         await assistant.StartAsync(settings, cancellationToken);
 
         return assistant;
+    }
+
+    private static AssistantVoice ParseVoice(string voice)
+    {
+        return voice.ToLowerInvariant() switch
+        {
+            "alloy" => AssistantVoice.Alloy,
+            "ash" => AssistantVoice.Ash,
+            "ballad" => AssistantVoice.Ballad,
+            "coral" => AssistantVoice.Coral,
+            "echo" => AssistantVoice.Echo,
+            "sage" => AssistantVoice.Sage,
+            "shimmer" => AssistantVoice.Shimmer,
+            "verse" => AssistantVoice.Verse,
+            _ => AssistantVoice.Alloy
+        };
+    }
+
+    private static async Task SendChatMessageAsync(WebSocket ws, Ai.Tlbx.VoiceAssistant.Models.ChatMessage chatMessage, CancellationToken ct)
+    {
+        if (ws.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        try
+        {
+            var role = chatMessage.Role.ToString().ToLowerInvariant();
+            var controlMsg = new VoiceControlMessage
+            {
+                Type = "chat",
+                Role = role,
+                Content = chatMessage.Content ?? "",
+                ToolName = chatMessage.ToolName,
+                Timestamp = DateTime.UtcNow.ToString("o")
+            };
+            var json = JsonSerializer.Serialize(controlMsg, VoiceJsonContext.Default.VoiceControlMessage);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            await ws.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
+        }
+        catch
+        {
+        }
+    }
+
+    private static async Task SendStatusMessageAsync(WebSocket ws, string status, CancellationToken ct)
+    {
+        if (ws.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        try
+        {
+            var controlMsg = new VoiceControlMessage
+            {
+                Type = "status",
+                Status = status
+            };
+            var json = JsonSerializer.Serialize(controlMsg, VoiceJsonContext.Default.VoiceControlMessage);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            await ws.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
+        }
+        catch
+        {
+        }
     }
 
     private static async Task SendErrorAsync(WebSocket ws, string message, CancellationToken ct)

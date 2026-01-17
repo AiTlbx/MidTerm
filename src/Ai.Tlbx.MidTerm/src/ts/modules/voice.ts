@@ -12,6 +12,8 @@ import {
   setToggleEnabled,
   setToggleRecording,
 } from './sidebar/voiceSection';
+import { addChatMessage, showChatPanel, clearChatMessages } from './chat';
+import type { VoiceHealthResponse, VoiceProvider } from '../types';
 
 const log = createLogger('voice');
 const VOICE_SERVER_PORT = 2010;
@@ -22,8 +24,14 @@ let voiceServerAvailable = false;
 let audioFrameCount = 0;
 let totalBytesSent = 0;
 
+// Voice settings state
+let voiceProviders: VoiceProvider[] = [];
+let selectedProvider = '';
+let selectedVoice = '';
+let selectedSpeed = 1.0;
+
 /**
- * Check if MidTerm.Voice server is available
+ * Check if MidTerm.Voice server is available and fetch providers
  */
 export async function checkVoiceServerHealth(): Promise<boolean> {
   try {
@@ -37,17 +45,124 @@ export async function checkVoiceServerHealth(): Promise<boolean> {
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      const data = await response.json();
+      const data: VoiceHealthResponse = await response.json();
       voiceServerAvailable = data.status === 'ok';
       log.info(() => `Voice server available: v${data.version}`);
+
+      // Store providers and defaults if available
+      if (data.providers) {
+        voiceProviders = data.providers;
+        populateVoiceDropdown();
+      }
+      if (data.defaults) {
+        selectedProvider = data.defaults.provider;
+        selectedVoice = data.defaults.voice;
+        selectedSpeed = data.defaults.speed;
+        updateSpeedDisplay();
+      }
+
       return voiceServerAvailable;
     }
   } catch {
-    // Server not available - this is expected if not running
     log.info(() => 'Voice server not available');
   }
   voiceServerAvailable = false;
   return false;
+}
+
+/**
+ * Populate the voice dropdown with available providers and voices
+ */
+function populateVoiceDropdown(): void {
+  const voiceSelect = document.getElementById('voice-select') as HTMLSelectElement | null;
+  if (!voiceSelect) return;
+
+  voiceSelect.innerHTML = '';
+
+  for (const provider of voiceProviders) {
+    if (!provider.available || provider.voices.length === 0) continue;
+
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = provider.name;
+
+    for (const voice of provider.voices) {
+      const option = document.createElement('option');
+      option.value = `${provider.id}:${voice.id}`;
+      option.textContent = voice.name;
+
+      if (provider.id === selectedProvider && voice.id === selectedVoice) {
+        option.selected = true;
+      }
+
+      optgroup.appendChild(option);
+    }
+
+    voiceSelect.appendChild(optgroup);
+  }
+
+  log.info(() => `Voice dropdown populated with ${voiceProviders.length} providers`);
+}
+
+/** Microphone device info */
+interface MicDevice {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+/**
+ * Populate the microphone dropdown with available devices
+ */
+export async function populateMicDropdown(): Promise<void> {
+  const micSelect = document.getElementById('mic-select') as HTMLSelectElement | null;
+  if (!micSelect) return;
+
+  try {
+    if (window.getAvailableMicrophones) {
+      const mics = (await window.getAvailableMicrophones()) as MicDevice[];
+      micSelect.innerHTML = '<option value="">Default</option>';
+
+      for (const mic of mics) {
+        const option = document.createElement('option');
+        option.value = mic.id;
+        option.textContent = mic.name;
+        if (mic.isDefault) {
+          option.selected = true;
+        }
+        micSelect.appendChild(option);
+      }
+
+      log.info(() => `Microphone dropdown populated with ${mics.length} devices`);
+    }
+  } catch (error) {
+    log.error(() => `Failed to get microphones: ${error}`);
+  }
+}
+
+/**
+ * Update the speed display value
+ */
+function updateSpeedDisplay(): void {
+  const speedValue = document.getElementById('voice-speed-value');
+  const speedSlider = document.getElementById('voice-speed') as HTMLInputElement | null;
+
+  if (speedValue) {
+    speedValue.textContent = `${selectedSpeed}x`;
+  }
+  if (speedSlider) {
+    speedSlider.value = String(selectedSpeed);
+  }
+}
+
+/**
+ * Get selected voice settings
+ */
+export function getVoiceSettings(): { provider: string; voice: string; speed: number } {
+  return {
+    provider: selectedProvider,
+    voice: selectedVoice,
+    speed: selectedSpeed,
+  };
 }
 
 /**
@@ -79,6 +194,9 @@ export async function requestMicrophonePermission(): Promise<boolean> {
     if (window.requestMicrophonePermissionAndGetDevices) {
       await window.requestMicrophonePermissionAndGetDevices();
     }
+
+    // Populate microphone dropdown after permission granted
+    await populateMicDropdown();
 
     log.info(() => 'Microphone permission granted');
     setVoiceStatus('Ready');
@@ -116,8 +234,16 @@ export async function startVoiceSession(): Promise<void> {
       log.info(() => '[WS] Connected, sending start command');
       setVoiceStatus('Connected');
 
-      // Send start message
-      const startMsg = JSON.stringify({ type: 'start' });
+      // Show chat panel when voice session starts
+      showChatPanel();
+
+      // Send start message with settings
+      const startMsg = JSON.stringify({
+        type: 'start',
+        provider: selectedProvider,
+        voice: selectedVoice,
+        speed: selectedSpeed,
+      });
       ws?.send(startMsg);
       log.info(() => `[WS] Sent: ${startMsg}`);
 
@@ -131,10 +257,6 @@ export async function startVoiceSession(): Promise<void> {
               const bytes = base64ToArrayBuffer(base64Audio);
               audioFrameCount++;
               totalBytesSent += bytes.byteLength;
-              log.info(
-                () =>
-                  `[AUDIO] Frame #${audioFrameCount}: ${base64Audio.length} chars -> ${bytes.byteLength} bytes (total: ${totalBytesSent})`,
-              );
               ws.send(bytes);
             } else {
               log.warn(() => `[AUDIO] Frame dropped - WS not open (readyState: ${ws?.readyState})`);
@@ -164,16 +286,14 @@ export async function startVoiceSession(): Promise<void> {
 
     ws.onmessage = async (event: MessageEvent) => {
       if (event.data instanceof Blob) {
-        // Audio data from server
+        // Audio data from server - play without logging every frame
         const arrayBuffer = await event.data.arrayBuffer();
-        log.info(() => `[WS] Received audio blob: ${arrayBuffer.byteLength} bytes`);
         const base64 = arrayBufferToBase64(arrayBuffer);
 
         if (window.playAudio) {
           await window.playAudio(base64, 24000);
         }
       } else if (typeof event.data === 'string') {
-        log.info(() => `[WS] Received text: ${event.data}`);
         // JSON message
         try {
           const msg = JSON.parse(event.data);
@@ -243,11 +363,22 @@ export async function stopVoiceSession(): Promise<void> {
   log.info(() => '[SESSION] Voice session stopped');
 }
 
+/** Voice message from server */
+interface VoiceMessage {
+  type: string;
+  status?: string;
+  message?: string;
+  role?: 'user' | 'assistant' | 'tool';
+  content?: string;
+  toolName?: string;
+  timestamp?: string;
+}
+
 /**
  * Handle messages from the voice server
  */
-function handleVoiceMessage(msg: { type: string; status?: string; message?: string }): void {
-  log.info(() => `[MSG] Handling: type=${msg.type} status=${msg.status} message=${msg.message}`);
+function handleVoiceMessage(msg: VoiceMessage): void {
+  log.info(() => `[MSG] Handling: type=${msg.type}`);
   switch (msg.type) {
     case 'status':
       if (msg.status) {
@@ -260,12 +391,31 @@ function handleVoiceMessage(msg: { type: string; status?: string; message?: stri
     case 'listening':
       setVoiceStatus('Listening...');
       break;
+    case 'chat':
+      // Handle chat message
+      if (msg.role && msg.content !== undefined) {
+        const chatMsg = {
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp || new Date().toISOString(),
+        };
+        // Only add toolName if it's defined (exactOptionalPropertyTypes)
+        if (msg.toolName) {
+          addChatMessage({ ...chatMsg, toolName: msg.toolName });
+        } else {
+          addChatMessage(chatMsg);
+        }
+      }
+      break;
+    case 'clear':
+      clearChatMessages();
+      break;
     case 'error':
       log.error(() => `[MSG] Server error: ${msg.message || 'unknown'}`);
       setVoiceStatus('Server error');
       break;
     default:
-      log.warn(() => `[MSG] Unknown message type: ${msg.type}`);
+      log.info(() => `[MSG] Unhandled message type: ${msg.type}`);
   }
 }
 
@@ -299,6 +449,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 export function bindVoiceEvents(): void {
   const micBtn = document.getElementById('btn-voice-mic');
   const toggleBtn = document.getElementById('btn-voice-toggle');
+  const voiceSelect = document.getElementById('voice-select') as HTMLSelectElement | null;
+  const micSelect = document.getElementById('mic-select') as HTMLSelectElement | null;
+  const speedSlider = document.getElementById('voice-speed') as HTMLInputElement | null;
 
   log.info(() => `[INIT] Binding voice events: micBtn=${!!micBtn} toggleBtn=${!!toggleBtn}`);
 
@@ -321,6 +474,37 @@ export function bindVoiceEvents(): void {
         await stopVoiceSession();
       } else {
         await startVoiceSession();
+      }
+    });
+  }
+
+  // Voice selection change
+  if (voiceSelect) {
+    voiceSelect.addEventListener('change', () => {
+      const value = voiceSelect.value;
+      if (value.includes(':')) {
+        const parts = value.split(':');
+        selectedProvider = parts[0] ?? '';
+        selectedVoice = parts[1] ?? '';
+        log.info(() => `[UI] Voice changed: ${selectedProvider}/${selectedVoice}`);
+      }
+    });
+  }
+
+  // Microphone selection change (stored for next recording)
+  if (micSelect) {
+    micSelect.addEventListener('change', () => {
+      log.info(() => `[UI] Microphone changed: ${micSelect.value || 'default'}`);
+    });
+  }
+
+  // Speed slider change
+  if (speedSlider) {
+    speedSlider.addEventListener('input', () => {
+      selectedSpeed = parseFloat(speedSlider.value);
+      const speedValue = document.getElementById('voice-speed-value');
+      if (speedValue) {
+        speedValue.textContent = `${selectedSpeed}x`;
       }
     });
   }

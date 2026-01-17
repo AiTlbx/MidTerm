@@ -57,12 +57,33 @@
                     </button>
                     <div class="voice-section-content" id="voice-section-content">
                         <div class="voice-controls">
-                            <button id="btn-voice-mic" class="voice-btn" title="Microphone">
+                            <button id="btn-voice-mic" class="voice-btn" title="Enable Microphone">
                                 <span class="midFont-equalizer"></span>
                             </button>
                             <button id="btn-voice-toggle" class="voice-btn" disabled title="Start/Stop">
                                 <span class="midFont-play2"></span>
                             </button>
+                        </div>
+                        <div class="voice-settings" id="voice-settings">
+                            <div class="voice-setting-row">
+                                <label>Voice</label>
+                                <select id="voice-select" class="voice-select">
+                                    <option value="">Loading...</option>
+                                </select>
+                            </div>
+                            <div class="voice-setting-row">
+                                <label>Microphone</label>
+                                <select id="mic-select" class="voice-select">
+                                    <option value="">Default</option>
+                                </select>
+                            </div>
+                            <div class="voice-setting-row">
+                                <label>Speed</label>
+                                <div class="voice-speed-control">
+                                    <input type="range" id="voice-speed" min="0.25" max="1.5" step="0.25" value="1.0">
+                                    <span id="voice-speed-value">1.0x</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="voice-status" id="voice-status">Not connected</div>
                     </div>
@@ -88,6 +109,16 @@
             </div>
         </aside>
         <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+        <aside class="chat-panel hidden" id="chat-panel">
+            <div class="chat-header">
+                <span class="chat-title">Voice Chat</span>
+                <button id="btn-collapse-chat" class="chat-collapse-btn" title="Hide chat panel">
+                    <span class="midFont-keyboard_arrow_left"></span>
+                </button>
+            </div>
+            <div class="chat-messages" id="chat-messages"></div>
+        </aside>
 
         <div class="collapsed-title-bar" id="collapsed-title-bar">
             <div class="title-bar-buttons">

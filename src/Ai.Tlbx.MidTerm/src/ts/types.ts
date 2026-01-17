@@ -332,6 +332,50 @@ export interface AppState {
 }
 
 // =============================================================================
+// Voice/Chat Types
+// =============================================================================
+
+/** Chat message role */
+export type ChatRole = 'user' | 'assistant' | 'tool';
+
+/** Chat message from voice server */
+export interface ChatMessage {
+  role: ChatRole;
+  content: string;
+  toolName?: string;
+  timestamp: string;
+}
+
+/** Voice provider info from health endpoint */
+export interface VoiceProvider {
+  id: string;
+  name: string;
+  available: boolean;
+  voices: VoiceInfo[];
+}
+
+/** Voice info within a provider */
+export interface VoiceInfo {
+  id: string;
+  name: string;
+}
+
+/** Voice server defaults */
+export interface VoiceDefaults {
+  provider: string;
+  voice: string;
+  speed: number;
+}
+
+/** Extended voice health response */
+export interface VoiceHealthResponse {
+  status: string;
+  version: string;
+  providers?: VoiceProvider[];
+  defaults?: VoiceDefaults;
+}
+
+// =============================================================================
 // DOM Element Cache
 // =============================================================================
 

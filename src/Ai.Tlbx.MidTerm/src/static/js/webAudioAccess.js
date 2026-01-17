@@ -281,7 +281,10 @@ async function startRecording(callback, intervalMs = 500, deviceId = null, targe
         const elapsed = now - lastFrameTime;
         lastFrameTime = now;
 
-        console.log(`[WebAudio] Frame #${audioFrameCounter}: ${bytes.byteLength} bytes, ${elapsed.toFixed(0)}ms since last`);
+        // Only log every 10th frame to reduce console spam
+        if (audioFrameCounter % 10 === 0) {
+          console.log(`[WebAudio] Frame #${audioFrameCounter}: ${bytes.byteLength} bytes, ${elapsed.toFixed(0)}ms avg`);
+        }
 
         let binary = '';
         for (let i = 0; i < bytes.byteLength; i++) {
