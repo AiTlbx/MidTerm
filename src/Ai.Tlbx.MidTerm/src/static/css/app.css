@@ -785,14 +785,6 @@ html, body {
     display: none;
 }
 
-/* Style xterm's custom scrollbar with MidTerm blue theme */
-.terminal-container .xterm {
-    --vscode-scrollbarSlider-background: rgba(61, 89, 161, 0.6);
-    --vscode-scrollbarSlider-hoverBackground: rgba(122, 162, 247, 0.8);
-    --vscode-scrollbarSlider-activeBackground: rgba(122, 162, 247, 1);
-    --vscode-scrollbar-shadow: #000;
-}
-
 /* Make xterm scrollbar always visible (don't fade out) */
 .terminal-container .xterm-scrollable-element > .scrollbar {
     opacity: 1 !important;

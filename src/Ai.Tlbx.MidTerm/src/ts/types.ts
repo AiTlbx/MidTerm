@@ -303,6 +303,9 @@ export interface TerminalTheme {
   cursor: string;
   cursorAccent: string;
   selectionBackground: string;
+  scrollbarSliderBackground: string;
+  scrollbarSliderHoverBackground: string;
+  scrollbarSliderActiveBackground: string;
 }
 
 // =============================================================================

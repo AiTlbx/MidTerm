@@ -47,6 +47,9 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     cursor: '#DCDCF5',
     cursorAccent: '#06060E',
     selectionBackground: '#283457',
+    scrollbarSliderBackground: 'rgba(61, 89, 161, 0.5)',
+    scrollbarSliderHoverBackground: 'rgba(122, 162, 247, 0.7)',
+    scrollbarSliderActiveBackground: 'rgba(122, 162, 247, 1)',
   },
   light: {
     background: '#D5D6DB',
@@ -54,6 +57,9 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     cursor: '#343B58',
     cursorAccent: '#D5D6DB',
     selectionBackground: '#9FA0A5',
+    scrollbarSliderBackground: 'rgba(52, 59, 88, 0.3)',
+    scrollbarSliderHoverBackground: 'rgba(52, 59, 88, 0.5)',
+    scrollbarSliderActiveBackground: 'rgba(52, 59, 88, 0.7)',
   },
   solarizedDark: {
     background: '#002B36',
@@ -61,6 +67,9 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     cursor: '#839496',
     cursorAccent: '#002B36',
     selectionBackground: '#073642',
+    scrollbarSliderBackground: 'rgba(131, 148, 150, 0.3)',
+    scrollbarSliderHoverBackground: 'rgba(131, 148, 150, 0.5)',
+    scrollbarSliderActiveBackground: 'rgba(131, 148, 150, 0.7)',
   },
   solarizedLight: {
     background: '#FDF6E3',
@@ -68,6 +77,9 @@ export const THEMES: Record<ThemeName, TerminalTheme> = {
     cursor: '#657B83',
     cursorAccent: '#FDF6E3',
     selectionBackground: '#EEE8D5',
+    scrollbarSliderBackground: 'rgba(101, 123, 131, 0.3)',
+    scrollbarSliderHoverBackground: 'rgba(101, 123, 131, 0.5)',
+    scrollbarSliderActiveBackground: 'rgba(101, 123, 131, 0.7)',
   },
 };
 
