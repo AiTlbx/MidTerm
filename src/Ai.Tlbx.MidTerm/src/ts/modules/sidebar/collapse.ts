@@ -9,7 +9,7 @@ import { dom } from '../../state';
 import { $sidebarOpen, $sidebarCollapsed } from '../../stores';
 import { getCookie, setCookie } from '../../utils';
 import { updateMobileTitle } from './sessionList';
-import { rescaleAllTerminals } from '../terminal/scaling';
+import { rescaleAllTerminalsImmediate } from '../terminal/scaling';
 
 // =============================================================================
 // Cookie Constants
@@ -54,7 +54,7 @@ export function collapseSidebar(): void {
   if (dom.app) dom.app.classList.add('sidebar-collapsed');
   setCookie(SIDEBAR_COLLAPSED_COOKIE, 'true');
   updateMobileTitle();
-  requestAnimationFrame(rescaleAllTerminals);
+  requestAnimationFrame(rescaleAllTerminalsImmediate);
 }
 
 /**
@@ -64,7 +64,7 @@ export function expandSidebar(): void {
   $sidebarCollapsed.set(false);
   if (dom.app) dom.app.classList.remove('sidebar-collapsed');
   setCookie(SIDEBAR_COLLAPSED_COOKIE, 'false');
-  requestAnimationFrame(rescaleAllTerminals);
+  requestAnimationFrame(rescaleAllTerminalsImmediate);
 }
 
 // =============================================================================
@@ -125,7 +125,6 @@ export function setupSidebarResize(): void {
     const delta = e.clientX - startX;
     const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + delta));
     sidebar.style.width = newWidth + 'px';
-    rescaleAllTerminals();
   });
 
   document.addEventListener('mouseup', () => {
@@ -139,5 +138,8 @@ export function setupSidebarResize(): void {
     // Save width to cookie
     const currentWidth = sidebar.offsetWidth;
     setCookie(SIDEBAR_WIDTH_COOKIE, String(currentWidth));
+
+    // Rescale terminals after resize completes
+    requestAnimationFrame(rescaleAllTerminalsImmediate);
   });
 }

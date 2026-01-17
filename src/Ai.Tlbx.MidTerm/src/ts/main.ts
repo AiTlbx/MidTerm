@@ -43,6 +43,7 @@ import {
   pasteToTerminal,
   scrollToBottom,
   focusActiveTerminal,
+  calculateOptimalDimensions,
 } from './modules/terminal';
 import {
   updateEmptyState,
@@ -99,15 +100,7 @@ import {
   removeSession,
   getSession,
 } from './stores';
-import {
-  FONT_CHAR_WIDTH_RATIO,
-  FONT_LINE_HEIGHT_RATIO,
-  TERMINAL_PADDING,
-  MIN_TERMINAL_COLS,
-  MIN_TERMINAL_ROWS,
-  MAX_TERMINAL_COLS,
-  MAX_TERMINAL_ROWS,
-} from './constants';
+import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
 import { bindClick } from './utils';
 
 // Create logger for main module
@@ -264,24 +257,15 @@ function setupVisibilityChangeHandler(): void {
 // =============================================================================
 
 function createSession(): void {
-  const rect = dom.terminalsArea?.getBoundingClientRect();
   let cols = currentSettings?.defaultCols ?? 120;
   let rows = currentSettings?.defaultRows ?? 30;
 
-  if (rect && rect.width > 100 && rect.height > 100) {
+  if (dom.terminalsArea) {
     const fontSize = currentSettings?.fontSize ?? 14;
-    const charWidth = fontSize * FONT_CHAR_WIDTH_RATIO;
-    const lineHeight = fontSize * FONT_LINE_HEIGHT_RATIO;
-
-    const availWidth = rect.width - TERMINAL_PADDING;
-    const availHeight = rect.height - TERMINAL_PADDING;
-
-    const measuredCols = Math.floor(availWidth / charWidth);
-    const measuredRows = Math.floor(availHeight / lineHeight);
-
-    if (measuredCols > MIN_TERMINAL_COLS && measuredRows > MIN_TERMINAL_ROWS) {
-      cols = Math.min(measuredCols, MAX_TERMINAL_COLS);
-      rows = Math.min(measuredRows, MAX_TERMINAL_ROWS);
+    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize);
+    if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
+      cols = dims.cols;
+      rows = dims.rows;
     }
   }
 
@@ -505,24 +489,15 @@ function promptRenameSession(sessionId: string): void {
 }
 
 function spawnFromHistory(entry: LaunchEntry): void {
-  const rect = dom.terminalsArea?.getBoundingClientRect();
   let cols = currentSettings?.defaultCols ?? 120;
   let rows = currentSettings?.defaultRows ?? 30;
 
-  if (rect && rect.width > 100 && rect.height > 100) {
+  if (dom.terminalsArea) {
     const fontSize = currentSettings?.fontSize ?? 14;
-    const charWidth = fontSize * FONT_CHAR_WIDTH_RATIO;
-    const lineHeight = fontSize * FONT_LINE_HEIGHT_RATIO;
-
-    const availWidth = rect.width - TERMINAL_PADDING;
-    const availHeight = rect.height - TERMINAL_PADDING;
-
-    const measuredCols = Math.floor(availWidth / charWidth);
-    const measuredRows = Math.floor(availHeight / lineHeight);
-
-    if (measuredCols > MIN_TERMINAL_COLS && measuredRows > MIN_TERMINAL_ROWS) {
-      cols = Math.min(measuredCols, MAX_TERMINAL_COLS);
-      rows = Math.min(measuredRows, MAX_TERMINAL_ROWS);
+    const dims = calculateOptimalDimensions(dom.terminalsArea, fontSize);
+    if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
+      cols = dims.cols;
+      rows = dims.rows;
     }
   }
 

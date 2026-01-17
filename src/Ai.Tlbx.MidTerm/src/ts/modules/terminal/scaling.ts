@@ -8,14 +8,17 @@
 import type { TerminalState } from '../../types';
 import {
   TERMINAL_PADDING,
+  SCROLLBAR_WIDTH,
   MIN_TERMINAL_COLS,
   MIN_TERMINAL_ROWS,
   MAX_TERMINAL_COLS,
   MAX_TERMINAL_ROWS,
+  TERMINAL_FONT_STACK,
   icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
 import { $activeSessionId } from '../../stores';
+import { debounce } from '../../utils';
 
 // Forward declarations for functions from other modules
 let sendResize: (sessionId: string, dimensions: { cols: number; rows: number }) => void = () => {};
@@ -30,6 +33,93 @@ export function registerScalingCallbacks(callbacks: {
 }): void {
   if (callbacks.sendResize) sendResize = callbacks.sendResize;
   if (callbacks.focusActiveTerminal) focusActiveTerminal = callbacks.focusActiveTerminal;
+}
+
+/**
+ * Measure actual cell dimensions from an existing terminal.
+ * Returns null if no terminal is available or measurements are invalid.
+ */
+function measureFromExistingTerminal(): { cellWidth: number; cellHeight: number } | null {
+  for (const state of sessionTerminals.values()) {
+    if (!state.opened) continue;
+
+    const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
+    const cols = state.terminal.cols;
+    const rows = state.terminal.rows;
+
+    if (screen && cols > 0 && rows > 0) {
+      const cellWidth = screen.offsetWidth / cols;
+      const cellHeight = screen.offsetHeight / rows;
+
+      if (cellWidth >= 1 && cellHeight >= 1) {
+        return { cellWidth, cellHeight };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Measure cell dimensions by creating a temporary element with the terminal font.
+ * Used when no existing terminal is available to measure from.
+ */
+function measureFromFont(fontSize: number): { cellWidth: number; cellHeight: number } {
+  const measureEl = document.createElement('span');
+  measureEl.style.cssText = `
+    position: absolute;
+    visibility: hidden;
+    font-family: ${TERMINAL_FONT_STACK};
+    font-size: ${fontSize}px;
+    line-height: 1;
+    white-space: pre;
+  `;
+  measureEl.textContent = 'W';
+  document.body.appendChild(measureEl);
+
+  const cellWidth = measureEl.offsetWidth;
+  const cellHeight = measureEl.offsetHeight;
+
+  document.body.removeChild(measureEl);
+
+  return { cellWidth, cellHeight };
+}
+
+/**
+ * Calculate optimal terminal dimensions (cols/rows) for the given container.
+ * Uses actual font measurements - either from existing terminal or by measuring the font directly.
+ *
+ * This is the SINGLE source of truth for size calculations used by:
+ * - Session creation (main.ts)
+ * - Fit-to-screen (scaling.ts)
+ */
+export function calculateOptimalDimensions(
+  container: HTMLElement,
+  fontSize: number,
+): { cols: number; rows: number } | null {
+  const rect = container.getBoundingClientRect();
+  if (rect.width < 100 || rect.height < 100) {
+    return null;
+  }
+
+  // Get cell dimensions: prefer existing terminal, otherwise measure font directly
+  const { cellWidth, cellHeight } = measureFromExistingTerminal() ?? measureFromFont(fontSize);
+
+  // Account for padding and scrollbar width
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
+  const availHeight = rect.height - TERMINAL_PADDING;
+
+  const cols = Math.floor(availWidth / cellWidth);
+  const rows = Math.floor(availHeight / cellHeight);
+
+  // Clamp to valid range
+  const clampedCols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
+  const clampedRows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
+
+  if (clampedCols <= MIN_TERMINAL_COLS || clampedRows <= MIN_TERMINAL_ROWS) {
+    return null;
+  }
+
+  return { cols: clampedCols, rows: clampedRows };
 }
 
 /**
@@ -55,7 +145,6 @@ export function fitSessionToScreen(sessionId: string): void {
   // Clear any existing scaling first
   const xterm = state.container.querySelector('.xterm') as HTMLElement | null;
   if (xterm) {
-    xterm.style.zoom = '';
     xterm.style.transform = '';
     state.container.classList.remove('scaled');
   }
@@ -66,10 +155,8 @@ export function fitSessionToScreen(sessionId: string): void {
     state.container.classList.remove('hidden');
   }
 
-  // Measure terminalsArea directly - this gives us the actual visible area
-  // regardless of any layout complexities with the terminal container
-  const rect = dom.terminalsArea?.getBoundingClientRect();
-  if (!rect || rect.width < 100 || rect.height < 100) {
+  // Use terminalsArea for measurement
+  if (!dom.terminalsArea) {
     if (wasHidden) {
       state.container.classList.add('hidden');
     }
@@ -77,7 +164,6 @@ export function fitSessionToScreen(sessionId: string): void {
   }
 
   // Get cell dimensions by measuring the terminal's rendered size
-  // This avoids depending on xterm.js internal APIs
   const screen = state.container.querySelector('.xterm-screen') as HTMLElement | null;
   const terminalCols = state.terminal.cols;
   const terminalRows = state.terminal.rows;
@@ -111,8 +197,9 @@ export function fitSessionToScreen(sessionId: string): void {
     return;
   }
 
-  // Calculate available space (accounting for container padding)
-  const availWidth = rect.width - TERMINAL_PADDING;
+  // Calculate available space (accounting for container padding and scrollbar)
+  const rect = dom.terminalsArea.getBoundingClientRect();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
   const availHeight = rect.height - TERMINAL_PADDING;
 
   // Calculate cols/rows that fit in available space
@@ -164,10 +251,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   let overlay = container.querySelector('.scaled-overlay') as HTMLElement | null;
 
   if (scale < 0.99) {
-    // Use zoom instead of transform:scale for better pixel alignment
-    // zoom respects pixel boundaries, transform can cause subpixel rendering
-    xterm.style.zoom = String(scale);
-    xterm.style.transform = '';
+    // Use transform: scale() with explicit transform-origin for predictable behavior
+    xterm.style.transform = `scale(${scale})`;
+    xterm.style.transformOrigin = 'top left';
     container.classList.add('scaled');
 
     // Add clickable overlay if not present
@@ -184,8 +270,8 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       container.appendChild(overlay);
     }
   } else {
-    xterm.style.zoom = '';
     xterm.style.transform = '';
+    xterm.style.transformOrigin = '';
     container.classList.remove('scaled');
 
     // Remove overlay if present
@@ -198,21 +284,32 @@ export function applyTerminalScalingSync(state: TerminalState): void {
 /**
  * Apply CSS scaling to a terminal to fit within its container.
  * Scales down terminals that are larger than the available space.
- * Uses CSS zoom instead of transform:scale for better pixel alignment.
  */
 export function applyTerminalScaling(_sessionId: string, state: TerminalState): void {
   requestAnimationFrame(() => applyTerminalScalingSync(state));
 }
 
 /**
- * Recalculate scaling for all open terminals
+ * Recalculate scaling for all open terminals (internal, non-debounced)
  */
-export function rescaleAllTerminals(): void {
+function rescaleAllTerminalsInternal(): void {
   sessionTerminals.forEach((state, sessionId) => {
     if (state.opened) {
       applyTerminalScaling(sessionId, state);
     }
   });
+}
+
+/**
+ * Recalculate scaling for all open terminals (debounced for window resize)
+ */
+export const rescaleAllTerminals = debounce(rescaleAllTerminalsInternal, 100);
+
+/**
+ * Rescale terminals immediately (for sidebar collapse/expand)
+ */
+export function rescaleAllTerminalsImmediate(): void {
+  rescaleAllTerminalsInternal();
 }
 
 /**
@@ -248,6 +345,9 @@ export function setupVisualViewport(): void {
 
     const availableHeight = Math.floor((vh - headerHeight) * 0.99);
     terminalsArea.style.height = availableHeight + 'px';
+
+    // Rescale terminals after viewport height change
+    rescaleAllTerminals();
   };
 
   visualViewport.addEventListener('resize', updateViewportHeight);

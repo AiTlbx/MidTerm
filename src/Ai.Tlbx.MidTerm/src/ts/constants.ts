@@ -103,14 +103,11 @@ export const RECONNECT_DELAY = 3000;
 export const TERMINAL_FONT_STACK =
   "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace";
 
-/** Character width as ratio of font size (empirical for monospace fonts) */
-export const FONT_CHAR_WIDTH_RATIO = 0.6;
-
-/** Line height as ratio of font size */
-export const FONT_LINE_HEIGHT_RATIO = 1.2;
-
 /** Padding around terminal content in pixels */
 export const TERMINAL_PADDING = 8;
+
+/** xterm scrollbar width in pixels (matches CSS .xterm-viewport::-webkit-scrollbar) */
+export const SCROLLBAR_WIDTH = 7;
 
 /** Minimum terminal columns */
 export const MIN_TERMINAL_COLS = 10;

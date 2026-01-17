@@ -722,7 +722,7 @@ html, body {
 .terminals-area {
     flex: 1;
     position: relative;
-    overflow: auto;
+    overflow: hidden;
     background-color: var(--terminal-bg);
 }
 
@@ -1142,7 +1142,7 @@ html, body {
     .terminals-area {
         flex: 1;
         min-height: 0;
-        overflow: auto;
+        overflow: hidden;
         padding-bottom: env(safe-area-inset-bottom, 0);
     }
 
@@ -1151,7 +1151,7 @@ html, body {
         padding: 4px;
         padding-left: calc(4px + env(safe-area-inset-left, 0));
         padding-right: calc(4px + env(safe-area-inset-right, 0));
-        overflow: auto;
+        overflow: hidden;
     }
 
     /* Mobile: Hide session-actions by default, show menu button */
