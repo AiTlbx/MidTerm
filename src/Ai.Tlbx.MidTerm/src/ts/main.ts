@@ -61,19 +61,13 @@ import {
   initializeSidebarUpdater,
   initTrafficIndicator,
 } from './modules/sidebar';
-import {
-  toggleSettings,
-  closeSettings,
-  checkSystemHealth,
-  fetchSettings,
-  applyReceivedSettings,
-} from './modules/settings';
-import { checkAuthStatus, bindAuthEvents } from './modules/auth';
+import { toggleSettings, closeSettings, applyReceivedSettings } from './modules/settings';
+import { bindAuthEvents } from './modules/auth';
+import { fetchBootstrap } from './modules/bootstrap';
 import {
   renderUpdatePanel,
   applyUpdate,
   checkForUpdates,
-  checkUpdateResult,
   showChangelog,
   closeChangelog,
   handleUpdateInfo,
@@ -114,7 +108,7 @@ import {
   MAX_TERMINAL_COLS,
   MAX_TERMINAL_ROWS,
 } from './constants';
-import { bindClick, escapeHtml } from './utils';
+import { bindClick } from './utils';
 
 // Create logger for main module
 const log = createLogger('main');
@@ -173,7 +167,6 @@ async function init(): Promise<void> {
   connectStateWebSocket();
   connectMuxWebSocket();
   connectSettingsWebSocket();
-  checkSystemHealth();
 
   bindEvents();
   bindAuthEvents();
@@ -184,11 +177,9 @@ async function init(): Promise<void> {
   setupVisualViewport();
   initTouchController();
 
-  fetchVersion();
-  fetchNetworks();
-  fetchSettings();
-  checkAuthStatus();
-  checkUpdateResult();
+  // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
+  // checkAuthStatus, checkUpdateResult, and checkSystemHealth
+  fetchBootstrap();
   requestNotificationPermission();
   initDiagnosticsPanel();
 
@@ -605,56 +596,6 @@ function showBellNotification(sessionId: string): void {
       }, 200);
     }
   }
-}
-
-// =============================================================================
-// API Helpers
-// =============================================================================
-
-function fetchVersion(): void {
-  fetch('/api/version')
-    .then((r) => r.text())
-    .then((v) => {
-      // Strip git hash suffix but preserve (DEV) indicator
-      const version = v.replace(/[+-][a-f0-9]+$/i, '');
-      const el = document.getElementById('app-version');
-      if (el) el.textContent = 'v' + version;
-    })
-    .catch((e) => log.warn(() => `Failed to fetch version: ${e}`));
-}
-
-function fetchNetworks(): void {
-  fetch('/api/networks')
-    .then((r) => r.json())
-    .then((networks) => {
-      const list = document.getElementById('network-list');
-      if (!list) return;
-
-      const protocol = location.protocol;
-      const port = location.port;
-      list.innerHTML = networks
-        .map((n: { name: string; ip: string }) => {
-          const url = protocol + '//' + n.ip + ':' + port;
-          return (
-            '<div class="network-item">' +
-            '<span class="network-name" title="' +
-            escapeHtml(n.name) +
-            '">' +
-            escapeHtml(n.name) +
-            '</span>' +
-            '<a class="network-url" href="' +
-            url +
-            '" target="_blank">' +
-            escapeHtml(n.ip) +
-            ':' +
-            port +
-            '</a>' +
-            '</div>'
-          );
-        })
-        .join('');
-    })
-    .catch((e) => log.warn(() => `Failed to fetch networks: ${e}`));
 }
 
 // =============================================================================

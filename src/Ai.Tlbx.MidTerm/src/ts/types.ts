@@ -169,7 +169,7 @@ export interface UpdateInfo {
 // Health/Status Types
 // =============================================================================
 
-/** Health check response */
+/** Health check response (legacy, use BootstrapResponse for new code) */
 export interface HealthResponse {
   status: string;
   memoryMB: number;
@@ -186,6 +186,98 @@ export interface HealthResponse {
   webProcessId?: number;
   ttyHostCompatible?: boolean;
   ttyHostExpected?: string;
+}
+
+/** Shell info from server */
+export interface ShellInfo {
+  type: string;
+  displayName: string;
+  isAvailable: boolean;
+  supportsOsc7: boolean;
+}
+
+/** Certificate info */
+export interface CertificateInfo {
+  fingerprint?: string;
+  notBefore?: string;
+  notAfter?: string;
+  isFallbackCertificate?: boolean;
+}
+
+/** Update result from previous update */
+export interface UpdateResult {
+  found: boolean;
+  success: boolean;
+  message: string;
+  details: string;
+  timestamp: string;
+  logFile: string;
+}
+
+/** Consolidated startup data from GET /api/bootstrap */
+export interface BootstrapResponse {
+  auth: AuthStatus;
+  version: string;
+  ttyHostVersion?: string;
+  ttyHostCompatible: boolean;
+  uptimeSeconds: number;
+  platform: string;
+  settings: Settings;
+  networks: NetworkInterface[];
+  users: UserInfo[];
+  shells: ShellInfo[];
+  updateResult?: UpdateResult;
+}
+
+/** Minimal startup data for login page from GET /api/bootstrap/login */
+export interface BootstrapLoginResponse {
+  certificate?: CertificateInfo;
+}
+
+// =============================================================================
+// WebSocket Command Types
+// =============================================================================
+
+/** WebSocket command from client to server */
+export interface WsCommand {
+  type: 'command';
+  id: string;
+  action: string;
+  payload?: WsCommandPayload | undefined;
+}
+
+/** Payload for WebSocket commands */
+export interface WsCommandPayload {
+  // session.create
+  cols?: number;
+  rows?: number;
+  shell?: string;
+  workingDirectory?: string;
+
+  // session.close, session.rename
+  sessionId?: string;
+
+  // session.rename
+  name?: string | null;
+
+  // settings.save
+  settings?: Settings;
+}
+
+/** WebSocket command response from server */
+export interface WsCommandResponse {
+  type: 'response';
+  id: string;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+/** Data returned for session.create command */
+export interface WsSessionCreatedData {
+  id: string;
+  pid: number;
+  shellType: string;
 }
 
 /** Network interface info */

@@ -170,6 +170,7 @@ public class Program
         var shutdownService = new ShutdownService();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
+        EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);

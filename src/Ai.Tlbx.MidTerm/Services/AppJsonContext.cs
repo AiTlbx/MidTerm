@@ -7,6 +7,15 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
+[JsonSerializable(typeof(BootstrapResponse))]
+[JsonSerializable(typeof(BootstrapLoginResponse))]
+[JsonSerializable(typeof(WsCommand))]
+[JsonSerializable(typeof(WsCommandPayload))]
+[JsonSerializable(typeof(WsCommandResponse))]
+[JsonSerializable(typeof(WsSessionCreatedData))]
+[JsonSerializable(typeof(SystemResponse))]
+[JsonSerializable(typeof(TtyHostInfo))]
+[JsonSerializable(typeof(HistoryPatchRequest))]
 [JsonSerializable(typeof(LogSeverity))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(SessionListDto))]
@@ -53,7 +62,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(LaunchEntry))]
 [JsonSerializable(typeof(List<LaunchEntry>))]
-[JsonSerializable(typeof(HistorySnapshotResult))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {

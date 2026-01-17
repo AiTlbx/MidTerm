@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Settings;
@@ -47,28 +49,14 @@ public sealed class StateWebSocketHandler
         var sendLock = new SemaphoreSlim(1, 1);
         UpdateInfo? lastUpdate = null;
 
-        async Task SendStateAsync()
+        async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
-            if (ws.State != WebSocketState.Open)
-            {
-                return;
-            }
-
+            if (ws.State != WebSocketState.Open) return;
             await sendLock.WaitAsync();
             try
             {
-                if (ws.State != WebSocketState.Open)
-                {
-                    return;
-                }
-
-                var sessionList = _sessionManager.GetSessionList();
-                var state = new StateUpdate
-                {
-                    Sessions = sessionList,
-                    Update = lastUpdate
-                };
-                var json = JsonSerializer.Serialize(state, AppJsonContext.Default.StateUpdate);
+                if (ws.State != WebSocketState.Open) return;
+                var json = JsonSerializer.Serialize(payload, typeInfo);
                 var bytes = Encoding.UTF8.GetBytes(json);
                 await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
             }
@@ -79,6 +67,30 @@ public sealed class StateWebSocketHandler
             {
                 sendLock.Release();
             }
+        }
+
+        async Task SendStateAsync()
+        {
+            var sessionList = _sessionManager.GetSessionList();
+            var state = new StateUpdate
+            {
+                Sessions = sessionList,
+                Update = lastUpdate
+            };
+            await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
+        }
+
+        async Task SendCommandResponseAsync(string id, bool success, object? data = null, string? error = null)
+        {
+            var response = new WsCommandResponse
+            {
+                Type = "response",
+                Id = id,
+                Success = success,
+                Data = data,
+                Error = error
+            };
+            await SendJsonAsync(response, AppJsonContext.Default.WsCommandResponse);
         }
 
         void OnStateChange() => _ = SendStateAsync();
@@ -98,7 +110,9 @@ public sealed class StateWebSocketHandler
             lastUpdate = _updateService.LatestUpdate;
             await SendStateAsync();
 
-            var buffer = new byte[1024];
+            var buffer = new byte[8192];
+            var messageBuffer = new List<byte>();
+
             while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
                 try
@@ -107,6 +121,19 @@ public sealed class StateWebSocketHandler
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         break;
+                    }
+
+                    if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        messageBuffer.AddRange(buffer.AsSpan(0, result.Count).ToArray());
+
+                        if (result.EndOfMessage)
+                        {
+                            var messageJson = Encoding.UTF8.GetString(messageBuffer.ToArray());
+                            messageBuffer.Clear();
+
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync);
+                        }
                     }
                 }
                 catch (OperationCanceledException)
@@ -136,6 +163,129 @@ public sealed class StateWebSocketHandler
                 {
                 }
             }
+        }
+    }
+
+    private async Task HandleCommandAsync(string json, Func<string, bool, object?, string?, Task> sendResponse)
+    {
+        WsCommand? cmd;
+        try
+        {
+            cmd = JsonSerializer.Deserialize(json, AppJsonContext.Default.WsCommand);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (cmd is null || cmd.Type != "command" || string.IsNullOrEmpty(cmd.Id))
+        {
+            return;
+        }
+
+        try
+        {
+            switch (cmd.Action)
+            {
+                case "session.create":
+                    await HandleSessionCreateAsync(cmd, sendResponse);
+                    break;
+
+                case "session.close":
+                    await HandleSessionCloseAsync(cmd, sendResponse);
+                    break;
+
+                case "session.rename":
+                    await HandleSessionRenameAsync(cmd, sendResponse);
+                    break;
+
+                case "settings.save":
+                    await HandleSettingsSaveAsync(cmd, sendResponse);
+                    break;
+
+                default:
+                    await sendResponse(cmd.Id, false, null, $"Unknown action: {cmd.Action}");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(() => $"Command handler error for {cmd.Action}: {ex.Message}");
+            await sendResponse(cmd.Id, false, null, ex.Message);
+        }
+    }
+
+    private async Task HandleSessionCreateAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    {
+        var payload = cmd.Payload;
+        var cols = payload?.Cols ?? 80;
+        var rows = payload?.Rows ?? 24;
+        var workingDir = payload?.WorkingDirectory;
+
+        var session = await _sessionManager.CreateSessionAsync(payload?.Shell, cols, rows, workingDir);
+
+        if (session is null)
+        {
+            await sendResponse(cmd.Id, false, null, "Failed to create session");
+            return;
+        }
+
+        var data = new WsSessionCreatedData
+        {
+            Id = session.Id,
+            Pid = session.Pid,
+            ShellType = session.ShellType
+        };
+
+        await sendResponse(cmd.Id, true, data, null);
+    }
+
+    private async Task HandleSessionCloseAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    {
+        var sessionId = cmd.Payload?.SessionId;
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            await sendResponse(cmd.Id, false, null, "sessionId required");
+            return;
+        }
+
+        var closed = await _sessionManager.CloseSessionAsync(sessionId);
+        await sendResponse(cmd.Id, closed, null, closed ? null : "Session not found");
+    }
+
+    private async Task HandleSessionRenameAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    {
+        var sessionId = cmd.Payload?.SessionId;
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            await sendResponse(cmd.Id, false, null, "sessionId required");
+            return;
+        }
+
+        var name = cmd.Payload?.Name;
+        var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual: true);
+        await sendResponse(cmd.Id, renamed, null, renamed ? null : "Session not found");
+    }
+
+    private async Task HandleSettingsSaveAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    {
+        var publicSettings = cmd.Payload?.Settings;
+        if (publicSettings is null)
+        {
+            await sendResponse(cmd.Id, false, null, "settings required");
+            return;
+        }
+
+        try
+        {
+            var currentSettings = _settingsService.Load();
+            publicSettings.ApplyTo(currentSettings);
+            _settingsService.Save(currentSettings);
+            await sendResponse(cmd.Id, true, null, null);
+        }
+        catch (ArgumentException ex)
+        {
+            await sendResponse(cmd.Id, false, null, ex.Message);
         }
     }
 }

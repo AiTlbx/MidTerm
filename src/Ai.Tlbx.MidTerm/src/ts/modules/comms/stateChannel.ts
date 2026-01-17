@@ -3,9 +3,17 @@
  *
  * Manages the state WebSocket connection for real-time session list updates.
  * Handles automatic reconnection on disconnect.
+ * Also provides bidirectional command channel for session CRUD operations.
  */
 
-import type { Session, UpdateInfo, TerminalState } from '../../types';
+import type {
+  Session,
+  UpdateInfo,
+  TerminalState,
+  WsCommand,
+  WsCommandPayload,
+  WsCommandResponse,
+} from '../../types';
 import { scheduleReconnect } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
@@ -20,6 +28,16 @@ import {
   setStateReconnectTimer,
   setUpdateInfo,
 } from '../../state';
+
+const COMMAND_TIMEOUT_MS = 30000;
+const pendingCommands = new Map<
+  string,
+  {
+    resolve: (data: unknown) => void;
+    reject: (error: Error) => void;
+    timeout: number;
+  }
+>();
 import {
   $settingsOpen,
   $stateWsConnected,
@@ -91,6 +109,14 @@ export function connectStateWebSocket(): void {
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+
+      // Handle command responses
+      if (data.type === 'response') {
+        handleCommandResponse(data as WsCommandResponse);
+        return;
+      }
+
+      // Handle state updates
       const sessionList = data.sessions?.sessions ?? [];
       handleStateUpdate(sessionList);
       handleUpdateInfo(data.update);
@@ -223,4 +249,78 @@ export function initConnectionStatusIndicator(): void {
     indicator.className = `connection-status ${status}`;
     indicator.textContent = text;
   });
+}
+
+// =============================================================================
+// WebSocket Command API
+// =============================================================================
+
+/**
+ * Handle command response from server.
+ */
+function handleCommandResponse(response: WsCommandResponse): void {
+  const pending = pendingCommands.get(response.id);
+  if (!pending) {
+    log.verbose(() => `Received response for unknown command: ${response.id}`);
+    return;
+  }
+
+  clearTimeout(pending.timeout);
+  pendingCommands.delete(response.id);
+
+  if (response.success) {
+    pending.resolve(response.data);
+  } else {
+    pending.reject(new Error(response.error ?? 'Command failed'));
+  }
+}
+
+/**
+ * Send a command to the server over the state WebSocket.
+ * Returns a promise that resolves with the response data or rejects on error.
+ */
+export async function sendCommand<T = unknown>(
+  action: string,
+  payload?: WsCommandPayload,
+): Promise<T> {
+  const ws = stateWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    throw new Error('WebSocket not connected');
+  }
+
+  const id = crypto.randomUUID();
+  const command: WsCommand = {
+    type: 'command',
+    id,
+    action,
+    payload,
+  };
+
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      pendingCommands.delete(id);
+      reject(new Error(`Command timed out: ${action}`));
+    }, COMMAND_TIMEOUT_MS);
+
+    pendingCommands.set(id, {
+      resolve: resolve as (data: unknown) => void,
+      reject,
+      timeout,
+    });
+
+    try {
+      ws.send(JSON.stringify(command));
+    } catch (e) {
+      clearTimeout(timeout);
+      pendingCommands.delete(id);
+      reject(e);
+    }
+  });
+}
+
+/**
+ * Check if the state WebSocket is connected and ready for commands.
+ */
+export function isStateConnected(): boolean {
+  return stateWs !== null && stateWs.readyState === WebSocket.OPEN;
 }

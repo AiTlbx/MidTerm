@@ -4,6 +4,8 @@
  * Handles login form submission and certificate TOFU display.
  */
 
+import type { BootstrapLoginResponse } from '../types';
+
 const CERT_HIDDEN_KEY = 'mt-cert-info-hidden';
 
 export function initLoginPage(): void {
@@ -74,19 +76,20 @@ function showError(errorDiv: HTMLElement, msg: string): void {
 
 async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
   try {
-    const response = await fetch('/api/certificate/info');
+    // Use bootstrap/login endpoint for certificate info
+    const response = await fetch('/api/bootstrap/login');
     if (!response.ok) return;
 
-    const info = await response.json();
-    if (!info.fingerprint) return;
+    const data: BootstrapLoginResponse = await response.json();
+    if (!data.certificate?.fingerprint) return;
 
     // Format fingerprint with colons every 2 chars
-    const fp = info.fingerprint.match(/.{1,2}/g)?.join(':') ?? '';
+    const fp = data.certificate.fingerprint.match(/.{1,2}/g)?.join(':') ?? '';
     const fpEl = document.getElementById('cert-fingerprint');
     if (fpEl) fpEl.textContent = fp;
 
     // Format dates
-    const formatDate = (iso: string): string => {
+    const formatDate = (iso: string | undefined): string => {
       if (!iso) return '';
       const d = new Date(iso);
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -94,8 +97,8 @@ async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
 
     const validFromEl = document.getElementById('cert-valid-from');
     const validUntilEl = document.getElementById('cert-valid-until');
-    if (validFromEl) validFromEl.textContent = 'From: ' + formatDate(info.notBefore);
-    if (validUntilEl) validUntilEl.textContent = 'Until: ' + formatDate(info.notAfter);
+    if (validFromEl) validFromEl.textContent = 'From: ' + formatDate(data.certificate.notBefore);
+    if (validUntilEl) validUntilEl.textContent = 'Until: ' + formatDate(data.certificate.notAfter);
 
     certInfoDiv.classList.remove('hidden');
   } catch {

@@ -153,6 +153,22 @@ public sealed class HistoryService
         }
     }
 
+    public bool SetStarred(string id, bool starred)
+    {
+        lock (_lock)
+        {
+            var entry = _history.Entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null)
+            {
+                return false;
+            }
+
+            entry.IsStarred = starred;
+            Save();
+            return true;
+        }
+    }
+
     public bool RemoveEntry(string id)
     {
         lock (_lock)

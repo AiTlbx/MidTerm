@@ -1,3 +1,5 @@
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -9,6 +11,143 @@ namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class EndpointSetup
 {
+    public static void MapBootstrapEndpoints(
+        WebApplication app,
+        TtyHostSessionManager sessionManager,
+        UpdateService updateService,
+        SettingsService settingsService,
+        string version)
+    {
+        var shellRegistry = app.Services.GetRequiredService<ShellRegistry>();
+
+        app.MapGet("/api/bootstrap", () =>
+        {
+            var settings = settingsService.Load();
+            var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+            var authStatus = new AuthStatusResponse
+            {
+                AuthenticationEnabled = settings.AuthenticationEnabled,
+                PasswordSet = !string.IsNullOrEmpty(settings.PasswordHash)
+            };
+
+            var conHostVersion = TtyHostSpawner.GetTtyHostVersion();
+            var manifest = updateService.InstalledManifest;
+            var conHostExpected = manifest.Pty;
+            var conHostCompatible = conHostVersion == conHostExpected ||
+                (conHostVersion is not null && manifest.MinCompatiblePty is not null &&
+                 UpdateService.CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
+
+            var networks = GetNetworkInterfaces();
+            var users = UserEnumerationService.GetSystemUsers();
+
+            var shells = shellRegistry.GetAllShells().Select(s => new ShellInfoDto
+            {
+                Type = s.ShellType.ToString(),
+                DisplayName = s.DisplayName,
+                IsAvailable = s.IsAvailable(),
+                SupportsOsc7 = s.SupportsOsc7
+            }).ToList();
+
+            var updateResult = ReadAndClearUpdateResult();
+            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
+
+            var response = new BootstrapResponse
+            {
+                Auth = authStatus,
+                Version = displayVersion,
+                TtyHostVersion = conHostVersion,
+                TtyHostCompatible = conHostCompatible,
+                UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
+                Platform = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux",
+                Settings = publicSettings,
+                Networks = networks,
+                Users = users,
+                Shells = shells,
+                UpdateResult = updateResult
+            };
+
+            return Results.Json(response, AppJsonContext.Default.BootstrapResponse);
+        });
+
+        app.MapGet("/api/bootstrap/login", () =>
+        {
+            var certService = app.Services.GetRequiredService<CertificateInfoService>();
+            var certInfo = certService.GetInfo();
+
+            var response = new BootstrapLoginResponse
+            {
+                Certificate = certInfo
+            };
+
+            return Results.Json(response, AppJsonContext.Default.BootstrapLoginResponse);
+        });
+    }
+
+    private static List<NetworkInterfaceDto> GetNetworkInterfaces()
+    {
+        static bool IsPhysicalOrVpn(string name)
+        {
+            if (name.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("VPN", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (name.Contains("VMware", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("vEthernet", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("VirtualBox", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return true;
+        }
+
+        return NetworkInterface.GetAllNetworkInterfaces()
+            .Where(ni => ni.OperationalStatus == OperationalStatus.Up
+                         && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                         && IsPhysicalOrVpn(ni.Name))
+            .SelectMany(ni => ni.GetIPProperties().UnicastAddresses
+                .Where(addr => addr.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(addr => new NetworkInterfaceDto
+                {
+                    Name = ni.Name,
+                    Ip = addr.Address.ToString()
+                }))
+            .Prepend(new NetworkInterfaceDto { Name = "Localhost", Ip = "localhost" })
+            .ToList();
+    }
+
+    private static UpdateResult? ReadAndClearUpdateResult()
+    {
+        var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
+        if (string.IsNullOrEmpty(installDir))
+        {
+            return null;
+        }
+
+        var resultPath = Path.Combine(installDir, "update-result.json");
+        if (!File.Exists(resultPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(resultPath);
+            var result = System.Text.Json.JsonSerializer.Deserialize<UpdateResult>(json, AppJsonContext.Default.UpdateResult);
+            if (result is not null)
+            {
+                result.Found = true;
+                try { File.Delete(resultPath); } catch { }
+                return result;
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
     public static void MapSystemEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
@@ -18,6 +157,41 @@ public static class EndpointSetup
     {
         var shellRegistry = app.Services.GetRequiredService<ShellRegistry>();
 
+        // Consolidated system endpoint (replaces /api/version, /api/health, /api/version/details)
+        app.MapGet("/api/system", () =>
+        {
+            var sessionCount = sessionManager.GetAllSessions().Count;
+            var manifest = updateService.InstalledManifest;
+
+            string? conHostVersion = TtyHostSpawner.GetTtyHostVersion();
+            var conHostExpected = manifest.Pty;
+            var conHostCompatible = conHostVersion == conHostExpected ||
+                (conHostVersion is not null && manifest.MinCompatiblePty is not null &&
+                 UpdateService.CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
+
+            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
+
+            var response = new SystemResponse
+            {
+                Healthy = true,
+                Version = displayVersion,
+                Manifest = manifest,
+                SessionCount = sessionCount,
+                UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
+                Platform = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux",
+                TtyHost = new TtyHostInfo
+                {
+                    Version = conHostVersion,
+                    Expected = conHostExpected,
+                    Compatible = conHostCompatible
+                },
+                WebProcessId = Environment.ProcessId,
+                WindowsBuildNumber = OperatingSystem.IsWindows() ? Environment.OSVersion.Version.Build : null
+            };
+            return Results.Json(response, AppJsonContext.Default.SystemResponse);
+        });
+
+        // Legacy endpoints kept for backward compatibility
         app.MapGet("/api/version", () =>
         {
             var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
@@ -190,7 +364,8 @@ public static class EndpointSetup
             return Results.Ok("Update started. Server will restart shortly.");
         });
 
-        app.MapGet("/api/update/result", () =>
+        // GET /api/update/result?clear=true - get update result and optionally clear it
+        app.MapGet("/api/update/result", (bool clear = false) =>
         {
             var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
             if (string.IsNullOrEmpty(installDir))
@@ -211,6 +386,13 @@ public static class EndpointSetup
                 if (result is not null)
                 {
                     result.Found = true;
+
+                    // Clear the result file if requested
+                    if (clear)
+                    {
+                        try { File.Delete(resultPath); } catch { }
+                    }
+
                     return Results.Json(result, AppJsonContext.Default.UpdateResult);
                 }
             }
@@ -221,6 +403,7 @@ public static class EndpointSetup
             return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
         });
 
+        // Legacy DELETE endpoint kept for backward compatibility
         app.MapDelete("/api/update/result", () =>
         {
             var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
