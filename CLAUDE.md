@@ -33,15 +33,15 @@ MidTerm is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/
 
 ```bash
 # Build web server (debug)
-dotnet build Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
+dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
 
 # Test
-dotnet test Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj
+dotnet test src/Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj
 
 # AOT publish (platform-specific)
-Ai.Tlbx.MidTerm/build-aot.cmd        # Windows
-./Ai.Tlbx.MidTerm/build-aot-linux.sh # Linux
-./Ai.Tlbx.MidTerm/build-aot-macos.sh # macOS
+src/Ai.Tlbx.MidTerm/build-aot.cmd        # Windows
+./src/Ai.Tlbx.MidTerm/build-aot-linux.sh # Linux
+./src/Ai.Tlbx.MidTerm/build-aot-macos.sh # macOS
 ```
 
 ## Asset Optimization
@@ -56,7 +56,7 @@ This typically saves 30-40% on PNG file sizes. Ask the user if they want to run 
 
 ## Testing
 
-When adding new functionality beyond styling changes, consider adding integration tests. The test project (`Ai.Tlbx.MidTerm.Tests/`) uses xUnit with `WebApplicationFactory` for HTTP/WebSocket testing.
+When adding new functionality beyond styling changes, consider adding integration tests. The test project (`src/Ai.Tlbx.MidTerm.Tests/`) uses xUnit with `WebApplicationFactory` for HTTP/WebSocket testing.
 
 ## Architecture
 
@@ -81,42 +81,44 @@ When adding new functionality beyond styling changes, consider adding integratio
 ## Project Structure
 
 ```
-Ai.Tlbx.MidTerm/              Web Server (mt.exe)
-├── Program.cs                      Entry point, API endpoints, auth middleware
-├── Services/
-│   ├── AuthService.cs              Password hashing (PBKDF2), session tokens
-│   ├── SessionManager.cs           Terminal session lifecycle
-│   ├── UpdateService.cs            GitHub release check, version comparison
-│   ├── SettingsService.cs          Settings persistence
-│   └── AppJsonContext.cs           AOT-safe JSON serialization
-├── Settings/
-│   └── MidTermSettings.cs    Settings model (auth, defaults, appearance)
-├── src/
-│   ├── ts/                         TypeScript source (compiled by esbuild)
-│   │   ├── main.ts                 Entry point, initialization
-│   │   ├── types.ts                Shared interfaces and types
-│   │   ├── constants.ts            Protocol constants, themes
-│   │   ├── state.ts                Ephemeral state (WebSockets, DOM, timers)
-│   │   ├── stores/                 Reactive state (nanostores)
-│   │   ├── modules/                Feature modules (comms, terminal, sidebar, etc.)
-│   │   └── utils/                  DOM helpers, cookies, debounce
-│   └── static/                     Source static assets
-│       ├── *.html                  HTML pages (index, login, trust)
-│       ├── css/                    Stylesheets (app.css, xterm.css)
-│       ├── fonts/                  Web fonts (woff/woff2)
-│       ├── img/                    Images (logo.png)
-│       └── favicon/                Favicon files (ico, png)
-└── wwwroot/                        GENERATED (gitignored) - built by frontend-build.ps1
-    ├── *.html[.br]                 HTML (compressed in publish)
-    ├── js/terminal.min.js[.br]     Compiled TypeScript
-    ├── css/*.css[.br]              Stylesheets
-    ├── fonts/                      Web fonts (copied as-is)
-    └── img/, *.png, *.ico          Images and favicons (copied as-is)
+src/                                 C# solution and projects
+├── MidTerm.slnx                     Solution file
+├── Directory.Build.props            Shared build properties
+├── Ai.Tlbx.MidTerm/                 Web Server (mt.exe)
+│   ├── Program.cs                   Entry point, API endpoints, auth middleware
+│   ├── Services/
+│   │   ├── AuthService.cs           Password hashing (PBKDF2), session tokens
+│   │   ├── SessionManager.cs        Terminal session lifecycle
+│   │   ├── UpdateService.cs         GitHub release check, version comparison
+│   │   ├── SettingsService.cs       Settings persistence
+│   │   └── AppJsonContext.cs        AOT-safe JSON serialization
+│   ├── Settings/
+│   │   └── MidTermSettings.cs       Settings model (auth, defaults, appearance)
+│   ├── src/
+│   │   ├── ts/                      TypeScript source (compiled by esbuild)
+│   │   │   ├── main.ts              Entry point, initialization
+│   │   │   ├── types.ts             Shared interfaces and types
+│   │   │   ├── constants.ts         Protocol constants, themes
+│   │   │   ├── state.ts             Ephemeral state (WebSockets, DOM, timers)
+│   │   │   ├── stores/              Reactive state (nanostores)
+│   │   │   ├── modules/             Feature modules (comms, terminal, sidebar, etc.)
+│   │   │   └── utils/               DOM helpers, cookies, debounce
+│   │   └── static/                  Source static assets
+│   │       ├── *.html               HTML pages (index, login, trust)
+│   │       ├── css/                 Stylesheets (app.css, xterm.css)
+│   │       ├── fonts/               Web fonts (woff/woff2)
+│   │       ├── img/                 Images (logo.png)
+│   │       └── favicon/             Favicon files (ico, png)
+│   └── wwwroot/                     GENERATED (gitignored) - built by frontend-build.ps1
+├── Ai.Tlbx.MidTerm.Common/          Shared protocol code
+├── Ai.Tlbx.MidTerm.Tests/           Integration tests
+└── Ai.Tlbx.MidTerm.TtyHost/         TTY Host (all platforms)
+    ├── Program.cs                   Spawned per terminal, hosts PTY session
+    └── Pty/
+        └── IPtyConnection.cs        Cross-platform PTY abstraction
 
-Ai.Tlbx.MidTerm.TtyHost/      TTY Host (all platforms)
-├── Program.cs                      Spawned per terminal, hosts PTY session
-└── Pty/
-    └── IPtyConnection.cs           Cross-platform PTY abstraction
+scripts/                             Build and release scripts
+docs/                                Documentation and marketing assets
 ```
 
 ## API Endpoints
@@ -272,7 +274,7 @@ $activeSessionId.set(newId);            // Write
 **IMPORTANT:** Release notes are user-facing documentation shown in the changelog UI. Write detailed, helpful entries that explain what changed and why it matters.
 
 ```powershell
-.\release.ps1 -Bump patch `
+.\scripts\release.ps1 -Bump patch `
     -ReleaseTitle "Fix settings panel closing unexpectedly" `
     -ReleaseNotes @(
         "Fixed bug where settings panel would close when checking for updates",

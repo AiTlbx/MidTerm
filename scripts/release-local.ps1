@@ -121,7 +121,7 @@ if ($localCommit -ne $remoteCommit) {
 # ===========================================
 # PHASE 2: Compute local version (4th component)
 # ===========================================
-$versionJsonPath = "$PSScriptRoot\version.json"
+$versionJsonPath = "$PSScriptRoot\..\version.json"
 
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $baseWebVersion = $versionJson.web
@@ -184,7 +184,7 @@ Write-Host "  Updated: version.json" -ForegroundColor DarkGray
 # ===========================================
 Write-Host ""
 Write-Host "Building frontend..." -ForegroundColor Gray
-Push-Location Ai.Tlbx.MidTerm
+Push-Location "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm"
 pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Publish -Version $localWebVersion
 if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
 Pop-Location
@@ -194,21 +194,22 @@ Pop-Location
 # ===========================================
 Write-Host "Publishing mt.exe and mthost.exe..." -ForegroundColor Gray
 
+$repoRoot = "$PSScriptRoot\.."
 $mtJob = Start-Job -ScriptBlock {
     param($rid, $path, $ver, $envPath)
     $env:PATH = $envPath
     Set-Location $path
-    dotnet publish Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r $rid "-p:IsPublishing=true" "-p:Version=$ver" --verbosity quiet 2>&1
+    dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r $rid "-p:IsPublishing=true" "-p:Version=$ver" --verbosity quiet 2>&1
     $LASTEXITCODE
-} -ArgumentList $RID, $PWD, $localWebVersion, $env:PATH
+} -ArgumentList $RID, $repoRoot, $localWebVersion, $env:PATH
 
 $mthostJob = Start-Job -ScriptBlock {
     param($rid, $path, $ver, $envPath)
     $env:PATH = $envPath
     Set-Location $path
-    dotnet publish Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r $rid "-p:IsPublishing=true" "-p:Version=$ver" --verbosity quiet 2>&1
+    dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r $rid "-p:IsPublishing=true" "-p:Version=$ver" --verbosity quiet 2>&1
     $LASTEXITCODE
-} -ArgumentList $RID, $PWD, $localPtyVersion, $env:PATH
+} -ArgumentList $RID, $repoRoot, $localPtyVersion, $env:PATH
 
 $mtResult = Receive-Job -Job $mtJob -Wait
 $mthostResult = Receive-Job -Job $mthostJob -Wait
@@ -216,8 +217,8 @@ Remove-Job -Job $mtJob, $mthostJob
 
 # Check if publish succeeded by verifying output file exists
 # (MSBuild uses _REINVOKE_SUCCESS_ error to stop outer build after nested build completes, so exit code is unreliable)
-$mtExe = "Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe"
-$mthostExe = "Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe"
+$mtExe = "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe"
+$mthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe"
 if (-not (Test-Path $mtExe)) { throw "mt publish failed - output not found: $mtExe" }
 if (-not (Test-Path $mthostExe)) { throw "mthost publish failed - output not found: $mthostExe" }
 
@@ -226,8 +227,8 @@ if (-not (Test-Path $mthostExe)) { throw "mthost publish failed - output not fou
 # ===========================================
 Write-Host "Copying to $OutputDir..." -ForegroundColor Gray
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-Copy-Item "Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe" $OutputDir -Force
-Copy-Item "Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe" $OutputDir -Force
+Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe" $OutputDir -Force
+Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe" $OutputDir -Force
 
 # Write version.json to output (for update detection)
 @{

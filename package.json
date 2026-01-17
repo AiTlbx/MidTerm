@@ -3,14 +3,14 @@
   "private": true,
   "description": "Frontend build dependencies for MidTerm",
   "scripts": {
-    "typecheck": "tsc --noEmit -p Ai.Tlbx.MidTerm/tsconfig.json",
-    "lint": "eslint Ai.Tlbx.MidTerm/src/ts/",
-    "lint:fix": "eslint Ai.Tlbx.MidTerm/src/ts/ --fix",
-    "format": "prettier --write \"Ai.Tlbx.MidTerm/src/ts/**/*.ts\"",
-    "build": "npm run typecheck && npx esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
-    "build:dev": "npm run typecheck && npx esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
-    "watch": "npx esbuild Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --sourcemap=linked --outfile=Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020 --watch",
-    "watch:typecheck": "tsc --noEmit -p Ai.Tlbx.MidTerm/tsconfig.json --watch"
+    "typecheck": "tsc --noEmit -p src/Ai.Tlbx.MidTerm/tsconfig.json",
+    "lint": "eslint src/Ai.Tlbx.MidTerm/src/ts/",
+    "lint:fix": "eslint src/Ai.Tlbx.MidTerm/src/ts/ --fix",
+    "format": "prettier --write \"src/Ai.Tlbx.MidTerm/src/ts/**/*.ts\"",
+    "build": "npm run typecheck && npx esbuild src/Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=src/Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
+    "build:dev": "npm run typecheck && npx esbuild src/Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=src/Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020",
+    "watch": "npx esbuild src/Ai.Tlbx.MidTerm/src/ts/main.ts --bundle --sourcemap=linked --outfile=src/Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js --target=es2020 --watch",
+    "watch:typecheck": "tsc --noEmit -p src/Ai.Tlbx.MidTerm/tsconfig.json --watch"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

@@ -23,8 +23,8 @@ No separate signature is required — submitting a PR implies acceptance.
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)
 3. Make your changes
-4. Ensure the build passes: `dotnet build Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj`
-5. Run tests: `dotnet test Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj`
+4. Ensure the build passes: `dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj`
+5. Run tests: `dotnet test src/Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj`
 6. Submit a pull request
 
 ### Code Style
@@ -42,7 +42,7 @@ No separate signature is required — submitting a PR implies acceptance.
 - Single quotes for strings
 - Semicolons required
 
-See [CLAUDE.md](CLAUDE.md) for detailed style guidelines.
+See [CLAUDE.md](../CLAUDE.md) for detailed style guidelines.
 
 ## Development Setup
 
@@ -53,7 +53,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed style guidelines.
 ```bash
 git clone https://github.com/AiTlbx/MidTerm.git
 cd MidTerm
-dotnet build Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
+dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
 ```
 
 ## Questions?

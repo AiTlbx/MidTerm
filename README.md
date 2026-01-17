@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Marketing/Icons/FancyLogoToBeChanged.png" alt="MidTerm Banner" width="600">
+  <img src="docs/marketing/Icons/FancyLogoToBeChanged.png" alt="MidTerm Banner" width="600">
 </p>
 
 # MidTerm
@@ -12,7 +12,7 @@
 
 **Your terminal, anywhere.** Run AI coding agents and TUI apps on your machine, access them from any browser.
 
-![MidTerm Screenshot](Marketing/Screenshots/sc1.png)
+![MidTerm Screenshot](docs/marketing/Screenshots/sc1.png)
 
 ## The Problem
 
@@ -162,10 +162,10 @@ git clone https://github.com/AiTlbx/MidTerm.git
 cd MidTerm
 
 # Build
-dotnet build Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
+dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
 
 # AOT binary (platform-specific)
-cd Ai.Tlbx.MidTerm
+cd src/Ai.Tlbx.MidTerm
 ./build-aot-macos.sh     # macOS
 ./build-aot.cmd          # Windows
 ./build-aot-linux.sh     # Linux
@@ -173,9 +173,9 @@ cd Ai.Tlbx.MidTerm
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
-**Note:** All contributions require acceptance of our [Contributor License Agreement](CLA.md).
+**Note:** All contributions require acceptance of our [Contributor License Agreement](docs/CLA.md).
 
 ## License
 

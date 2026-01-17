@@ -13,7 +13,7 @@ export default tseslint.config(
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parserOptions: {
-        project: './Ai.Tlbx.MidTerm/tsconfig.json',
+        project: './src/Ai.Tlbx.MidTerm/tsconfig.json',
       },
     },
     rules: {

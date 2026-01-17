@@ -86,12 +86,12 @@ coverage*.info
 nul
 
 # Generated wwwroot (entire folder is build output from src/static + TypeScript)
-Ai.Tlbx.MidTerm/wwwroot/
-Ai.Tlbx.MidTerm/dist/
+src/Ai.Tlbx.MidTerm/wwwroot/
+src/Ai.Tlbx.MidTerm/dist/
 
 # Node.js
 node_modules/
 
 # Marketing generated output
-Marketing/output/
+docs/marketing/output/
 tmpclaude-*

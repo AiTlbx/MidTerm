@@ -37,7 +37,7 @@ The server compiles to a self-contained native binary via .NET's AOT compilation
 
 **Source-generated serialization**: `AppJsonContext.cs` declares all 48 serializable types at compile time. The runtime never touches reflection. See `Services/AppJsonContext.cs`.
 
-**Platform APIs via P/Invoke**: ConPTY on Windows, forkpty on Unix. Direct system calls, no abstraction layers. See `Ai.Tlbx.MidTerm.TtyHost/Pty/`.
+**Platform APIs via P/Invoke**: ConPTY on Windows, forkpty on Unix. Direct system calls, no abstraction layers. See `src/Ai.Tlbx.MidTerm.TtyHost/Pty/`.
 
 **Single-command deployment**: `dotnet publish -r win-x64 -c Release` produces one executable. No runtime installation, no dependencies.
 
@@ -311,7 +311,7 @@ Terminal multiplexing in a browser involves inherent constraints:
 
 ## Testing
 
-The test project (`Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
+The test project (`src/Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
 
 - REST API endpoints (sessions, version, resize)
 - WebSocket protocols (mux binary frames, state JSON updates)
@@ -328,14 +328,14 @@ The test project (`Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
 
 | Area | Key Files |
 |------|-----------|
-| Entry point | `Ai.Tlbx.MidTerm/Program.cs` |
-| Mux protocol | `Ai.Tlbx.MidTerm/Services/MuxClient.cs`, `MuxProtocol.cs` |
-| Session management | `Ai.Tlbx.MidTerm/Services/TtyHostSessionManager.cs` |
-| AOT JSON | `Ai.Tlbx.MidTerm/Services/AppJsonContext.cs` |
-| PTY (Windows) | `Ai.Tlbx.MidTerm.TtyHost/Pty/ConPty/` |
-| PTY (Unix) | `Ai.Tlbx.MidTerm.TtyHost/Pty/UnixPty.cs` |
-| Frontend stores | `Ai.Tlbx.MidTerm/src/ts/stores/index.ts` |
-| Ephemeral state | `Ai.Tlbx.MidTerm/src/ts/state.ts` |
-| Frontend wiring | `Ai.Tlbx.MidTerm/src/ts/main.ts` |
-| Mux client (TS) | `Ai.Tlbx.MidTerm/src/ts/modules/comms/muxChannel.ts` |
-| State client (TS) | `Ai.Tlbx.MidTerm/src/ts/modules/comms/stateChannel.ts` |
+| Entry point | `src/Ai.Tlbx.MidTerm/Program.cs` |
+| Mux protocol | `src/Ai.Tlbx.MidTerm/Services/MuxClient.cs`, `MuxProtocol.cs` |
+| Session management | `src/Ai.Tlbx.MidTerm/Services/TtyHostSessionManager.cs` |
+| AOT JSON | `src/Ai.Tlbx.MidTerm/Services/AppJsonContext.cs` |
+| PTY (Windows) | `src/Ai.Tlbx.MidTerm.TtyHost/Pty/ConPty/` |
+| PTY (Unix) | `src/Ai.Tlbx.MidTerm.TtyHost/Pty/UnixPty.cs` |
+| Frontend stores | `src/Ai.Tlbx.MidTerm/src/ts/stores/index.ts` |
+| Ephemeral state | `src/Ai.Tlbx.MidTerm/src/ts/state.ts` |
+| Frontend wiring | `src/Ai.Tlbx.MidTerm/src/ts/main.ts` |
+| Mux client (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/comms/muxChannel.ts` |
+| State client (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/comms/stateChannel.ts` |

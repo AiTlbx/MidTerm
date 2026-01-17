@@ -175,10 +175,10 @@ if ($localCommit -ne $remoteCommit) {
 }
 
 # Files to update
-$versionJsonPath = "$PSScriptRoot\version.json"
-$webCsprojPath = "$PSScriptRoot\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj"
-$ttyHostCsprojPath = "$PSScriptRoot\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj"
-$ttyHostProgramPath = "$PSScriptRoot\Ai.Tlbx.MidTerm.TtyHost\Program.cs"
+$versionJsonPath = "$PSScriptRoot\..\version.json"
+$webCsprojPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj"
+$ttyHostCsprojPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj"
+$ttyHostProgramPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm.TtyHost\Program.cs"
 
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
