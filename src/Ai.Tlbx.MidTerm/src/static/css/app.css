@@ -104,6 +104,31 @@
     --transition-slow: 0.3s;
 }
 
+/* Global dark scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--btn-secondary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--btn-secondary-hover);
+}
+
+/* Firefox scrollbar */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--btn-secondary) var(--bg-primary);
+}
+
 /* Utility classes */
 .truncate {
     white-space: nowrap;
@@ -3767,32 +3792,20 @@ html, body {
    ========================================================================== */
 
 .chat-panel {
-    position: fixed;
-    left: 230px;
-    top: 0;
-    bottom: 0;
+    order: -1;
     width: 280px;
-    background-color: var(--bg-secondary);
+    flex-shrink: 0;
+    background-color: var(--bg-sidebar);
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    z-index: 50;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    transition: width 0.2s ease, margin-left 0.2s ease;
 }
 
 .chat-panel.hidden {
-    transform: translateX(-280px);
-    opacity: 0;
-    pointer-events: none;
-}
-
-/* Adjust chat panel position when sidebar is collapsed */
-.terminal-page.sidebar-collapsed .chat-panel {
-    left: 0;
-}
-
-.terminal-page.sidebar-collapsed .chat-panel.hidden {
-    transform: translateX(-280px);
+    width: 0;
+    margin-left: -1px;
+    overflow: hidden;
 }
 
 .chat-header {

@@ -12,7 +12,7 @@ import {
   setToggleEnabled,
   setToggleRecording,
 } from './sidebar/voiceSection';
-import { addChatMessage, showChatPanel, clearChatMessages } from './chat';
+import { addChatMessage, showChatPanel, clearChatMessages, toggleChatPanel } from './chat';
 import type { VoiceHealthResponse, VoiceProvider } from '../types';
 
 const log = createLogger('voice');
@@ -554,6 +554,12 @@ export function bindVoiceEvents(): void {
     syncBtn.addEventListener('click', () => {
       testVoiceServerConnection();
     });
+  }
+
+  // Chat toggle button
+  const chatBtn = document.getElementById('btn-voice-chat');
+  if (chatBtn) {
+    chatBtn.addEventListener('click', () => toggleChatPanel());
   }
 
   // Voice selection change
