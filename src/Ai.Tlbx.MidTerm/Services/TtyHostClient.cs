@@ -47,6 +47,11 @@ public sealed class TtyHostClient : IAsyncDisposable
     private Task? _heartbeatTask;
     private Task? _reconnectTask;
     private CancellationTokenSource? _readCancellation; // Allows heartbeat to unblock reads instantly
+    private CancellationTokenSource? _readTimeoutCts;
+    private CancellationTokenRegistration _timeoutReg;
+    private CancellationTokenRegistration _externalReg;
+    private static readonly Action<object?> s_cancelCallback = static state =>
+        ((CancellationTokenSource?)state)?.Cancel();
     private bool _disposed;
     private bool _intentionalDisconnect;
     private int _reconnectAttempts;
@@ -448,25 +453,35 @@ public sealed class TtyHostClient : IAsyncDisposable
                     var stream = _stream;
                     if (stream is null) continue;
 
-                    // Create cancellation that heartbeat can use to unblock us immediately
-                    _readCancellation?.Dispose();
-                    _readCancellation = new CancellationTokenSource();
+                    // Initialize or reset reusable CTS instances (zero-alloc when TryReset succeeds)
+                    if (_readCancellation is null || !_readCancellation.TryReset())
+                    {
+                        _readCancellation?.Dispose();
+                        _readCancellation = new CancellationTokenSource();
+                    }
+                    if (_readTimeoutCts is null || !_readTimeoutCts.TryReset())
+                    {
+                        _readTimeoutCts?.Dispose();
+                        _readTimeoutCts = new CancellationTokenSource();
+                    }
+                    _readTimeoutCts.CancelAfter(ReadTimeoutMs);
 
-                    // Use timeout on read to detect stale connections after standby/resume
-                    // If the pipe is broken, ReadAsync may hang forever without throwing
-                    using var readTimeoutCts = new CancellationTokenSource(ReadTimeoutMs);
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, readTimeoutCts.Token, _readCancellation.Token);
+                    // Manual linking via UnsafeRegister (zero-alloc when tokens don't cancel)
+                    _timeoutReg.Dispose();
+                    _externalReg.Dispose();
+                    _timeoutReg = _readTimeoutCts.Token.UnsafeRegister(s_cancelCallback, _readCancellation);
+                    _externalReg = ct.UnsafeRegister(s_cancelCallback, _readCancellation);
 
                     int bytesRead;
                     try
                     {
-                        bytesRead = await stream.ReadAsync(headerBuffer, linkedCts.Token).ConfigureAwait(false);
+                        bytesRead = await stream.ReadAsync(headerBuffer, _readCancellation.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (_readCancellation?.IsCancellationRequested == true && !ct.IsCancellationRequested)
                     {
                         continue;
                     }
-                    catch (OperationCanceledException) when (readTimeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                    catch (OperationCanceledException) when (_readTimeoutCts?.IsCancellationRequested == true && !ct.IsCancellationRequested)
                     {
                         continue;
                     }
@@ -850,6 +865,9 @@ public sealed class TtyHostClient : IAsyncDisposable
 
         _cts?.Dispose();
         _readCancellation?.Dispose();
+        _readTimeoutCts?.Dispose();
+        _timeoutReg.Dispose();
+        _externalReg.Dispose();
         _writeLock.Dispose();
         _requestLock.Dispose();
 

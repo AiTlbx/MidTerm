@@ -571,51 +571,61 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private void SubscribeToClient(TtyHostClient client)
     {
-        client.OnOutput += (sessionId, cols, rows, data) => OnOutput?.Invoke(sessionId, cols, rows, data);
-        client.OnProcessEvent += (sessionId, payload) => OnProcessEvent?.Invoke(sessionId, payload);
-        client.OnForegroundChanged += (sessionId, payload) =>
-        {
-            // Update cached session info with foreground data
-            if (_sessionCache.TryGetValue(sessionId, out var info))
-            {
-                info.ForegroundPid = payload.Pid;
-                info.ForegroundName = payload.Name;
-                info.ForegroundCommandLine = payload.CommandLine;
-                info.CurrentDirectory = payload.Cwd;
-            }
-            OnForegroundChanged?.Invoke(sessionId, payload);
-        };
-        client.OnStateChanged += async sessionId =>
-        {
-            // Update cached info
-            if (_clients.TryGetValue(sessionId, out var c))
-            {
-                var info = await c.GetInfoAsync().ConfigureAwait(false);
-                if (info is not null)
-                {
-                    // Preserve web-server-only state that mthost doesn't track
-                    if (_sessionCache.TryGetValue(sessionId, out var existing))
-                    {
-                        info.TerminalTitle = existing.TerminalTitle;
-                        info.ManuallyNamed = existing.ManuallyNamed;
-                    }
-                    _sessionCache[sessionId] = info;
-                }
+        client.OnOutput += HandleClientOutput;
+        client.OnProcessEvent += HandleClientProcessEvent;
+        client.OnForegroundChanged += HandleClientForegroundChanged;
+        client.OnStateChanged += HandleClientStateChanged;
+    }
 
-                if (info is null || !info.IsRunning)
+    private void HandleClientOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
+    {
+        OnOutput?.Invoke(sessionId, cols, rows, data);
+    }
+
+    private void HandleClientProcessEvent(string sessionId, ProcessEventPayload payload)
+    {
+        OnProcessEvent?.Invoke(sessionId, payload);
+    }
+
+    private void HandleClientForegroundChanged(string sessionId, ForegroundChangePayload payload)
+    {
+        if (_sessionCache.TryGetValue(sessionId, out var info))
+        {
+            info.ForegroundPid = payload.Pid;
+            info.ForegroundName = payload.Name;
+            info.ForegroundCommandLine = payload.CommandLine;
+            info.CurrentDirectory = payload.Cwd;
+        }
+        OnForegroundChanged?.Invoke(sessionId, payload);
+    }
+
+    private async void HandleClientStateChanged(string sessionId)
+    {
+        if (_clients.TryGetValue(sessionId, out var c))
+        {
+            var info = await c.GetInfoAsync().ConfigureAwait(false);
+            if (info is not null)
+            {
+                if (_sessionCache.TryGetValue(sessionId, out var existing))
                 {
-                    // Session ended - clean up
-                    if (_clients.TryRemove(sessionId, out var removed))
-                    {
-                        await removed.DisposeAsync().ConfigureAwait(false);
-                    }
-                    _sessionCache.TryRemove(sessionId, out _);
+                    info.TerminalTitle = existing.TerminalTitle;
+                    info.ManuallyNamed = existing.ManuallyNamed;
                 }
+                _sessionCache[sessionId] = info;
             }
 
-            OnStateChanged?.Invoke(sessionId);
-            NotifyStateChange();
-        };
+            if (info is null || !info.IsRunning)
+            {
+                if (_clients.TryRemove(sessionId, out var removed))
+                {
+                    await removed.DisposeAsync().ConfigureAwait(false);
+                }
+                _sessionCache.TryRemove(sessionId, out _);
+            }
+        }
+
+        OnStateChanged?.Invoke(sessionId);
+        NotifyStateChange();
     }
 
     public async ValueTask DisposeAsync()

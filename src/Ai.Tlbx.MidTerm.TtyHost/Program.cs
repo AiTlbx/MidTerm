@@ -606,12 +606,12 @@ public static class Program
                         break;
 
                     case TtyHostMessageType.Input:
-                        var inputData = payload.ToArray();
-                        if (inputData.Length < 20)
+                        var inputSlice = payloadBuffer.AsMemory(0, payloadLength);
+                        if (inputSlice.Length < 20)
                         {
-                            Log.Verbose(() => $"[IPC-INPUT] {BitConverter.ToString(inputData)}");
+                            Log.Verbose(() => $"[IPC-INPUT] {BitConverter.ToString(inputSlice.ToArray())}");
                         }
-                        await session.SendInputAsync(inputData, ct).ConfigureAwait(false);
+                        await session.SendInputAsync(inputSlice, ct).ConfigureAwait(false);
                         break;
 
                     case TtyHostMessageType.Resize:
@@ -877,11 +877,11 @@ internal sealed class TerminalSession
         }
     }
 
-    public async Task SendInputAsync(byte[] data, CancellationToken ct)
+    public async Task SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
     {
         if (data.Length < 20)
         {
-            Log.Verbose(() => $"[PTY-WRITE] {BitConverter.ToString(data)}");
+            Log.Verbose(() => $"[PTY-WRITE] {BitConverter.ToString(data.ToArray())}");
         }
         await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
         await _pty.WriterStream.FlushAsync(ct).ConfigureAwait(false);

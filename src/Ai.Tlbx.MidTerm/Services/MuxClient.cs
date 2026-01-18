@@ -26,6 +26,11 @@ public sealed class MuxClient : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _processor;
 
+    private CancellationTokenSource? _loopTimeoutCts;
+    private CancellationTokenRegistration _loopCtReg;
+    private static readonly Action<object?> s_cancelCallback = static state =>
+        ((CancellationTokenSource?)state)?.Cancel();
+
     private volatile string? _activeSessionId;
     private int _droppedFrameCount;
 
@@ -196,9 +201,15 @@ public sealed class MuxClient : IAsyncDisposable
                 // 4. Wait for more data OR timeout (to check time-based flushes)
                 try
                 {
-                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(LoopCheckInterval);
-                    await reader.WaitToReadAsync(timeoutCts.Token).ConfigureAwait(false);
+                    if (_loopTimeoutCts is null || !_loopTimeoutCts.TryReset())
+                    {
+                        _loopCtReg.Dispose();
+                        _loopTimeoutCts?.Dispose();
+                        _loopTimeoutCts = new CancellationTokenSource();
+                        _loopCtReg = ct.UnsafeRegister(s_cancelCallback, _loopTimeoutCts);
+                    }
+                    _loopTimeoutCts.CancelAfter(LoopCheckInterval);
+                    await reader.WaitToReadAsync(_loopTimeoutCts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
@@ -420,6 +431,8 @@ public sealed class MuxClient : IAsyncDisposable
         }
         _sessionBuffers.Clear();
 
+        _loopCtReg.Dispose();
+        _loopTimeoutCts?.Dispose();
         _cts.Dispose();
         _sendLock.Dispose();
     }

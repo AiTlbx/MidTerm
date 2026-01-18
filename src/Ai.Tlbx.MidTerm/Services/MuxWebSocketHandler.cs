@@ -190,12 +190,12 @@ public sealed class MuxWebSocketHandler
         switch (type)
         {
             case MuxProtocol.TypeTerminalInput:
-                var inputBytes = payload.ToArray();
-                if (inputBytes.Length < 20)
+                var payloadMemory = data.Slice(MuxProtocol.HeaderSize);
+                if (payloadMemory.Length < 20)
                 {
-                    Log.Verbose(() => $"[WS-INPUT] {sessionId}: {BitConverter.ToString(inputBytes)}");
+                    Log.Verbose(() => $"[WS-INPUT] {sessionId}: {BitConverter.ToString(payloadMemory.ToArray())}");
                 }
-                await _muxManager.HandleInputAsync(sessionId, new ReadOnlyMemory<byte>(inputBytes));
+                await _muxManager.HandleInputAsync(sessionId, payloadMemory);
                 break;
 
             case MuxProtocol.TypeResize:

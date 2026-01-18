@@ -57,8 +57,7 @@ public sealed class StateWebSocketHandler
             try
             {
                 if (ws.State != WebSocketState.Open) return;
-                var json = JsonSerializer.Serialize(payload, typeInfo);
-                var bytes = Encoding.UTF8.GetBytes(json);
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
                 await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
             }
             catch
