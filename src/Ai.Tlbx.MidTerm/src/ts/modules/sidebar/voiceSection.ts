@@ -84,26 +84,6 @@ export function setVoiceStatus(status: string): void {
 }
 
 /**
- * Set mic button active state
- */
-export function setMicActive(active: boolean): void {
-  const micBtn = document.getElementById('btn-voice-mic');
-  if (micBtn) {
-    micBtn.classList.toggle('active', active);
-  }
-}
-
-/**
- * Set toggle button enabled state
- */
-export function setToggleEnabled(enabled: boolean): void {
-  const toggleBtn = document.getElementById('btn-voice-toggle') as HTMLButtonElement | null;
-  if (toggleBtn) {
-    toggleBtn.disabled = !enabled;
-  }
-}
-
-/**
  * Set toggle button recording state
  */
 export function setToggleRecording(recording: boolean): void {

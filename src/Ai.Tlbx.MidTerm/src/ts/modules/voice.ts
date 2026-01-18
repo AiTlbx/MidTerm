@@ -6,12 +6,7 @@
  */
 
 import { createLogger } from './logging';
-import {
-  setVoiceStatus,
-  setMicActive,
-  setToggleEnabled,
-  setToggleRecording,
-} from './sidebar/voiceSection';
+import { setVoiceStatus, setToggleRecording } from './sidebar/voiceSection';
 import { addChatMessage, showChatPanel, clearChatMessages, toggleChatPanel } from './chat';
 import type { VoiceHealthResponse, VoiceProvider } from '../types';
 
@@ -174,9 +169,55 @@ export function isVoiceServerAvailable(): boolean {
 }
 
 /**
+ * Check microphone permission status without triggering a prompt.
+ * Returns 'granted', 'prompt', or 'denied'.
+ */
+export async function checkMicrophonePermissionStatus(): Promise<'granted' | 'prompt' | 'denied'> {
+  try {
+    if (!navigator.permissions) return 'prompt';
+    const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+    return result.state as 'granted' | 'prompt' | 'denied';
+  } catch {
+    return 'prompt';
+  }
+}
+
+/**
+ * Populate the microphone dropdown passively (only if permission already granted).
+ * Does not open audio devices or trigger permission prompts.
+ */
+export async function populateMicDropdownPassive(): Promise<void> {
+  const micSelect = document.getElementById('mic-select') as HTMLSelectElement | null;
+  if (!micSelect) return;
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+    const hasLabels = audioInputs.some((d) => d.label.length > 0);
+
+    if (!hasLabels) {
+      micSelect.innerHTML = '<option value="">Select microphone...</option>';
+      return;
+    }
+
+    micSelect.innerHTML = '<option value="">Default</option>';
+    for (const device of audioInputs) {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.textContent = device.label || `Microphone ${device.deviceId.slice(0, 8)}`;
+      micSelect.appendChild(option);
+    }
+    log.info(() => `Microphone dropdown populated passively with ${audioInputs.length} devices`);
+  } catch (error) {
+    log.warn(() => `Failed to enumerate devices passively: ${error}`);
+    micSelect.innerHTML = '<option value="">Select microphone...</option>';
+  }
+}
+
+/**
  * Request microphone permission and initialize audio
  */
-export async function requestMicrophonePermission(): Promise<boolean> {
+async function requestMicrophonePermission(): Promise<boolean> {
   try {
     log.info(() => 'Requesting microphone permission');
 
@@ -210,11 +251,20 @@ export async function requestMicrophonePermission(): Promise<boolean> {
 }
 
 /**
- * Start a voice session - connect to MidTerm.Voice and begin recording
+ * Start a voice session - connect to MidTerm.Voice and begin recording.
+ * Single entry point: requests mic permission if needed, then starts session.
  */
 export async function startVoiceSession(): Promise<void> {
   if (isSessionActive) {
     log.warn(() => 'Voice session already active');
+    return;
+  }
+
+  setVoiceStatus('Initializing...');
+
+  // Request permission if needed (this opens audio devices)
+  const permissionGranted = await requestMicrophonePermission();
+  if (!permissionGranted) {
     return;
   }
 
@@ -517,25 +567,12 @@ async function testVoiceServerConnection(): Promise<void> {
  * Bind voice button event handlers
  */
 export function bindVoiceEvents(): void {
-  const micBtn = document.getElementById('btn-voice-mic');
   const toggleBtn = document.getElementById('btn-voice-toggle');
   const voiceSelect = document.getElementById('voice-select') as HTMLSelectElement | null;
   const micSelect = document.getElementById('mic-select') as HTMLSelectElement | null;
   const speedSlider = document.getElementById('voice-speed') as HTMLInputElement | null;
 
-  log.info(() => `[INIT] Binding voice events: micBtn=${!!micBtn} toggleBtn=${!!toggleBtn}`);
-
-  if (micBtn) {
-    micBtn.addEventListener('click', async () => {
-      log.info(() => '[UI] Mic button clicked');
-      const success = await requestMicrophonePermission();
-      log.info(() => `[UI] Mic permission result: ${success}`);
-      if (success) {
-        setMicActive(true);
-        setToggleEnabled(true);
-      }
-    });
-  }
+  log.info(() => `[INIT] Binding voice events: toggleBtn=${!!toggleBtn}`);
 
   if (toggleBtn) {
     toggleBtn.addEventListener('click', async () => {
@@ -575,8 +612,22 @@ export function bindVoiceEvents(): void {
     });
   }
 
-  // Microphone selection change (stored for next recording)
+  // Microphone dropdown focus - request permission if empty
   if (micSelect) {
+    micSelect.addEventListener('focus', async () => {
+      const hasDevices =
+        micSelect.options.length > 1 ||
+        (micSelect.options.length === 1 && micSelect.options[0]?.value !== '');
+      if (!hasDevices) {
+        log.info(() => '[UI] Mic dropdown focused with no devices, requesting permission');
+        const success = await requestMicrophonePermission();
+        if (success) {
+          await populateMicDropdown();
+        }
+      }
+    });
+
+    // Microphone selection change (stored for next recording)
     micSelect.addEventListener('change', () => {
       log.info(() => `[UI] Microphone changed: ${micSelect.value || 'default'}`);
     });
@@ -606,5 +657,23 @@ export function bindVoiceEvents(): void {
     window.setOnRecordingState((isRecording: boolean) => {
       log.info(() => `[AUDIO] Recording state changed: ${isRecording}`);
     });
+  }
+}
+
+/**
+ * Initialize voice controls on page load.
+ * Passively checks permission status and pre-populates mic dropdown if granted.
+ */
+export async function initVoiceControls(): Promise<void> {
+  const status = await checkMicrophonePermissionStatus();
+  log.info(() => `[INIT] Microphone permission status: ${status}`);
+
+  if (status === 'granted') {
+    await populateMicDropdownPassive();
+    setVoiceStatus('Ready');
+  } else if (status === 'denied') {
+    setVoiceStatus('Mic blocked');
+  } else {
+    setVoiceStatus('Click Play to start');
   }
 }

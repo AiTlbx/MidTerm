@@ -64,7 +64,7 @@ import {
   initSessionDrag,
   initTrafficIndicator,
 } from './modules/sidebar';
-import { bindVoiceEvents } from './modules/voice';
+import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel, restoreChatPanelState } from './modules/chat';
 import { toggleSettings, closeSettings, applyReceivedSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
@@ -173,6 +173,7 @@ async function init(): Promise<void> {
   initNetworkSection();
   initVoiceSection();
   bindVoiceEvents();
+  await initVoiceControls();
   initChatPanel();
   restoreChatPanelState();
   setupResizeObserver();
