@@ -253,14 +253,21 @@ html, body {
     align-items: center;
     justify-content: center;
     cursor: grab;
-    opacity: 0;
-    transition: opacity 0.15s;
+    opacity: 0.35;
+    transition: opacity 0.15s, background-color 0.15s;
     flex-shrink: 0;
     margin-right: 4px;
+    border-radius: 3px;
+}
+
+.drag-handle:hover {
+    background-color: rgba(122, 162, 247, 0.15);
+    opacity: 1;
 }
 
 .drag-handle:active {
     cursor: grabbing;
+    background-color: rgba(122, 162, 247, 0.25);
 }
 
 .drag-handle-dots {

@@ -12,6 +12,7 @@ let draggedSessionId: string | null = null;
 let draggedElement: HTMLElement | null = null;
 let dropIndicatorPosition: 'above' | 'below' | null = null;
 let dragImageElement: HTMLElement | null = null;
+let dragStartedFromHandle = false;
 
 /**
  * Initialize drag-and-drop for the session list
@@ -19,6 +20,12 @@ let dragImageElement: HTMLElement | null = null;
 export function initSessionDrag(): void {
   const sessionList = dom.sessionList;
   if (!sessionList) return;
+
+  // Track mousedown on drag handles to know if drag started from handle
+  sessionList.addEventListener('mousedown', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    dragStartedFromHandle = !!target.closest('.drag-handle');
+  });
 
   sessionList.addEventListener('dragstart', handleDragStart);
   sessionList.addEventListener('dragend', handleDragEnd);
@@ -32,9 +39,8 @@ function handleDragStart(e: DragEvent): void {
   const sessionItem = target.closest('.session-item') as HTMLElement;
   if (!sessionItem) return;
 
-  // Only allow drag from handle
-  const dragHandle = (e.target as HTMLElement).closest('.drag-handle');
-  if (!dragHandle) {
+  // Only allow drag from handle (tracked via mousedown)
+  if (!dragStartedFromHandle) {
     e.preventDefault();
     return;
   }
@@ -80,6 +86,7 @@ function handleDragEnd(_e: DragEvent): void {
   draggedSessionId = null;
   draggedElement = null;
   dropIndicatorPosition = null;
+  dragStartedFromHandle = false;
 }
 
 function handleDragOver(e: DragEvent): void {
