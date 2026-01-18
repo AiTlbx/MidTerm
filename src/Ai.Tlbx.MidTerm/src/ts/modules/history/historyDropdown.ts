@@ -114,113 +114,138 @@ function renderDropdownContent(): void {
 
   content.classList.remove('hidden');
   empty.classList.add('hidden');
+  content.innerHTML = '';
 
-  content.innerHTML = entries
-    .map(
-      (entry) => `
-    <div class="history-item" data-id="${entry.id}" title="${escapeHtml(getFullCommandLine(entry))}">
-      <button class="history-item-star ${entry.isStarred ? 'starred' : ''}" title="${entry.isStarred ? 'Unstar' : 'Star'}">
-        ${entry.isStarred ? '\u2605' : '\u2606'}
-      </button>
-      <div class="history-item-info">
-        <span class="history-item-text truncate">${escapeHtml(getDisplayText(entry))}</span>
-        <span class="history-item-meta">${entry.weight}x</span>
-      </div>
-      <button class="history-item-delete" title="Remove">${icon('close')}</button>
-    </div>
-  `,
-    )
-    .join('');
+  entries.forEach((entry) => {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.dataset.id = entry.id;
 
-  content.querySelectorAll('.history-item').forEach((item) => {
-    const id = item.getAttribute('data-id');
-    if (!id) return;
+    const starBtn = document.createElement('button');
+    starBtn.className = 'history-item-star' + (entry.isStarred ? ' starred' : '');
+    starBtn.title = entry.isStarred ? 'Unstar' : 'Star';
+    starBtn.textContent = entry.isStarred ? '\u2605' : '\u2606';
+    starBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      starBtn.disabled = true;
+      starBtn.classList.add('loading');
+      await toggleStar(entry.id);
+      await loadHistory();
+      renderDropdownContent();
+    });
+    item.appendChild(starBtn);
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'history-item-info';
+
+    const fgIndicator = createForegroundIndicator(
+      entry.workingDirectory,
+      entry.commandLine,
+      entry.executable,
+    );
+    infoDiv.appendChild(fgIndicator);
+
+    const meta = document.createElement('span');
+    meta.className = 'history-item-meta';
+    meta.textContent = `${entry.weight}x`;
+    infoDiv.appendChild(meta);
+
+    item.appendChild(infoDiv);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'history-item-delete';
+    deleteBtn.title = 'Remove';
+    deleteBtn.innerHTML = icon('close');
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (entry.isStarred) {
+        if (!confirm('Delete starred item?')) {
+          return;
+        }
+      }
+      await removeHistoryEntry(entry.id);
+      await loadHistory();
+      renderDropdownContent();
+    });
+    item.appendChild(deleteBtn);
 
     item.addEventListener('click', (e) => {
       const target = e.target as Element;
       if (target.closest('.history-item-delete') || target.closest('.history-item-star')) {
         return;
       }
-
-      const entry = cachedEntries.find((en) => en.id === id);
-      if (entry && onSpawnSession) {
+      if (onSpawnSession) {
         closeHistoryDropdown();
         onSpawnSession(entry);
       }
     });
-  });
 
-  content.querySelectorAll('.history-item-star').forEach((btn) => {
-    const item = btn.closest('.history-item');
-    const id = item?.getAttribute('data-id');
-    if (!id) return;
-
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const starBtn = btn as HTMLButtonElement;
-      starBtn.disabled = true;
-      starBtn.classList.add('loading');
-
-      await toggleStar(id);
-      await loadHistory();
-      renderDropdownContent();
-    });
-  });
-
-  content.querySelectorAll('.history-item-delete').forEach((btn) => {
-    const item = btn.closest('.history-item');
-    const id = item?.getAttribute('data-id');
-    if (!id) return;
-
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-
-      const entry = cachedEntries.find((en) => en.id === id);
-      if (entry?.isStarred) {
-        if (!confirm('Delete starred item?')) {
-          return;
-        }
-      }
-
-      await removeHistoryEntry(id);
-      await loadHistory();
-      renderDropdownContent();
-    });
+    content.appendChild(item);
   });
 }
 
-function getDisplayText(entry: LaunchEntry): string {
-  const cmd = entry.commandLine ?? entry.executable;
-  const truncatedCmd = cmd.length > 25 ? cmd.slice(0, 25) + '\u2026' : cmd;
-  const dir = shortenPath(entry.workingDirectory);
-  return `${truncatedCmd} \u2192 ${dir}`;
+/**
+ * Create foreground indicator element matching sidebar style.
+ * Layout: ...directory> process...
+ */
+function createForegroundIndicator(
+  cwd: string,
+  commandLine: string | null,
+  processName: string,
+): HTMLElement {
+  const container = document.createElement('span');
+  container.className = 'session-foreground';
+
+  const cmdDisplay = stripExePath(commandLine ?? processName);
+  container.title = `${commandLine ?? processName}\n${cwd}`;
+
+  const cwdSpan = document.createElement('span');
+  cwdSpan.className = 'fg-cwd';
+  cwdSpan.textContent = cwd;
+  container.appendChild(cwdSpan);
+
+  const separator = document.createElement('span');
+  separator.className = 'fg-separator';
+  separator.textContent = '>';
+  container.appendChild(separator);
+
+  const processSpan = document.createElement('span');
+  processSpan.className = 'fg-process';
+  processSpan.textContent = cmdDisplay;
+  container.appendChild(processSpan);
+
+  return container;
 }
 
-function getFullCommandLine(entry: LaunchEntry): string {
-  const cmd = entry.commandLine ?? entry.executable;
-  return `${cmd}\n${entry.workingDirectory}`;
-}
+/**
+ * Strip executable path from command line, keeping just the exe name and arguments.
+ */
+function stripExePath(commandLine: string): string {
+  const trimmed = commandLine.trim();
+  if (!trimmed) return trimmed;
 
-function shortenPath(path: string): string {
-  const parts = path.replace(/\\/g, '/').split('/');
-  if (parts.length <= 2) {
-    return path;
-  }
-
-  const first = parts[0];
-  const second = parts[1];
-
-  if (first === '' && second === 'home') {
-    return '~/' + parts.slice(3).join('/');
-  }
-
-  if (first && /^[A-Z]:$/i.test(first)) {
-    if (parts.length > 3) {
-      return first + '/.../' + parts.slice(-2).join('/');
+  if (trimmed.startsWith('"')) {
+    const endQuote = trimmed.indexOf('"', 1);
+    if (endQuote > 1) {
+      const quotedPath = trimmed.slice(1, endQuote);
+      const rest = trimmed.slice(endQuote + 1);
+      const exeName = (quotedPath.replace(/\\/g, '/').split('/').pop() || quotedPath).replace(
+        /\.exe$/i,
+        '',
+      );
+      return (exeName + rest).trim();
     }
   }
 
-  return parts.slice(-2).join('/');
+  const spaceIdx = trimmed.indexOf(' ');
+  if (spaceIdx === -1) {
+    return (trimmed.replace(/\\/g, '/').split('/').pop() || trimmed).replace(/\.exe$/i, '');
+  }
+
+  const exePart = trimmed.slice(0, spaceIdx);
+  const argsPart = trimmed.slice(spaceIdx);
+  const exeName = (exePart.replace(/\\/g, '/').split('/').pop() || exePart).replace(/\.exe$/i, '');
+  return (exeName + argsPart).trim();
 }
 
 function handleOutsideClick(e: MouseEvent): void {
@@ -230,14 +255,6 @@ function handleOutsideClick(e: MouseEvent): void {
   if (!dropdownEl.contains(target) && !target.closest('.btn-history')) {
     closeHistoryDropdown();
   }
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 // Re-export LaunchEntry for main.ts
