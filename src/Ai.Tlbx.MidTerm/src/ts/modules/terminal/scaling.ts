@@ -143,11 +143,11 @@ function measureFromFont(fontSize: number): { cellWidth: number; cellHeight: num
  * - Session creation (main.ts)
  * - Fit-to-screen (scaling.ts)
  */
-export function calculateOptimalDimensions(
+export async function calculateOptimalDimensions(
   container: HTMLElement,
   fontSize: number,
   sessionIdForLog?: string,
-): { cols: number; rows: number } | null {
+): Promise<{ cols: number; rows: number } | null> {
   const rect = container.getBoundingClientRect();
   if (rect.width < 100 || rect.height < 100) {
     return null;
@@ -158,6 +158,12 @@ export function calculateOptimalDimensions(
   const measurementSource: MeasurementSource = existingMeasurement
     ? 'existing-terminal'
     : 'font-probe';
+
+  // When using font-probe, wait for fonts to be loaded first
+  if (!existingMeasurement && fontsReadyPromise) {
+    await fontsReadyPromise;
+  }
+
   const { cellWidth, cellHeight } = existingMeasurement ?? measureFromFont(fontSize);
 
   // Account for padding and scrollbar width
