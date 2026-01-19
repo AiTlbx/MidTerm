@@ -1,6 +1,6 @@
 #!/bin/bash
 # MidTerm macOS/Linux Installer
-# Usage: curl -fsSL https://aitlbx.github.io/MidTerm/install.sh | bash
+# Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 
 set -e
 
@@ -10,18 +10,19 @@ SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH" == "/usr/bin/bash" ]]; then
     TEMP_SCRIPT=$(mktemp)
     # Script is being piped - we need to download it to a file
-    curl -fsSL "https://raw.githubusercontent.com/AiTlbx/MidTerm/main/install.sh" > "$TEMP_SCRIPT"
+    curl -fsSL "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.sh" > "$TEMP_SCRIPT"
     chmod +x "$TEMP_SCRIPT"
     exec "$TEMP_SCRIPT" "$@"
 fi
 
-REPO_OWNER="AiTlbx"
+REPO_OWNER="tlbx-ai"
 REPO_NAME="MidTerm"
 SERVICE_NAME="MidTerm"
-LAUNCHD_LABEL="com.aitlbx.MidTerm"
+LAUNCHD_LABEL="ai.tlbx.midterm"
 # Legacy service names for migration
 OLD_HOST_SERVICE_NAME="MidTerm-host"
 OLD_LAUNCHD_HOST_LABEL="com.aitlbx.MidTerm-host"
+OLD_LAUNCHD_LABEL="com.aitlbx.MidTerm"
 
 # Colors
 RED='\033[0;31m'
@@ -709,6 +710,14 @@ install_launchd() {
     # Unload existing services if present
     launchctl unload "$plist_path" 2>/dev/null || true
 
+    # Migration: remove old org launchd service
+    local old_org_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist"
+    if [ -f "$old_org_plist" ]; then
+        echo -e "${YELLOW}Migrating from old org service name...${NC}"
+        launchctl unload "$old_org_plist" 2>/dev/null || true
+        rm -f "$old_org_plist"
+    fi
+
     # Migration: remove old host service from pre-v4
     if [ -f "$old_host_plist" ]; then
         echo -e "${YELLOW}Migrating from old architecture...${NC}"
@@ -913,9 +922,11 @@ echo "Uninstalling MidTerm..."
 
 if [ "$(uname -s)" = "Darwin" ]; then
     # macOS - unload service
+    sudo launchctl unload /Library/LaunchDaemons/ai.tlbx.midterm.plist 2>/dev/null || true
+    sudo rm -f /Library/LaunchDaemons/ai.tlbx.midterm.plist
+    # Cleanup old service names from previous org
     sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/com.aitlbx.MidTerm.plist
-    # Cleanup old host service if present (from pre-v4)
     sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm-host.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/com.aitlbx.MidTerm-host.plist
 else

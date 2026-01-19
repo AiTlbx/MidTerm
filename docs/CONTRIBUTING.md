@@ -51,7 +51,7 @@ See [CLAUDE.md](../CLAUDE.md) for detailed style guidelines.
 - esbuild (for TypeScript bundling)
 
 ```bash
-git clone https://github.com/AiTlbx/MidTerm.git
+git clone https://github.com/tlbx-ai/MidTerm.git
 cd MidTerm
 dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
 ```

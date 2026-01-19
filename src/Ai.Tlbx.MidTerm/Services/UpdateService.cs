@@ -9,7 +9,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class UpdateService : IDisposable
 {
-    private const string RepoOwner = "AiTlbx";
+    private const string RepoOwner = "tlbx-ai";
     private const string RepoName = "MidTerm";
     private const string DevEnvironmentName = "THELAIR";
 

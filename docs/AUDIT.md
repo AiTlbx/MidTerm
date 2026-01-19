@@ -20,7 +20,7 @@ The accountability comes from GitHub as a trusted third party. The build process
 Every release tag triggers a build. Find the corresponding workflow run:
 
 ```
-https://github.com/AiTlbx/MidTerm/actions/workflows/release.yml
+https://github.com/tlbx-ai/MidTerm/actions/workflows/release.yml
 ```
 
 Verify:
@@ -34,8 +34,8 @@ Each release includes a `checksums.txt` file and per-platform `SHA256SUMS.txt` i
 
 ```bash
 # Download and verify
-curl -LO https://github.com/AiTlbx/MidTerm/releases/download/v5.x.x/checksums.txt
-curl -LO https://github.com/AiTlbx/MidTerm/releases/download/v5.x.x/mt-win-x64.zip
+curl -LO https://github.com/tlbx-ai/MidTerm/releases/download/v5.x.x/checksums.txt
+curl -LO https://github.com/tlbx-ai/MidTerm/releases/download/v5.x.x/mt-win-x64.zip
 
 # Extract and check
 unzip mt-win-x64.zip
@@ -123,7 +123,7 @@ To build locally with the same settings as CI:
 # Requires: .NET 10 SDK, Node.js 20+, Visual Studio 2022 (Windows)
 
 # 1. Clone at the release tag
-git clone https://github.com/AiTlbx/MidTerm.git
+git clone https://github.com/tlbx-ai/MidTerm.git
 cd MidTerm
 git checkout v5.x.x
 

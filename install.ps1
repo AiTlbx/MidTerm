@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # MidTerm Windows Installer
-# Usage: irm https://aitlbx.github.io/MidTerm/install.ps1 | iex
+# Usage: irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 
 param(
     [string]$RunAsUser,
@@ -19,8 +19,8 @@ $ProgressPreference = "SilentlyContinue"
 $ServiceName = "MidTerm"
 $OldHostServiceName = "MidTermHost"
 $DisplayName = "MidTerm"
-$Publisher = "AiTlbx"
-$RepoOwner = "AiTlbx"
+$Publisher = "tlbx-ai"
+$RepoOwner = "tlbx-ai"
 $RepoName = "MidTerm"
 $WebBinaryName = "mt.exe"
 $TtyHostBinaryName = "mthost.exe"
@@ -1206,7 +1206,7 @@ if ($asService)
         # Download script to temp file and run elevated with parameters
         $tempScript = Join-Path $env:TEMP "mt-install-elevated.ps1"
         $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
-        $scriptUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/install.ps1"
+        $scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.ps1"
         Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript
 
         # Clear any existing log file

@@ -10,7 +10,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class UpdateScriptGenerator
 {
     private const string ServiceName = "MidTerm";
-    private const string LaunchdLabel = "com.aitlbx.midterm";
+    private const string LaunchdLabel = "ai.tlbx.midterm";
     private const string SystemdService = "midterm";
     private const int MaxRetries = 15;
     private const int RetryDelaySeconds = 1;

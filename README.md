@@ -4,7 +4,7 @@
 
 # MidTerm
 
-[![GitHub Release](https://img.shields.io/github/v/release/AiTlbx/MidTerm)](https://github.com/AiTlbx/MidTerm/releases/latest)
+[![GitHub Release](https://img.shields.io/github/v/release/tlbx-ai/MidTerm)](https://github.com/tlbx-ai/MidTerm/releases/latest)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#installation)
 [![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](#installation)
@@ -59,12 +59,12 @@ Your PC                          Anywhere
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://aitlbx.github.io/MidTerm/install.sh | bash
+curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://aitlbx.github.io/MidTerm/install.ps1 | iex
+irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 ```
 
 The installer will:
@@ -80,10 +80,10 @@ The installer will:
 
 | Platform | Download |
 |----------|----------|
-| macOS ARM64 | [mm-osx-arm64.tar.gz](https://github.com/AiTlbx/MidTerm/releases/latest) |
-| macOS x64 | [mm-osx-x64.tar.gz](https://github.com/AiTlbx/MidTerm/releases/latest) |
-| Windows x64 | [mm-win-x64.zip](https://github.com/AiTlbx/MidTerm/releases/latest) |
-| Linux x64 | [mm-linux-x64.tar.gz](https://github.com/AiTlbx/MidTerm/releases/latest) |
+| macOS ARM64 | [mm-osx-arm64.tar.gz](https://github.com/tlbx-ai/MidTerm/releases/latest) |
+| macOS x64 | [mm-osx-x64.tar.gz](https://github.com/tlbx-ai/MidTerm/releases/latest) |
+| Windows x64 | [mm-win-x64.zip](https://github.com/tlbx-ai/MidTerm/releases/latest) |
+| Linux x64 | [mm-linux-x64.tar.gz](https://github.com/tlbx-ai/MidTerm/releases/latest) |
 
 ## Quick Start
 
@@ -158,7 +158,7 @@ Settings stored in:
   - Linux: Download from [releases](https://github.com/evanw/esbuild/releases)
 
 ```bash
-git clone https://github.com/AiTlbx/MidTerm.git
+git clone https://github.com/tlbx-ai/MidTerm.git
 cd MidTerm
 
 # Build
@@ -181,8 +181,8 @@ Contributions welcome! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guideline
 
 [GNU Affero General Public License v3.0](LICENSE)
 
-Commercial licensing available — [contact for details](https://github.com/AiTlbx).
+Commercial licensing available — [contact for details](https://github.com/tlbx-ai).
 
 ---
 
-Created by [Johannes Schmidt](https://github.com/AiTlbx)
+Created by [Johannes Schmidt](https://github.com/tlbx-ai)

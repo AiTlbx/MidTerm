@@ -105,7 +105,7 @@ public sealed class CertificateInfoService
             <key>PayloadDisplayName</key>
             <string>MidTerm Certificate</string>
             <key>PayloadIdentifier</key>
-            <string>com.aitlbx.midterm.cert.{payloadUuid}</string>
+            <string>ai.tlbx.midterm.cert.{payloadUuid}</string>
             <key>PayloadType</key>
             <string>com.apple.security.root</string>
             <key>PayloadUUID</key>
@@ -119,7 +119,7 @@ public sealed class CertificateInfoService
     <key>PayloadDisplayName</key>
     <string>MidTerm Certificate</string>
     <key>PayloadIdentifier</key>
-    <string>com.aitlbx.midterm.profile.{profileUuid}</string>
+    <string>ai.tlbx.midterm.profile.{profileUuid}</string>
     <key>PayloadOrganization</key>
     <string>MidTerm</string>
     <key>PayloadRemovalDisallowed</key>

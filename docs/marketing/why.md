@@ -329,7 +329,7 @@ Multi-user with role-based access control is a different product for different n
 
 Same trust model as all open source:
 
-- Code is public: [github.com/AiTlbx/MidTerm](https://github.com/AiTlbx/MidTerm)
+- Code is public: [github.com/tlbx-ai/MidTerm](https://github.com/tlbx-ai/MidTerm)
 - Build from source: `dotnet publish -c Release`
 - Audit the ~15k lines yourself
 - Supply chain: GitHub repo → GitHub Actions → GitHub Releases
