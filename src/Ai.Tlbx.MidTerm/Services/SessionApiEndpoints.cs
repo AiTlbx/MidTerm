@@ -1,11 +1,27 @@
+using System.Runtime.InteropServices;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Common.Shells;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
-public static class SessionApiEndpoints
+public static partial class SessionApiEndpoints
 {
+    [LibraryImport("kernel32.dll", EntryPoint = "GetShortPathNameW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial uint GetShortPathName(string lpszLongPath, char[] lpszShortPath, uint cchBuffer);
+
+    private static string ToShortPath(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return path;
+        }
+
+        var buffer = new char[260];
+        var length = GetShortPathName(path, buffer, (uint)buffer.Length);
+        return length > 0 ? new string(buffer, 0, (int)length) : path;
+    }
+
     public static void MapSessionEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager)
@@ -101,10 +117,21 @@ public static class SessionApiEndpoints
                 counter++;
             }
 
-            await using var stream = File.Create(targetPath);
-            await file.CopyToAsync(stream);
+            await using (var stream = File.Create(targetPath))
+            {
+                await file.CopyToAsync(stream);
+            }
 
-            return Results.Json(new FileUploadResponse { Path = targetPath }, AppJsonContext.Default.FileUploadResponse);
+            // To make Johannes happy
+            if (!File.Exists(targetPath))
+            {
+                return Results.Problem("File write succeeded but file not found");
+            }
+
+            // Use 8.3 short path on Windows for compatibility with legacy apps
+            var responsePath = ToShortPath(targetPath);
+
+            return Results.Json(new FileUploadResponse { Path = responsePath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
     }
 
