@@ -7,7 +7,15 @@
 
 import { createLogger } from './logging';
 import { setVoiceStatus, setToggleRecording } from './sidebar/voiceSection';
-import { addChatMessage, showChatPanel, clearChatMessages, toggleChatPanel } from './chat';
+import {
+  addChatMessage,
+  showChatPanel,
+  clearChatMessages,
+  toggleChatPanel,
+  showToolConfirmation,
+} from './chat';
+import { processToolRequest } from './voiceTools';
+import type { VoiceToolName } from '../types';
 import type { VoiceHealthResponse, VoiceProvider } from '../types';
 
 const log = createLogger('voice');
@@ -424,6 +432,10 @@ interface VoiceMessage {
   content?: string;
   toolName?: string;
   timestamp?: string;
+  requestId?: string;
+  tool?: VoiceToolName;
+  args?: Record<string, unknown>;
+  requiresConfirmation?: boolean;
 }
 
 /**
@@ -466,9 +478,81 @@ function handleVoiceMessage(msg: VoiceMessage): void {
       log.error(() => `[MSG] Server error: ${msg.message || 'unknown'}`);
       setVoiceStatus('Server error');
       break;
+    case 'tool_request':
+      if (msg.requestId && msg.tool) {
+        handleToolRequest(
+          msg.requestId,
+          msg.tool,
+          msg.args ?? {},
+          msg.requiresConfirmation ?? false,
+        );
+      }
+      break;
     default:
       log.info(() => `[MSG] Unhandled message type: ${msg.type}`);
   }
+}
+
+/**
+ * Handle a tool request from the voice server
+ */
+async function handleToolRequest(
+  requestId: string,
+  tool: VoiceToolName,
+  args: Record<string, unknown>,
+  requiresConfirmation: boolean,
+): Promise<void> {
+  log.info(
+    () => `[TOOL] Processing request: ${tool} (${requestId}), confirmation=${requiresConfirmation}`,
+  );
+
+  // If confirmation is required, show dialog first
+  if (requiresConfirmation) {
+    const justification = args.justification as string | undefined;
+    const approved = await showToolConfirmation(tool, args, justification);
+
+    if (!approved) {
+      log.info(() => `[TOOL] User declined: ${tool} (${requestId})`);
+      sendToolResponse({
+        type: 'tool_response',
+        requestId,
+        result: null,
+        declined: true,
+      });
+      return;
+    }
+  }
+
+  const response = await processToolRequest({
+    type: 'tool_request',
+    requestId,
+    tool,
+    args,
+  });
+
+  sendToolResponse(response);
+}
+
+/**
+ * Send a tool response back to the voice server
+ */
+function sendToolResponse(response: {
+  type: string;
+  requestId: string;
+  result: unknown;
+  error?: string;
+  declined?: boolean;
+}): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    log.warn(() => `[TOOL] Cannot send response - WebSocket not open`);
+    return;
+  }
+
+  const json = JSON.stringify(response);
+  ws.send(json);
+  log.info(
+    () => `[TOOL] Sent response for ${response.requestId}${response.declined ? ' (declined)' : ''}`,
+  );
 }
 
 /**

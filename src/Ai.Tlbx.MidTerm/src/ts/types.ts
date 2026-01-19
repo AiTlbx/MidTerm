@@ -381,6 +381,132 @@ export interface VoiceHealthResponse {
 }
 
 // =============================================================================
+// Voice Tool Protocol Types
+// =============================================================================
+
+/** Tool names available to voice assistant */
+export type VoiceToolName =
+  | 'state_of_things'
+  | 'make_input'
+  | 'read_scrollback'
+  | 'interactive_read';
+
+/** Tool request from voice server to browser */
+export interface VoiceToolRequest {
+  type: 'tool_request';
+  requestId: string;
+  tool: VoiceToolName;
+  args: Record<string, unknown>;
+  requiresConfirmation?: boolean;
+}
+
+/** Tool response from browser to voice server */
+export interface VoiceToolResponse {
+  type: 'tool_response';
+  requestId: string;
+  result: unknown;
+  error?: string;
+  declined?: boolean;
+}
+
+/** Args for make_input tool */
+export interface MakeInputArgs {
+  sessionId: string;
+  text: string;
+  justification?: string;
+  delayMs?: number;
+}
+
+/** Args for read_scrollback tool */
+export interface ReadScrollbackArgs {
+  sessionId: string;
+  start?: string;
+  lines?: number;
+}
+
+/** Args for interactive_read tool */
+export interface InteractiveReadArgs {
+  sessionId: string;
+  operations: InteractiveOp[];
+  justification?: string;
+}
+
+/** Single operation in interactive_read */
+export interface InteractiveOp {
+  type: 'input' | 'delay' | 'screenshot';
+  data?: string;
+  delayMs?: number;
+}
+
+/** Result of state_of_things tool */
+export interface StateOfThingsResult {
+  sessions: VoiceSessionState[];
+  activeSessionId: string | null;
+  version: string;
+  updateAvailable: boolean;
+  recentBells: BellNotification[];
+}
+
+/** Session state for voice assistant */
+export interface VoiceSessionState {
+  id: string;
+  userTitle: string | null;
+  terminalTitle: string | null;
+  foregroundName: string | null;
+  foregroundCommandLine: string | null;
+  currentDirectory: string | null;
+  shell: string;
+  cols: number;
+  rows: number;
+  isRunning: boolean;
+  screenContent: string;
+}
+
+/** Bell notification for voice assistant */
+export interface BellNotification {
+  sessionId: string;
+  timestamp: string;
+}
+
+/** Result of make_input tool */
+export interface MakeInputResult {
+  success: boolean;
+  screenContent: string;
+  cols: number;
+  rows: number;
+}
+
+/** Result of read_scrollback tool */
+export interface ReadScrollbackResult {
+  content: string;
+  totalLines: number;
+  returnedLines: number;
+  startLine: number;
+}
+
+/** Result of interactive_read tool */
+export interface InteractiveReadResult {
+  results: InteractiveOpResult[];
+}
+
+/** Single operation result */
+export interface InteractiveOpResult {
+  index: number;
+  success: boolean;
+  screenshot?: string;
+}
+
+/** Pending tool confirmation request */
+export interface PendingToolConfirmation {
+  requestId: string;
+  tool: VoiceToolName;
+  args: Record<string, unknown>;
+  justification?: string;
+  displayText: string;
+  resolve: (approved: boolean) => void;
+}
+
+// =============================================================================
 // DOM Element Cache
 // =============================================================================
 
