@@ -101,8 +101,16 @@ public static class SessionApiEndpoints
                 counter++;
             }
 
-            await using var stream = File.Create(targetPath);
-            await file.CopyToAsync(stream);
+            await using (var stream = File.Create(targetPath))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // To make Johannes happy
+            if (!File.Exists(targetPath))
+            {
+                return Results.Problem("File write succeeded but file not found");
+            }
 
             return Results.Json(new FileUploadResponse { Path = targetPath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
