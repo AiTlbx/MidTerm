@@ -7,13 +7,7 @@
 
 import { createLogger } from './logging';
 import { setVoiceStatus, setToggleRecording } from './sidebar/voiceSection';
-import {
-  addChatMessage,
-  showChatPanel,
-  clearChatMessages,
-  toggleChatPanel,
-  showToolConfirmation,
-} from './chat';
+import { addChatMessage, showChatPanel, toggleChatPanel, showToolConfirmation } from './chat';
 import { processToolRequest } from './voiceTools';
 import type { VoiceToolName } from '../types';
 import type { VoiceHealthResponse, VoiceProvider } from '../types';
@@ -471,8 +465,11 @@ function handleVoiceMessage(msg: VoiceMessage): void {
         }
       }
       break;
-    case 'clear':
-      clearChatMessages();
+    case 'clear_audio':
+      // Server requests audio queue clear - stop any pending playback
+      if (window.stopAudioPlayback) {
+        window.stopAudioPlayback();
+      }
       break;
     case 'error':
       log.error(() => `[MSG] Server error: ${msg.message || 'unknown'}`);

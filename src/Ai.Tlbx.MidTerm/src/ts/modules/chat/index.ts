@@ -110,6 +110,40 @@ export function getChatMessages(): ChatMessage[] {
 }
 
 /**
+ * Check if a message is a tool call request from the assistant
+ */
+function isToolCallMessage(content: string): boolean {
+  return content.toLowerCase().startsWith('calling tool:');
+}
+
+/**
+ * Extract tool name from a tool call message
+ */
+function extractToolName(content: string): string {
+  const match = content.match(/calling tool:\s*(\w+)/i);
+  return match ? (match[1] ?? 'unknown') : 'unknown';
+}
+
+/**
+ * Format JSON content for display
+ */
+function formatJsonContent(content: string): string {
+  try {
+    const trimmed = content.trim();
+    if (
+      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    ) {
+      const parsed = JSON.parse(trimmed);
+      return JSON.stringify(parsed, null, 2);
+    }
+  } catch {
+    // Not valid JSON, return as-is
+  }
+  return content;
+}
+
+/**
  * Render a single message to the chat panel
  */
 function renderMessage(message: ChatMessage): void {
@@ -117,15 +151,44 @@ function renderMessage(message: ChatMessage): void {
   if (!container) return;
 
   const msgEl = document.createElement('div');
-  msgEl.className = `chat-msg chat-msg-${message.role}`;
+  const time = formatTime(message.timestamp);
 
+  // Tool response messages (role = 'tool')
   if (message.role === 'tool') {
+    msgEl.className = 'chat-msg chat-msg-tool-response';
+    const formattedContent = formatJsonContent(message.content);
     msgEl.innerHTML = `
-      <div class="chat-msg-tool-name">${escapeHtml(message.toolName || 'tool')}</div>
-      <div class="chat-msg-tool-result">${escapeHtml(message.content)}</div>
+      <div class="chat-msg-tool-header">
+        <span class="chat-msg-tool-icon">🔧</span>
+        <span class="chat-msg-tool-name">${escapeHtml(message.toolName || 'tool')}</span>
+        <span class="chat-msg-tool-label">Response</span>
+      </div>
+      <pre class="chat-msg-tool-result">${escapeHtml(formattedContent)}</pre>
+      <div class="chat-msg-time">${time}</div>
     `;
-  } else {
-    const time = formatTime(message.timestamp);
+  }
+  // Tool call request from assistant (content starts with "Calling tool:")
+  else if (message.role === 'assistant' && isToolCallMessage(message.content)) {
+    msgEl.className = 'chat-msg chat-msg-tool-call';
+    const toolName = extractToolName(message.content);
+    // Extract arguments after the first line
+    const lines = message.content.split('\n');
+    const args = lines.slice(1).join('\n').trim();
+    const formattedArgs = args ? formatJsonContent(args) : '';
+
+    msgEl.innerHTML = `
+      <div class="chat-msg-tool-header">
+        <span class="chat-msg-tool-icon">⚡</span>
+        <span class="chat-msg-tool-name">${escapeHtml(toolName)}</span>
+        <span class="chat-msg-tool-label">Request</span>
+      </div>
+      ${formattedArgs ? `<pre class="chat-msg-tool-args">${escapeHtml(formattedArgs)}</pre>` : ''}
+      <div class="chat-msg-time">${time}</div>
+    `;
+  }
+  // Regular user/assistant message
+  else {
+    msgEl.className = `chat-msg chat-msg-${message.role}`;
     msgEl.innerHTML = `
       <div class="chat-msg-content">${escapeHtml(message.content)}</div>
       <div class="chat-msg-time">${time}</div>
