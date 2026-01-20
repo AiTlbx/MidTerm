@@ -72,6 +72,8 @@
     --btn-secondary-hover: #545C7E;
     --bg-hover: #24283B;
     --bg-dropdown: #1F2335;
+    --bg-session-hover: #2F3243;    /* --bg-dropdown + 7% white */
+    --bg-session-active: #454858;   /* --bg-hover + 15% white */
     --bg-settings: #14151E;
     --bg-success: #1A2F23;
     --border-success: #2D5A3D;
@@ -332,11 +334,11 @@ html, body {
 /* Drag states */
 .session-item.dragging {
     opacity: 0.5;
-    background-color: var(--bg-hover);
+    background-color: var(--bg-session-active);
 }
 
 .session-item.drag-over {
-    background-color: var(--bg-dropdown);
+    background-color: var(--bg-session-hover);
 }
 
 .session-item.drag-over-above {
@@ -353,11 +355,11 @@ html, body {
 }
 
 .session-item:hover {
-    background-color: var(--bg-dropdown);
+    background-color: var(--bg-session-hover);
 }
 
 .session-item.active {
-    background-color: var(--bg-hover);
+    background-color: var(--bg-session-active);
     border-left-color: var(--accent-blue);
 }
 
@@ -651,7 +653,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 2px;
-    background: linear-gradient(to right, transparent, var(--bg-dropdown) 8px, var(--bg-dropdown));
+    background: linear-gradient(to right, transparent, var(--bg-session-hover) 8px, var(--bg-session-hover));
     padding-left: 12px;
     opacity: 0;
     pointer-events: none;
@@ -664,7 +666,7 @@ html, body {
 }
 
 .session-item.active .session-actions {
-    background: linear-gradient(to right, transparent, var(--bg-hover) 8px, var(--bg-hover));
+    background: linear-gradient(to right, transparent, var(--bg-session-active) 8px, var(--bg-session-active));
 }
 
 .session-resize,
