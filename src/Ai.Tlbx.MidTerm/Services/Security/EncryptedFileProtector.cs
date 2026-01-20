@@ -159,15 +159,16 @@ public sealed class EncryptedFileProtector : ICertificateProtector
             return File.ReadAllText(linuxMachineIdPath).Trim();
         }
 
-        // Try macOS hardware UUID
+        // Try macOS hardware UUID via system_profiler (works reliably in daemon context)
+        // Note: ioreg can fail in launchd services, system_profiler is more reliable
         if (OperatingSystem.IsMacOS())
         {
             try
             {
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "ioreg",
-                    Arguments = "-rd1 -c IOPlatformExpertDevice",
+                    FileName = "system_profiler",
+                    Arguments = "SPHardwareDataType",
                     RedirectStandardOutput = true,
                     UseShellExecute = false
                 };
@@ -175,9 +176,12 @@ public sealed class EncryptedFileProtector : ICertificateProtector
                 if (process is not null)
                 {
                     var output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit(5000);
+                    // Look for "Hardware UUID: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
                     var match = System.Text.RegularExpressions.Regex.Match(
                         output,
-                        @"""IOPlatformUUID""\s*=\s*""([^""]+)""");
+                        @"Hardware UUID:\s*([A-F0-9-]+)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                     if (match.Success)
                     {
                         return match.Groups[1].Value;
@@ -190,8 +194,10 @@ public sealed class EncryptedFileProtector : ICertificateProtector
             }
         }
 
-        // Fallback: use hostname + current user
-        return $"{Environment.MachineName}:{Environment.UserName}";
+        // Fallback: use hostname ONLY (not username!)
+        // IMPORTANT: Do NOT include username - the cert may be created by installer (root)
+        // but loaded by service running as different user. Key must be user-independent.
+        return Environment.MachineName;
     }
 
     private static void SetUnixFilePermissions(string path)
