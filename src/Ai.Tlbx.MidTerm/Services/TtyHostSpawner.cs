@@ -34,8 +34,44 @@ public static class TtyHostSpawner
 
         try
         {
-            var versionInfo = FileVersionInfo.GetVersionInfo(TtyHostPath);
-            return versionInfo.ProductVersion ?? versionInfo.FileVersion;
+            if (OperatingSystem.IsWindows())
+            {
+                // Windows: read version from PE file metadata
+                var versionInfo = FileVersionInfo.GetVersionInfo(TtyHostPath);
+                return versionInfo.ProductVersion ?? versionInfo.FileVersion;
+            }
+            else
+            {
+                // macOS/Linux: PE metadata not available, run mthost --version
+                // This is fast (~10ms) and reliable
+                var psi = new ProcessStartInfo
+                {
+                    FileName = TtyHostPath,
+                    Arguments = "--version",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is null)
+                {
+                    return null;
+                }
+
+                var output = process.StandardOutput.ReadToEnd().Trim();
+                process.WaitForExit(5000);
+
+                // Output is "mthost 6.7.10" - extract just the version
+                if (string.IsNullOrEmpty(output))
+                {
+                    return null;
+                }
+
+                // Handle "mthost X.Y.Z" format
+                var parts = output.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                return parts.Length >= 2 ? parts[1] : output;
+            }
         }
         catch
         {
