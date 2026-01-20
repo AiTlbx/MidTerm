@@ -49,7 +49,7 @@ public static class EndpointSetup
                 SupportsOsc7 = s.SupportsOsc7
             }).ToList();
 
-            var updateResult = ReadAndClearUpdateResult();
+            var updateResult = ReadAndClearUpdateResult(settingsService.SettingsDirectory);
             var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
 
             var features = new FeatureFlags
@@ -124,15 +124,12 @@ public static class EndpointSetup
             .ToList();
     }
 
-    private static UpdateResult? ReadAndClearUpdateResult()
+    private static UpdateResult? ReadAndClearUpdateResult(string settingsDirectory)
     {
-        var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
-        if (string.IsNullOrEmpty(installDir))
-        {
-            return null;
-        }
-
-        var resultPath = Path.Combine(installDir, "update-result.json");
+        // Update result is written to settings directory (not install directory!)
+        // Windows: C:\ProgramData\MidTerm\update-result.json
+        // Unix: /usr/local/etc/midterm/update-result.json or ~/.midterm/update-result.json
+        var resultPath = Path.Combine(settingsDirectory, "update-result.json");
         if (!File.Exists(resultPath))
         {
             return null;
@@ -380,13 +377,8 @@ public static class EndpointSetup
         // GET /api/update/result?clear=true - get update result and optionally clear it
         app.MapGet("/api/update/result", (bool clear = false) =>
         {
-            var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
-            if (string.IsNullOrEmpty(installDir))
-            {
-                return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
-            }
-
-            var resultPath = Path.Combine(installDir, "update-result.json");
+            // Update result is in settings directory, not install directory
+            var resultPath = Path.Combine(settingsService.SettingsDirectory, "update-result.json");
             if (!File.Exists(resultPath))
             {
                 return Results.Json(new UpdateResult { Found = false }, AppJsonContext.Default.UpdateResult);
@@ -419,13 +411,8 @@ public static class EndpointSetup
         // Legacy DELETE endpoint kept for backward compatibility
         app.MapDelete("/api/update/result", () =>
         {
-            var installDir = Path.GetDirectoryName(UpdateService.GetCurrentBinaryPath());
-            if (string.IsNullOrEmpty(installDir))
-            {
-                return Results.Ok();
-            }
-
-            var resultPath = Path.Combine(installDir, "update-result.json");
+            // Update result is in settings directory, not install directory
+            var resultPath = Path.Combine(settingsService.SettingsDirectory, "update-result.json");
             if (File.Exists(resultPath))
             {
                 try { File.Delete(resultPath); } catch { }

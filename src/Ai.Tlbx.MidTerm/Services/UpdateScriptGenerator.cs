@@ -24,22 +24,27 @@ public static class UpdateScriptGenerator
     {
         if (OperatingSystem.IsWindows())
         {
-            return GenerateWindowsScript(extractedDir, currentBinaryPath, updateType, deleteSourceAfter);
+            return GenerateWindowsScript(extractedDir, currentBinaryPath, settingsDirectory, updateType, deleteSourceAfter);
         }
 
         return GenerateUnixScript(extractedDir, currentBinaryPath, settingsDirectory, updateType, deleteSourceAfter);
     }
 
-    private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, UpdateType updateType, bool deleteSourceAfter)
+    private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, string settingsDirectory, UpdateType updateType, bool deleteSourceAfter)
     {
+        // IMPORTANT: Binary dir != Settings dir on Windows
+        // Binaries: C:\Program Files\MidTerm (installDir)
+        // Settings: C:\ProgramData\MidTerm (settingsDir) for service mode, or user profile for user mode
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? currentBinaryPath;
+        var settingsDir = settingsDirectory;
         var newMtPath = Path.Combine(extractedDir, "mt.exe");
         var newMthostPath = Path.Combine(extractedDir, "mthost.exe");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost.exe");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
-        var resultFilePath = Path.Combine(installDir, "update-result.json");
-        var logFilePath = Path.Combine(installDir, "update.log");
+        // Log and result files go in settings directory so they're accessible after update
+        var resultFilePath = Path.Combine(settingsDir, "update-result.json");
+        var logFilePath = Path.Combine(settingsDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.ps1");
 
         var isWebOnly = updateType == UpdateType.WebOnly;
@@ -48,11 +53,17 @@ public static class UpdateScriptGenerator
 # MidTerm Update Script (Windows)
 # Type: {(isWebOnly ? "Web-only (sessions preserved)" : "Full (sessions will restart)")}
 # Generated: {DateTime.UtcNow:O}
+#
+# IMPORTANT: InstallDir (binaries) != SettingsDir (config/certs)
+# - InstallDir: C:\Program Files\MidTerm (or user install location)
+# - SettingsDir: C:\ProgramData\MidTerm (service) or %APPDATA%\MidTerm (user)
 
 $ErrorActionPreference = 'Stop'
 
 # === Configuration ===
-$InstallDir = '{EscapeForPowerShell(installDir)}'
+# IMPORTANT: These directories are DIFFERENT - don't confuse them!
+$InstallDir = '{EscapeForPowerShell(installDir)}'           # Binaries: mt.exe, mthost.exe
+$SettingsDir = '{EscapeForPowerShell(settingsDir)}'         # Settings, secrets, certs
 $CurrentMt = '{EscapeForPowerShell(currentBinaryPath)}'
 $CurrentMthost = '{EscapeForPowerShell(currentMthostPath)}'
 $CurrentVersionJson = '{EscapeForPowerShell(currentVersionJsonPath)}'
@@ -269,10 +280,11 @@ try {{
     }}
 
     # Backup credential files (critical for security persistence)
-    $settingsPath = Join-Path $InstallDir 'settings.json'
-    $secretsPath = Join-Path $InstallDir 'secrets.bin'
-    $certPath = Join-Path $InstallDir 'midterm.pem'
-    $keysDir = Join-Path $InstallDir 'keys'
+    # IMPORTANT: These are in SettingsDir, NOT InstallDir!
+    $settingsPath = Join-Path $SettingsDir 'settings.json'
+    $secretsPath = Join-Path $SettingsDir 'secrets.bin'
+    $certPath = Join-Path $SettingsDir 'midterm.pem'
+    $keysDir = Join-Path $SettingsDir 'keys'
 
     if (Test-Path $settingsPath) {{
         Log 'Backing up settings.json...'
@@ -358,11 +370,11 @@ try {{
     Remove-Item ""$CurrentMthost.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$CurrentVersionJson.bak"" -Force -ErrorAction SilentlyContinue
 
-    # Clean up credential backups
-    $settingsPath = Join-Path $InstallDir 'settings.json'
-    $secretsPath = Join-Path $InstallDir 'secrets.bin'
-    $certPath = Join-Path $InstallDir 'midterm.pem'
-    $keysDir = Join-Path $InstallDir 'keys'
+    # Clean up credential backups (in SettingsDir, not InstallDir!)
+    $settingsPath = Join-Path $SettingsDir 'settings.json'
+    $secretsPath = Join-Path $SettingsDir 'secrets.bin'
+    $certPath = Join-Path $SettingsDir 'midterm.pem'
+    $keysDir = Join-Path $SettingsDir 'keys'
     Remove-Item ""$settingsPath.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$secretsPath.bak"" -Force -ErrorAction SilentlyContinue
     Remove-Item ""$certPath.bak"" -Force -ErrorAction SilentlyContinue
@@ -429,11 +441,11 @@ try {{
             }}
         }}
 
-        # Restore credential files
-        $settingsPath = Join-Path $InstallDir 'settings.json'
-        $secretsPath = Join-Path $InstallDir 'secrets.bin'
-        $certPath = Join-Path $InstallDir 'midterm.pem'
-        $keysDir = Join-Path $InstallDir 'keys'
+        # Restore credential files from SettingsDir (not InstallDir!)
+        $settingsPath = Join-Path $SettingsDir 'settings.json'
+        $secretsPath = Join-Path $SettingsDir 'secrets.bin'
+        $certPath = Join-Path $SettingsDir 'midterm.pem'
+        $keysDir = Join-Path $SettingsDir 'keys'
 
         if (Test-Path ""$settingsPath.bak"") {{
             Log 'Restoring settings.json from backup...'
@@ -526,7 +538,7 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
-        var resultFilePath = Path.Combine(logDir, "midterm-update-result.json");
+        var resultFilePath = Path.Combine(configDir, "update-result.json");
         var logFilePath = Path.Combine(logDir, "midterm-update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.sh");
 
