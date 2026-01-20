@@ -15,14 +15,19 @@ public static class UpdateScriptGenerator
     private const int MaxRetries = 30;
     private const int RetryDelaySeconds = 1;
 
-    public static string GenerateUpdateScript(string extractedDir, string currentBinaryPath, UpdateType updateType = UpdateType.Full, bool deleteSourceAfter = true)
+    public static string GenerateUpdateScript(
+        string extractedDir,
+        string currentBinaryPath,
+        string settingsDirectory,
+        UpdateType updateType = UpdateType.Full,
+        bool deleteSourceAfter = true)
     {
         if (OperatingSystem.IsWindows())
         {
             return GenerateWindowsScript(extractedDir, currentBinaryPath, updateType, deleteSourceAfter);
         }
 
-        return GenerateUnixScript(extractedDir, currentBinaryPath, updateType, deleteSourceAfter);
+        return GenerateUnixScript(extractedDir, currentBinaryPath, settingsDirectory, updateType, deleteSourceAfter);
     }
 
     private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, UpdateType updateType, bool deleteSourceAfter)
@@ -502,16 +507,20 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         return scriptPath;
     }
 
-    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, UpdateType updateType, bool deleteSourceAfter)
+    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, string settingsDirectory, UpdateType updateType, bool deleteSourceAfter)
     {
         // IMPORTANT: Binary and config directories are DIFFERENT on Unix:
-        // - Binaries: /usr/local/bin/ (INSTALL_DIR)
-        // - Config/secrets: /usr/local/etc/midterm/ (CONFIG_DIR)
-        // - Logs: /usr/local/var/log/ (LOG_DIR)
-        // This mirrors the install.sh structure. Don't confuse them!
+        // - Binaries: /usr/local/bin/ (service) or ~/.local/bin/ (user)
+        // - Config/secrets: /usr/local/etc/midterm/ (service) or ~/.midterm/ (user)
+        // - Logs: /usr/local/var/log/ (service) or ~/.midterm/ (user)
+        // The settingsDirectory parameter tells us which mode we're in.
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? "/usr/local/bin";
-        var configDir = "/usr/local/etc/midterm";  // Settings, secrets, certs live here
-        var logDir = "/usr/local/var/log";         // Log files go here
+        var configDir = settingsDirectory;
+
+        // Determine log directory based on install mode
+        // Service mode: /usr/local/var/log/, User mode: same as config dir
+        var isServiceMode = configDir.StartsWith("/usr/local", StringComparison.Ordinal);
+        var logDir = isServiceMode ? "/usr/local/var/log" : configDir;
         var newMtPath = Path.Combine(extractedDir, "mt");
         var newMthostPath = Path.Combine(extractedDir, "mthost");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");

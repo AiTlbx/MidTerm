@@ -353,7 +353,12 @@ public static class EndpointSetup
                 updateType = update.Type;
             }
 
-            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(extractedDir, UpdateService.GetCurrentBinaryPath(), updateType, deleteSourceAfter);
+            var scriptPath = UpdateScriptGenerator.GenerateUpdateScript(
+                extractedDir,
+                UpdateService.GetCurrentBinaryPath(),
+                settingsService.SettingsDirectory,
+                updateType,
+                deleteSourceAfter);
 
             _ = Task.Run(async () =>
             {
