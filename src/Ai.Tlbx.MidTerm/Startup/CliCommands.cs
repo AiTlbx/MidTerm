@@ -87,8 +87,9 @@ public static class CliCommands
                 Environment.Exit(1);
             }
 
-            var authService = new AuthService(new SettingsService());
-            Console.WriteLine(authService.HashPassword(password));
+            // Use static hash method to avoid AuthService constructor side effects
+            // (which tries to save session secrets and can fail on macOS under sudo)
+            Console.WriteLine(AuthService.HashPasswordStatic(password));
             return true;
         }
 

@@ -202,6 +202,33 @@ get_existing_password_hash() {
     return 1
 }
 
+read_password_masked() {
+    local prompt="$1"
+    local password=""
+    local char
+
+    printf "%s" "$prompt"
+
+    while IFS= read -r -s -n1 char < /dev/tty; do
+        if [[ -z "$char" ]]; then
+            # Enter pressed
+            break
+        elif [[ "$char" == $'\x7f' || "$char" == $'\x08' ]]; then
+            # Backspace
+            if [[ -n "$password" ]]; then
+                password="${password%?}"
+                printf '\b \b'
+            fi
+        else
+            password+="$char"
+            printf '*'
+        fi
+    done
+    echo
+
+    REPLY="$password"
+}
+
 prompt_password() {
     echo ""
     echo -e "  ${YELLOW}Security Notice:${NC}"
@@ -213,10 +240,10 @@ prompt_password() {
     local attempt=0
 
     while [ $attempt -lt $max_attempts ]; do
-        read -s -p "  Enter password: " password < /dev/tty
-        echo
-        read -s -p "  Confirm password: " confirm < /dev/tty
-        echo
+        read_password_masked "  Enter password: "
+        password="$REPLY"
+        read_password_masked "  Confirm password: "
+        confirm="$REPLY"
 
         if [ "$password" != "$confirm" ]; then
             echo -e "  ${RED}Passwords do not match. Try again.${NC}"

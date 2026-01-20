@@ -37,7 +37,12 @@ public sealed class AuthService
     /// <summary>
     /// Hashes a password using PBKDF2 with a random salt.
     /// </summary>
-    public string HashPassword(string password)
+    public string HashPassword(string password) => HashPasswordStatic(password);
+
+    /// <summary>
+    /// Static version for CLI use without needing full AuthService initialization.
+    /// </summary>
+    public static string HashPasswordStatic(string password)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltSize);
         var hash = Rfc2898DeriveBytes.Pbkdf2(
