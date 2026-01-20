@@ -98,6 +98,7 @@ public sealed class MidTermSettings
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
+    public bool ScrollbackProtection { get; set; } = false;
 
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }

@@ -139,6 +139,7 @@ export interface Settings {
   copyOnSelect: boolean;
   rightClickPaste: boolean;
   clipboardShortcuts: ClipboardShortcuts;
+  scrollbackProtection: boolean;
   runAsUser: string | null;
   logLevel: LogLevelSetting;
 }

@@ -244,6 +244,24 @@ function registerCallbacks(): void {
 // Visibility Change Handler
 // =============================================================================
 
+function applyScrollbackProtection(): void {
+  if (currentSettings?.scrollbackProtection !== true) return;
+
+  const activeId = $activeSessionId.get();
+  const state = activeId ? sessionTerminals.get(activeId) : null;
+  if (!state?.terminal) return;
+
+  const scrollPosBefore = state.terminal.buffer.active.viewportY;
+
+  setTimeout(() => {
+    const scrollPosAfter = state.terminal.buffer.active.viewportY;
+    const delta = Math.abs(scrollPosAfter - scrollPosBefore);
+    if (delta > 50) {
+      state.terminal.scrollToLine(scrollPosBefore);
+    }
+  }, 50);
+}
+
 function setupVisibilityChangeHandler(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
@@ -255,9 +273,18 @@ function setupVisibilityChangeHandler(): void {
       if (!$muxWsConnected.get()) {
         connectMuxWebSocket();
       }
+
       // Refocus active terminal when page becomes visible
       focusActiveTerminal();
+
+      // Claude Code scrollback glitch protection
+      applyScrollbackProtection();
     }
+  });
+
+  // Also protect against focus from clicking into the browser window
+  window.addEventListener('focus', () => {
+    applyScrollbackProtection();
   });
 }
 

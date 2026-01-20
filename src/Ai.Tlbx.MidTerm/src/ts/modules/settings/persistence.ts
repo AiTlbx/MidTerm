@@ -131,6 +131,7 @@ export function populateSettingsForm(settings: Settings): void {
   setElementValue('setting-clipboard-shortcuts', settings.clipboardShortcuts || 'auto');
   setElementChecked('setting-smooth-scrolling', settings.smoothScrolling === true);
   setElementChecked('setting-webgl', settings.useWebGL !== false);
+  setElementChecked('setting-scrollback-protection', settings.scrollbackProtection === true);
   setElementValue('setting-run-as-user', settings.runAsUser || '');
   setElementValue('setting-log-level', settings.logLevel || 'warn');
 }
@@ -256,6 +257,7 @@ export function saveAllSettings(): void {
       'setting-clipboard-shortcuts',
       'auto',
     ) as Settings['clipboardShortcuts'],
+    scrollbackProtection: getElementChecked('setting-scrollback-protection'),
     runAsUser: runAsUserValue || null,
     logLevel: getElementValue('setting-log-level', 'warn') as Settings['logLevel'],
   };

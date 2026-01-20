@@ -29,6 +29,7 @@ public sealed class MidTermSettingsPublic
     public bool CopyOnSelect { get; set; }
     public bool RightClickPaste { get; set; }
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; }
+    public bool ScrollbackProtection { get; set; }
 
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }
@@ -65,6 +66,7 @@ public sealed class MidTermSettingsPublic
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
             ClipboardShortcuts = settings.ClipboardShortcuts,
+            ScrollbackProtection = settings.ScrollbackProtection,
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
             AuthenticationEnabled = settings.AuthenticationEnabled,
@@ -93,6 +95,7 @@ public sealed class MidTermSettingsPublic
         settings.CopyOnSelect = CopyOnSelect;
         settings.RightClickPaste = RightClickPaste;
         settings.ClipboardShortcuts = ClipboardShortcuts;
+        settings.ScrollbackProtection = ScrollbackProtection;
 
         // SECURITY: Validate RunAsUser before applying
         if (!OperatingSystem.IsWindows())
