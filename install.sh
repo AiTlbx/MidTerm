@@ -727,7 +727,7 @@ show_process_status() {
 
     # Check mt process
     local mt_pid
-    mt_pid=$(pgrep -f "^/usr/local/bin/mt" 2>/dev/null | head -1)
+    mt_pid=$(pgrep -f "^/usr/local/bin/mt" 2>/dev/null | head -1 || true)
     if [ -n "$mt_pid" ]; then
         echo -e "  mt (web)   : ${GREEN}Running (PID $mt_pid)${NC}"
     else
@@ -740,7 +740,7 @@ show_process_status() {
 
     sleep 2
     local health_response
-    health_response=$(curl -fsSk "https://localhost:$port/api/health" 2>/dev/null)
+    health_response=$(curl -fsSk "https://localhost:$port/api/health" 2>/dev/null || true)
 
     if [ -n "$health_response" ]; then
         local healthy version
