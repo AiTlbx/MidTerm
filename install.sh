@@ -522,6 +522,8 @@ write_service_settings() {
 
     echo "$json_content" > "$settings_path"
     chmod 644 "$settings_path"
+    # Ensure settings file is owned by the service user (created by root)
+    chown "$INSTALLING_USER" "$settings_path"
     echo -e "  ${GRAY}Terminal user: $INSTALLING_USER${NC}"
     echo -e "  ${GRAY}Port: $PORT${NC}"
     if [ "$BIND_ADDRESS" = "127.0.0.1" ]; then
