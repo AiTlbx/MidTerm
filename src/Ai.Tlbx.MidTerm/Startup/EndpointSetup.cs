@@ -52,6 +52,11 @@ public static class EndpointSetup
             var updateResult = ReadAndClearUpdateResult();
             var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
 
+            var features = new FeatureFlags
+            {
+                VoiceChat = UpdateService.IsDevEnvironment
+            };
+
             var response = new BootstrapResponse
             {
                 Auth = authStatus,
@@ -65,7 +70,8 @@ public static class EndpointSetup
                 Users = users,
                 Shells = shells,
                 UpdateResult = updateResult,
-                DevMode = UpdateService.IsDevEnvironment
+                DevMode = UpdateService.IsDevEnvironment,
+                Features = features
             };
 
             return Results.Json(response, AppJsonContext.Default.BootstrapResponse);

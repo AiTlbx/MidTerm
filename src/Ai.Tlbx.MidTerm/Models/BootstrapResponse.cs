@@ -71,6 +71,11 @@ public sealed class BootstrapResponse
     /// Whether server is running in development mode
     /// </summary>
     public bool DevMode { get; init; }
+
+    /// <summary>
+    /// Feature flags for conditional UI features
+    /// </summary>
+    public FeatureFlags Features { get; init; } = new();
 }
 
 /// <summary>

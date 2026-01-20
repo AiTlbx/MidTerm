@@ -22,7 +22,7 @@ import {
   applySettingsToTerminals,
 } from '../settings/persistence';
 import { updateSecurityWarning, updatePasswordStatus } from '../auth/status';
-import { setDevMode, setVoiceSectionVisible } from '../sidebar/voiceSection';
+import { setDevMode, setVoiceChatEnabled, setVoiceSectionVisible } from '../sidebar/voiceSection';
 import { checkVoiceServerHealth } from '../voice';
 import { escapeHtml } from '../../utils';
 
@@ -94,13 +94,18 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
     // Check system health (TtyHost compatibility)
     checkTtyHostHealth(data);
 
+    // Feature flags - enable/disable UI features
+    setVoiceChatEnabled(data.features.voiceChat);
+
     // Dev mode - shows sync button in voice section
     setDevMode(data.devMode);
 
-    // Check voice server availability (section always visible, just logs result)
-    checkVoiceServerHealth().then((available) => {
-      setVoiceSectionVisible(available);
-    });
+    // Check voice server availability (only relevant if voice chat is enabled)
+    if (data.features.voiceChat) {
+      checkVoiceServerHealth().then((available) => {
+        setVoiceSectionVisible(available);
+      });
+    }
 
     // Apply settings to any terminals that were created before settings loaded
     applySettingsToTerminals();

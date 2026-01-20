@@ -221,6 +221,11 @@ export interface UpdateResult {
   logFile: string;
 }
 
+/** Feature flags for conditional UI features */
+export interface FeatureFlags {
+  voiceChat: boolean;
+}
+
 /** Consolidated startup data from GET /api/bootstrap */
 export interface BootstrapResponse {
   auth: AuthStatus;
@@ -235,6 +240,7 @@ export interface BootstrapResponse {
   shells: ShellInfo[];
   updateResult?: UpdateResult;
   devMode: boolean;
+  features: FeatureFlags;
 }
 
 /** Minimal startup data for login page from GET /api/bootstrap/login */

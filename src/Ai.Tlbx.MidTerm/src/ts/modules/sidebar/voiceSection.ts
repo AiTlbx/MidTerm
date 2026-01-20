@@ -12,6 +12,26 @@ const STORAGE_KEY = 'midterm.voiceSectionCollapsed';
 
 let voiceSectionVisible = false;
 let devModeEnabled = false;
+let voiceChatEnabled = false;
+
+/**
+ * Enable/disable the voice chat feature (controls DOM visibility)
+ */
+export function setVoiceChatEnabled(enabled: boolean): void {
+  voiceChatEnabled = enabled;
+  const section = document.getElementById('voice-section');
+  if (section) {
+    section.classList.toggle('hidden', !enabled);
+  }
+  log.info(() => `VoiceChat feature: ${enabled ? 'enabled' : 'disabled'}`);
+}
+
+/**
+ * Check if voice chat feature is enabled
+ */
+export function isVoiceChatEnabled(): boolean {
+  return voiceChatEnabled;
+}
 
 /**
  * Show/hide the voice section based on voice server availability

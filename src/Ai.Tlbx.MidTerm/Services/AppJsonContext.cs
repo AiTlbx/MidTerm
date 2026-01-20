@@ -9,6 +9,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 [JsonSerializable(typeof(BootstrapResponse))]
 [JsonSerializable(typeof(BootstrapLoginResponse))]
+[JsonSerializable(typeof(FeatureFlags))]
 [JsonSerializable(typeof(WsCommand))]
 [JsonSerializable(typeof(WsCommandPayload))]
 [JsonSerializable(typeof(WsCommandResponse))]
