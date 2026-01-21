@@ -73,6 +73,7 @@ import {
   showChangelog,
   closeChangelog,
   handleUpdateInfo,
+  showUpdateLog,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
@@ -101,6 +102,8 @@ import {
   setSession,
   removeSession,
   getSession,
+  setPendingRename,
+  clearPendingRename,
 } from './stores';
 import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
 import { bindClick } from './utils';
@@ -444,6 +447,9 @@ function renameSession(sessionId: string, newName: string | null): void {
   const previousName = session.name;
   const wasManuallyNamed = session.manuallyNamed ?? false;
 
+  // Mark as pending to protect from server overwrites until confirmed
+  setPendingRename(sessionId, nameToSend);
+
   // Optimistic UI update via store
   setSession({ ...session, name: nameToSend, manuallyNamed: true });
   // Subscription handles renderSessionList and updateMobileTitle via store change
@@ -453,7 +459,8 @@ function renameSession(sessionId: string, newName: string | null): void {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: nameToSend }),
   }).catch((e) => {
-    // Rollback on error via store
+    // Clear pending and rollback on error
+    clearPendingRename(sessionId);
     const currentSession = getSession(sessionId);
     if (currentSession) {
       setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
@@ -666,6 +673,7 @@ function bindEvents(): void {
   bindClick('btn-check-updates', checkForUpdates);
   bindClick('btn-apply-update', applyUpdate);
   bindClick('btn-show-changelog', showChangelog);
+  bindClick('btn-view-update-log', showUpdateLog);
   bindClick('btn-close-changelog', closeChangelog);
   bindClick('update-changelog-link', showChangelog);
 

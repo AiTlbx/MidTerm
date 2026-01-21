@@ -2,16 +2,43 @@
  * Touch Event Handlers
  *
  * Manages touch interactions for the controller bar.
+ * Includes popup triggers, haptic feedback, and long-press alternates.
  */
 
 import { $activeSessionId } from '../../stores';
 import { sendInput } from '../comms/muxChannel';
-import { KEY_SEQUENCES, SELECTORS, CSS_CLASSES } from './constants';
+import { KEY_SEQUENCES, KEY_LABELS, SELECTORS, CSS_CLASSES } from './constants';
 import { toggleModifier, consumeModifiers, getModifierCode, type ModifierKey } from './modifiers';
+import { togglePopup } from './popups';
 
 let controllerElement: HTMLElement | null = null;
 let panelElement: HTMLElement | null = null;
 let expandButton: HTMLButtonElement | null = null;
+
+let longPressTimer: number | null = null;
+let alternatesPopup: HTMLElement | null = null;
+
+const LONG_PRESS_DELAY = 400;
+
+const KEY_ALTERNATES: Record<string, string[]> = {
+  lbracket: ['rbracket', 'lbrace', 'rbrace'],
+  rbracket: ['lbracket', 'lbrace', 'rbrace'],
+  lbrace: ['rbrace', 'lbracket', 'rbracket'],
+  rbrace: ['lbrace', 'lbracket', 'rbracket'],
+  lparen: ['rparen', 'langle', 'rangle'],
+  rparen: ['lparen', 'langle', 'rangle'],
+  langle: ['rangle', 'lparen', 'rparen'],
+  rangle: ['langle', 'lparen', 'rparen'],
+  squote: ['dquote', 'backtick'],
+  dquote: ['squote', 'backtick'],
+  backtick: ['squote', 'dquote'],
+  pipe: ['backslash', 'slash'],
+  backslash: ['pipe', 'slash'],
+  slash: ['pipe', 'backslash'],
+  ctrlc: ['ctrld', 'ctrlz'],
+  ctrld: ['ctrlc', 'ctrlz'],
+  ctrlz: ['ctrlc', 'ctrld'],
+};
 
 /**
  * Initialize event handlers for touch controller
@@ -21,8 +48,9 @@ export function initEvents(container: HTMLElement): void {
   panelElement = container.querySelector<HTMLElement>(SELECTORS.panel);
   expandButton = container.querySelector<HTMLButtonElement>(SELECTORS.expandButton);
 
-  container.addEventListener('touchstart', preventDefaults, { passive: false });
+  container.addEventListener('touchstart', handleTouchStart, { passive: false });
   container.addEventListener('touchend', handleTouchEnd, { passive: false });
+  container.addEventListener('touchmove', handleTouchMove, { passive: true });
   container.addEventListener('click', handleClick);
 }
 
@@ -31,41 +59,70 @@ export function initEvents(container: HTMLElement): void {
  */
 export function teardownEvents(): void {
   if (controllerElement) {
-    controllerElement.removeEventListener('touchstart', preventDefaults);
+    controllerElement.removeEventListener('touchstart', handleTouchStart);
     controllerElement.removeEventListener('touchend', handleTouchEnd);
+    controllerElement.removeEventListener('touchmove', handleTouchMove);
     controllerElement.removeEventListener('click', handleClick);
   }
   controllerElement = null;
   panelElement = null;
   expandButton = null;
+  cancelLongPress();
 }
 
-function preventDefaults(event: TouchEvent): void {
-  const target = event.target as HTMLElement;
-  if (target.closest('.touch-key')) {
-    event.preventDefault();
+function triggerHaptic(duration = 10): void {
+  if ('vibrate' in navigator) {
+    navigator.vibrate(duration);
   }
 }
 
-function handleTouchEnd(event: TouchEvent): void {
+function handleTouchStart(event: TouchEvent): void {
   const target = event.target as HTMLElement;
   const button = target.closest<HTMLButtonElement>('.touch-key');
+
+  if (button) {
+    event.preventDefault();
+    button.classList.add('pressing');
+    triggerHaptic();
+
+    const key = button.dataset.key;
+    const alternates = key ? KEY_ALTERNATES[key] : undefined;
+    if (alternates) {
+      longPressTimer = window.setTimeout(() => {
+        showAlternatesPopup(button, alternates);
+        triggerHaptic(20);
+      }, LONG_PRESS_DELAY);
+    }
+  }
+}
+
+function handleTouchMove(): void {
+  cancelLongPress();
+}
+
+function handleTouchEnd(event: TouchEvent): void {
+  cancelLongPress();
+
+  const target = event.target as HTMLElement;
+  const button = target.closest<HTMLButtonElement>('.touch-key');
+
+  if (button) {
+    button.classList.remove('pressing');
+  }
+
+  if (alternatesPopup) {
+    const altKey = (target as HTMLElement).dataset.key;
+    if (altKey) {
+      handleKeyPress(altKey);
+    }
+    removeAlternatesPopup();
+    return;
+  }
 
   if (!button) return;
 
   event.preventDefault();
-
-  const modifier = button.dataset.modifier as ModifierKey | undefined;
-  const key = button.dataset.key;
-  const action = button.dataset.action;
-
-  if (modifier) {
-    handleModifierPress(modifier);
-  } else if (action === 'expand') {
-    handleExpandToggle();
-  } else if (key) {
-    handleKeyPress(key);
-  }
+  processButtonAction(button);
 }
 
 function handleClick(event: MouseEvent): void {
@@ -74,12 +131,19 @@ function handleClick(event: MouseEvent): void {
 
   if (!button) return;
 
+  processButtonAction(button);
+}
+
+function processButtonAction(button: HTMLButtonElement): void {
   const modifier = button.dataset.modifier as ModifierKey | undefined;
   const key = button.dataset.key;
   const action = button.dataset.action;
+  const popup = button.dataset.popup;
 
   if (modifier) {
     handleModifierPress(modifier);
+  } else if (popup) {
+    togglePopup(popup);
   } else if (action === 'expand') {
     handleExpandToggle();
   } else if (key) {
@@ -162,4 +226,42 @@ function buildKeySequence(
   }
 
   return baseSequence;
+}
+
+function cancelLongPress(): void {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function showAlternatesPopup(anchor: HTMLElement, alternates: string[]): void {
+  removeAlternatesPopup();
+
+  const popup = document.createElement('div');
+  popup.className = 'touch-alternates';
+
+  for (const key of alternates) {
+    const btn = document.createElement('button');
+    btn.className = 'touch-key touch-key-alt';
+    btn.dataset.key = key;
+    btn.textContent = KEY_LABELS[key] || key;
+    popup.appendChild(btn);
+  }
+
+  const rect = anchor.getBoundingClientRect();
+  popup.style.position = 'fixed';
+  popup.style.left = `${rect.left}px`;
+  popup.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+  popup.style.zIndex = '1000';
+
+  document.body.appendChild(popup);
+  alternatesPopup = popup;
+}
+
+function removeAlternatesPopup(): void {
+  if (alternatesPopup) {
+    alternatesPopup.remove();
+    alternatesPopup = null;
+  }
 }

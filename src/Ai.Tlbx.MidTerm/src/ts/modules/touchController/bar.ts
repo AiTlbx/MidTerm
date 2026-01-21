@@ -7,6 +7,9 @@
 import { CSS_CLASSES, SELECTORS } from './constants';
 import { initModifiers, clearModifiers } from './modifiers';
 import { initEvents, teardownEvents } from './events';
+import { initPopups, closePopup } from './popups';
+import { initFavorites, teardownFavorites } from './favorites';
+import { initGestures, teardownGestures } from './gestures';
 import {
   shouldShowTouchController,
   setupPointerDetection,
@@ -81,6 +84,9 @@ export function initTouchController(): void {
   setupVirtualKeyboard();
   initModifiers(controllerElement);
   initEvents(controllerElement);
+  initPopups();
+  initFavorites();
+  initGestures();
 
   setupPointerDetection(handlePointerChange);
   setupKeyboardPositioning();
@@ -99,6 +105,9 @@ export function destroyTouchController(): void {
   if (!isInitialized) return;
 
   teardownEvents();
+  teardownFavorites();
+  teardownGestures();
+  closePopup();
   teardownPointerDetection();
   window.removeEventListener('resize', handleResize);
 

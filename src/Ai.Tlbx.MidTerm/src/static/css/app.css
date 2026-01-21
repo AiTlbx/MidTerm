@@ -2832,6 +2832,122 @@ html, body {
     padding: 8px 20px;
 }
 
+/* Modal Overlay (for dynamically created modals) */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-overlay > .modal {
+    position: relative;
+    background: var(--bg-sidebar);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-overlay > .modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-overlay > .modal .modal-body {
+    padding: 20px;
+    overflow: auto;
+    flex: 1;
+}
+
+.modal-overlay > .modal .modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Update Log Modal */
+.update-log-modal {
+    width: 80vw;
+    max-width: 900px;
+    max-height: 80vh;
+}
+
+.update-log-content {
+    max-height: 55vh;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: var(--bg-primary);
+    padding: 12px;
+    border-radius: 4px;
+    margin: 0;
+}
+
+/* Update Result Display */
+.update-result {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.update-result-success {
+    border-color: var(--accent-green);
+}
+
+.update-result-failed {
+    border-color: var(--accent-red);
+    background: rgba(247, 118, 142, 0.1);
+}
+
+.update-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.update-result-status {
+    font-weight: 500;
+}
+
+.update-result-success .update-result-status {
+    color: var(--accent-green);
+}
+
+.update-result-failed .update-result-status {
+    color: var(--accent-red);
+}
+
+.update-result-time {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.update-result-message {
+    margin: 8px 0;
+    color: var(--accent-red);
+    font-size: 13px;
+}
+
+.update-result .btn-view-log {
+    margin-top: 8px;
+}
+
 /* Password Status in Settings */
 .password-status {
     display: flex;
@@ -4304,6 +4420,194 @@ html, body {
     .touch-modifiers .touch-key {
         padding: 6px 6px;
     }
+}
+
+/* Category buttons (Fn, Sym, ^+) */
+.touch-categories {
+    display: flex;
+    gap: 4px;
+}
+
+.touch-cat {
+    font-size: 12px;
+    padding: 8px 10px;
+    background: var(--surface-secondary, var(--btn-secondary));
+}
+
+.touch-cat.active {
+    background: var(--accent-blue);
+    color: var(--bg-primary);
+}
+
+/* Press feedback */
+.touch-key.pressing {
+    transform: scale(0.9);
+    background: var(--accent-blue);
+    color: var(--bg-primary);
+}
+
+.touch-key {
+    transition: transform 0.08s ease-out, background 0.08s;
+}
+
+/* ==========================================================================
+   Touch Popups
+   ========================================================================== */
+
+.touch-popup {
+    position: fixed;
+    bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 901;
+    transform-origin: bottom center;
+    animation: popup-in 0.15s ease-out;
+}
+
+.touch-popup[hidden] {
+    display: none;
+}
+
+@keyframes popup-in {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Grid popup (Fn, Ctrl) */
+.touch-popup-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--popup-cols, 3), 1fr);
+    gap: 4px;
+}
+
+/* Grouped popup (Sym) */
+.touch-popup-grouped {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 320px;
+}
+
+.touch-popup-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.touch-popup-group-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding-left: 4px;
+}
+
+.touch-popup-group-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.touch-popup-key {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px 8px;
+    font-size: 13px;
+}
+
+/* ==========================================================================
+   Touch Favorites Row
+   ========================================================================== */
+
+.touch-favorites {
+    display: flex;
+    gap: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.touch-favorites:empty {
+    display: none;
+}
+
+.touch-fav-wrapper {
+    position: relative;
+}
+
+.touch-fav {
+    min-width: 40px;
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.touch-fav-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--error-color, #e74c3c);
+    color: white;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: none;
+}
+
+.touch-favorites.editing .touch-fav-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.touch-favorites.editing .touch-fav {
+    opacity: 0.7;
+}
+
+.touch-fav-edit {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px;
+    font-size: 14px;
+    margin-left: auto;
+}
+
+/* ==========================================================================
+   Long-Press Alternates Popup
+   ========================================================================== */
+
+.touch-alternates {
+    position: fixed;
+    display: flex;
+    gap: 4px;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    animation: popup-in 0.1s ease-out;
+}
+
+.touch-key-alt {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px 8px;
+    font-size: 13px;
 }
 
 /* Accessibility: Focus states for keyboard navigation */

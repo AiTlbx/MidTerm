@@ -298,9 +298,17 @@ interface UpdateResult {
   logFile: string;
 }
 
+let lastUpdateResult: UpdateResult | null = null;
+
 /**
- * Check for update results on startup and clear the result file.
- * The update result is shown in the settings panel, not as a notification.
+ * Get the last update result for display in settings panel
+ */
+export function getLastUpdateResult(): UpdateResult | null {
+  return lastUpdateResult;
+}
+
+/**
+ * Check for update results on startup and store for display.
  */
 export function checkUpdateResult(): void {
   fetch('/api/update/result')
@@ -308,10 +316,100 @@ export function checkUpdateResult(): void {
     .then((result: UpdateResult) => {
       if (!result.found) return;
 
-      // Clear the result file - the result is shown in the settings/sidebar panels
+      // Store for settings panel display
+      lastUpdateResult = result;
+      renderUpdateResult();
+
+      // Clear the result file after storing
       fetch('/api/update/result', { method: 'DELETE' }).catch((e) => {
         log.verbose(() => `Failed to clear update result: ${e}`);
       });
     })
     .catch((e) => log.warn(() => `Failed to check update result: ${e}`));
+}
+
+/**
+ * Render the last update result in the settings panel
+ */
+export function renderUpdateResult(): void {
+  const container = document.getElementById('update-result');
+  if (!container) return;
+
+  if (!lastUpdateResult) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  container.classList.remove('hidden');
+  const statusClass = lastUpdateResult.success ? 'update-result-success' : 'update-result-failed';
+  const statusText = lastUpdateResult.success ? 'Success' : 'Failed';
+  const timestamp = new Date(lastUpdateResult.timestamp).toLocaleString();
+
+  container.className = `update-result ${statusClass}`;
+  container.innerHTML = `
+    <div class="update-result-header">
+      <span class="update-result-status">Last update: ${statusText}</span>
+      <span class="update-result-time">${timestamp}</span>
+    </div>
+    ${!lastUpdateResult.success ? `<div class="update-result-message">${escapeHtml(lastUpdateResult.message)}</div>` : ''}
+    <button class="btn-secondary btn-view-log">View Update Log</button>
+  `;
+
+  container.querySelector('.btn-view-log')?.addEventListener('click', showUpdateLog);
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Show the update log in a modal
+ */
+export async function showUpdateLog(): Promise<void> {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal update-log-modal">
+      <div class="modal-header">
+        <span>Update Log</span>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <pre class="update-log-content">Loading...</pre>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary btn-copy-log">Copy Log</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const logContent = modal.querySelector('.update-log-content') as HTMLPreElement;
+  try {
+    const response = await fetch('/api/update/log');
+    if (response.ok) {
+      logContent.textContent = await response.text();
+    } else {
+      logContent.textContent = 'No update log found';
+    }
+  } catch (e) {
+    logContent.textContent = `Failed to load log: ${e}`;
+  }
+
+  modal.querySelector('.modal-close')?.addEventListener('click', () => modal.remove());
+  modal.querySelector('.btn-copy-log')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(logContent.textContent || '');
+    const btn = modal.querySelector('.btn-copy-log') as HTMLButtonElement;
+    const originalText = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => {
+      btn.textContent = originalText;
+    }, 1500);
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
 }
