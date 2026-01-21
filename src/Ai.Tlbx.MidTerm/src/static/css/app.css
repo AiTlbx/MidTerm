@@ -2832,6 +2832,122 @@ html, body {
     padding: 8px 20px;
 }
 
+/* Modal Overlay (for dynamically created modals) */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-overlay > .modal {
+    position: relative;
+    background: var(--bg-sidebar);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-overlay > .modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-overlay > .modal .modal-body {
+    padding: 20px;
+    overflow: auto;
+    flex: 1;
+}
+
+.modal-overlay > .modal .modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Update Log Modal */
+.update-log-modal {
+    width: 80vw;
+    max-width: 900px;
+    max-height: 80vh;
+}
+
+.update-log-content {
+    max-height: 55vh;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: var(--bg-primary);
+    padding: 12px;
+    border-radius: 4px;
+    margin: 0;
+}
+
+/* Update Result Display */
+.update-result {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.update-result-success {
+    border-color: var(--accent-green);
+}
+
+.update-result-failed {
+    border-color: var(--accent-red);
+    background: rgba(247, 118, 142, 0.1);
+}
+
+.update-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.update-result-status {
+    font-weight: 500;
+}
+
+.update-result-success .update-result-status {
+    color: var(--accent-green);
+}
+
+.update-result-failed .update-result-status {
+    color: var(--accent-red);
+}
+
+.update-result-time {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.update-result-message {
+    margin: 8px 0;
+    color: var(--accent-red);
+    font-size: 13px;
+}
+
+.update-result .btn-view-log {
+    margin-top: 8px;
+}
+
 /* Password Status in Settings */
 .password-status {
     display: flex;

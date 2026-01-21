@@ -73,6 +73,7 @@ import {
   showChangelog,
   closeChangelog,
   handleUpdateInfo,
+  showUpdateLog,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
@@ -670,6 +671,7 @@ function bindEvents(): void {
   bindClick('btn-check-updates', checkForUpdates);
   bindClick('btn-apply-update', applyUpdate);
   bindClick('btn-show-changelog', showChangelog);
+  bindClick('btn-view-update-log', showUpdateLog);
   bindClick('btn-close-changelog', closeChangelog);
   bindClick('update-changelog-link', showChangelog);
 

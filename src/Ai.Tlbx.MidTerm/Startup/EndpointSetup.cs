@@ -421,6 +421,42 @@ public static class EndpointSetup
             return Results.Ok();
         });
 
+        // GET /api/update/log - get the update log file content
+        app.MapGet("/api/update/log", () =>
+        {
+            // Try settings directory first (user mode uses this)
+            var logPath = Path.Combine(settingsService.SettingsDirectory, "midterm-update.log");
+
+            // For Unix service mode, check the system log directory
+            if (!File.Exists(logPath) && !OperatingSystem.IsWindows())
+            {
+                var altPath = "/usr/local/var/log/midterm-update.log";
+                if (File.Exists(altPath))
+                {
+                    logPath = altPath;
+                }
+            }
+
+            if (!File.Exists(logPath))
+            {
+                return Results.NotFound("No update log found");
+            }
+
+            try
+            {
+                var content = File.ReadAllText(logPath);
+                if (content.Length > 100_000)
+                {
+                    content = content[^100_000..];
+                }
+                return Results.Text(content, "text/plain");
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Failed to read log: {ex.Message}");
+            }
+        });
+
         app.MapGet("/api/networks", () =>
         {
             static bool IsPhysicalOrVpn(string name)
