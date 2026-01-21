@@ -3001,6 +3001,72 @@ html, body {
     opacity: 0;
 }
 
+.drop-toast.sticky {
+    cursor: pointer;
+}
+
+.drop-toast.https-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    max-width: 360px;
+    text-align: left;
+    cursor: default;
+}
+
+.drop-toast .toast-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.drop-toast .toast-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.drop-toast .toast-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.drop-toast .toast-desc {
+    font-size: 12px;
+    opacity: 0.9;
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.drop-toast .toast-link {
+    display: inline-block;
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: underline;
+    opacity: 0.95;
+}
+
+.drop-toast .toast-link:hover {
+    opacity: 1;
+}
+
+.drop-toast .toast-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0;
+    margin: -4px -4px 0 0;
+    opacity: 0.7;
+    line-height: 1;
+}
+
+.drop-toast .toast-close:hover {
+    opacity: 1;
+}
+
 /* =============================================================================
    Terminal Search
    ============================================================================= */
@@ -3680,13 +3746,39 @@ html, body {
     opacity: 0;
 }
 
+/* Network Actions (Trust + Share) */
+.network-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.network-action-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    color: var(--text-secondary);
+    font-size: 10.5px;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.network-action-link:hover {
+    color: var(--accent-blue);
+}
+
+.network-action-link .icon {
+    font-size: 11px;
+}
+
 /* Share Access Link (subtle) */
 .share-access-link {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 4px 0;
-    margin-top: 4px;
     background: none;
     border: none;
     color: var(--text-secondary);

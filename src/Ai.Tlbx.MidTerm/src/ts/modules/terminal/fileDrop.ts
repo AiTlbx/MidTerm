@@ -103,19 +103,73 @@ function isRejectedFile(filename: string): boolean {
   return REJECTED_EXTENSIONS.has(getFileExtension(filename));
 }
 
-function showDropToast(message: string): void {
+function showDropToast(message: string, sticky = false): void {
   const existing = document.querySelector('.drop-toast');
   if (existing) existing.remove();
 
   const toast = document.createElement('div');
   toast.className = 'drop-toast error';
+  if (sticky) toast.classList.add('sticky');
   toast.textContent = message;
   document.body.appendChild(toast);
 
-  setTimeout(() => {
+  if (sticky) {
+    toast.addEventListener('click', () => {
+      toast.classList.add('hiding');
+      setTimeout(() => toast.remove(), 300);
+    });
+  } else {
+    setTimeout(() => {
+      toast.classList.add('hiding');
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+}
+
+function showHttpsRequiredToast(): void {
+  const existing = document.querySelector('.drop-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = 'drop-toast error sticky https-warning';
+
+  const icon = document.createElement('span');
+  icon.className = 'toast-icon';
+  icon.textContent = '🔒';
+
+  const content = document.createElement('div');
+  content.className = 'toast-content';
+
+  const title = document.createElement('div');
+  title.className = 'toast-title';
+  title.textContent = 'Clipboard requires trusted HTTPS';
+
+  const desc = document.createElement('div');
+  desc.className = 'toast-desc';
+  desc.textContent = 'Your browser blocks clipboard access on untrusted connections.';
+
+  const link = document.createElement('a');
+  link.href = '/trust';
+  link.className = 'toast-link';
+  link.textContent = 'Trust Certificate →';
+
+  content.appendChild(title);
+  content.appendChild(desc);
+  content.appendChild(link);
+
+  const close = document.createElement('button');
+  close.className = 'toast-close';
+  close.innerHTML = '&times;';
+  close.addEventListener('click', (e) => {
+    e.stopPropagation();
     toast.classList.add('hiding');
     setTimeout(() => toast.remove(), 300);
-  }, 3000);
+  });
+
+  toast.appendChild(icon);
+  toast.appendChild(content);
+  toast.appendChild(close);
+  document.body.appendChild(toast);
 }
 
 async function readFileAsText(file: File): Promise<string> {
@@ -288,7 +342,7 @@ export async function handleClipboardPaste(sessionId: string): Promise<void> {
   // Clipboard API requires secure context (HTTPS or localhost)
   // On HTTP remote connections, show warning and bail out
   if (!window.isSecureContext) {
-    showDropToast('Paste requires HTTPS or localhost');
+    showHttpsRequiredToast();
     return;
   }
 
