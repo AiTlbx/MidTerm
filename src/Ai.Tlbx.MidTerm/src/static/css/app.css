@@ -742,13 +742,17 @@ html, body {
     align-items: center;
 }
 
+.sidebar-footer .footer-sessions {
+    font-size: 11.5px;
+}
+
 .sidebar-footer .version {
-    font-size: 10px;
+    font-size: 10.5px;
     color: var(--text-muted);
 }
 
 .sidebar-footer .footer-traffic {
-    font-size: 10px;
+    font-size: 10.5px;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     min-width: 55px;
@@ -757,8 +761,10 @@ html, body {
 }
 
 .sidebar-footer .footer-traffic::before {
-    content: '\2195 ';
+    content: '\2195';
     opacity: 0.6;
+    font-size: 110%;
+    margin-right: 4px;
 }
 
 .network-list {
