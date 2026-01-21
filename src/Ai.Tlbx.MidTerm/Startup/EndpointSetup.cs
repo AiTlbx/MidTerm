@@ -424,20 +424,39 @@ public static class EndpointSetup
         // GET /api/update/log - get the update log file content
         app.MapGet("/api/update/log", () =>
         {
-            // Try settings directory first (user mode uses this)
-            var logPath = Path.Combine(settingsService.SettingsDirectory, "midterm-update.log");
+            // Log file names differ by platform:
+            // - Windows: update.log in settings directory
+            // - Unix: midterm-update.log in settings or /usr/local/var/log/
+            string? logPath = null;
 
-            // For Unix service mode, check the system log directory
-            if (!File.Exists(logPath) && !OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindows())
             {
-                var altPath = "/usr/local/var/log/midterm-update.log";
-                if (File.Exists(altPath))
+                var winPath = Path.Combine(settingsService.SettingsDirectory, "update.log");
+                if (File.Exists(winPath))
                 {
-                    logPath = altPath;
+                    logPath = winPath;
+                }
+            }
+            else
+            {
+                // Unix: try settings directory first (user mode)
+                var unixPath = Path.Combine(settingsService.SettingsDirectory, "midterm-update.log");
+                if (File.Exists(unixPath))
+                {
+                    logPath = unixPath;
+                }
+                else
+                {
+                    // Service mode: check system log directory
+                    var svcPath = "/usr/local/var/log/midterm-update.log";
+                    if (File.Exists(svcPath))
+                    {
+                        logPath = svcPath;
+                    }
                 }
             }
 
-            if (!File.Exists(logPath))
+            if (logPath is null)
             {
                 return Results.NotFound("No update log found");
             }
