@@ -638,11 +638,15 @@
 
     <!-- Touch Controller Bar (mobile only) -->
     <div id="touch-controller" class="touch-controller" aria-label="Terminal touch controls">
+        <!-- Favorites row (dynamically rendered) -->
+        <div id="touch-favorites" class="touch-favorites"></div>
+
+        <!-- Main bar -->
         <div class="touch-bar-main">
             <div class="touch-group touch-modifiers">
                 <button class="touch-key touch-modifier" data-modifier="ctrl" aria-pressed="false">Ctrl</button>
                 <button class="touch-key touch-modifier" data-modifier="alt" aria-pressed="false">Alt</button>
-                <button class="touch-key touch-modifier" data-modifier="shift" aria-pressed="false">Shift</button>
+                <button class="touch-key touch-modifier" data-modifier="shift" aria-pressed="false">Shft</button>
             </div>
             <div class="touch-group touch-arrows">
                 <button class="touch-key" data-key="up" aria-label="Arrow up">&#9650;</button>
@@ -650,15 +654,22 @@
                 <button class="touch-key" data-key="down" aria-label="Arrow down">&#9660;</button>
                 <button class="touch-key" data-key="right" aria-label="Arrow right">&#9654;</button>
             </div>
-            <button class="touch-key touch-expand" data-action="expand" aria-expanded="false" aria-controls="touch-panel">
-                <span class="expand-icon">&#8943;</span>
-            </button>
+            <div class="touch-group touch-categories">
+                <button class="touch-key touch-cat" data-popup="fn" aria-haspopup="true" aria-expanded="false">Fn</button>
+                <button class="touch-key touch-cat" data-popup="sym" aria-haspopup="true" aria-expanded="false">Sym</button>
+                <button class="touch-key touch-cat" data-popup="ctrl" aria-haspopup="true" aria-expanded="false">^+</button>
+                <button class="touch-key touch-expand" data-action="expand" aria-expanded="false" aria-controls="touch-panel">
+                    <span class="expand-icon">&#8943;</span>
+                </button>
+            </div>
         </div>
+
+        <!-- Compact panel (Nav/Edit keys only) -->
         <div id="touch-panel" class="touch-panel" aria-hidden="true">
             <div class="touch-panel-row">
                 <button class="touch-key" data-key="tab">Tab</button>
                 <button class="touch-key" data-key="esc">Esc</button>
-                <button class="touch-key" data-key="enter">Enter</button>
+                <button class="touch-key" data-key="enter">&#8629;</button>
                 <button class="touch-key" data-key="backspace">&#9003;</button>
             </div>
             <div class="touch-panel-row">
@@ -667,14 +678,13 @@
                 <button class="touch-key" data-key="pgup">PgUp</button>
                 <button class="touch-key" data-key="pgdn">PgDn</button>
             </div>
-            <div class="touch-panel-row">
-                <button class="touch-key" data-key="insert">Ins</button>
-                <button class="touch-key" data-key="delete">Del</button>
-                <button class="touch-key" data-key="ctrlc">^C</button>
-                <button class="touch-key" data-key="ctrld">^D</button>
-            </div>
         </div>
     </div>
+
+    <!-- Touch Popups (positioned absolutely, rendered by JS) -->
+    <div id="touch-popup-fn" class="touch-popup" hidden></div>
+    <div id="touch-popup-sym" class="touch-popup" hidden></div>
+    <div id="touch-popup-ctrl" class="touch-popup" hidden></div>
 
     <script src="js/webAudioAccess.js"></script>
     <script src="js/terminal.min.js"></script>
