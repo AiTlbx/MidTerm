@@ -49,7 +49,11 @@ const log = createLogger('fileLinks');
  * Default: OFF - user must explicitly enable this feature.
  */
 function isFileRadarEnabled(): boolean {
-  return currentSettings?.fileRadar === true;
+  const enabled = currentSettings?.fileRadar === true;
+  console.log(
+    `[FileRadar] isFileRadarEnabled: ${enabled}, fileRadar: ${currentSettings?.fileRadar}`,
+  );
+  return enabled;
 }
 
 /** Minimum frame size in bytes to bother scanning (skip tiny cursor moves) */
