@@ -323,3 +323,74 @@ With `-mthostUpdate yes`: Both mt and mthost versions bumped, terminals restart 
 - Use interfaces + DI, not static classes
 - Platform checks: `OperatingSystem.IsWindows()`, `.IsLinux()`, `.IsMacOS()`
 - All JSON serialization must use source-generated `AppJsonContext` for AOT safety
+
+## Marketing Video Workflow
+
+Location: `docs/marketing/`
+
+**Goal:** Create short meme videos for social media (10/day target).
+
+### The Flow
+
+1. **Pick idea** from `ideas.md`
+2. **Write story** (2-3 scenes with start/end/transition descriptions)
+3. **Generate clips** with `create_clip.py`
+4. **Chain clips** with `chain_clips.py`
+5. **Draft tweet** text
+6. **Post manually** (API too expensive)
+
+### Quick Commands
+
+```bash
+cd docs/marketing
+
+# Generate a single clip from JSON config
+python create_clip.py scene1.json
+
+# Generate clip from command line args
+python create_clip.py --clip-id test001 \
+    --start "Dev at desk, frustrated" \
+    --end "Dev smiling with phone" \
+    --transition "picks up phone, relief washes over" \
+    --aspect 9:16 --duration 4
+
+# Chain 2-3 clips into final video
+python chain_clips.py output/scene1 output/scene2 output/scene3 -o output/final.mp4
+
+# With crossfade transitions
+python chain_clips.py output/scene1 output/scene2 --crossfade 0.5 -o output/final.mp4
+```
+
+### Environment Setup
+
+```powershell
+$env:VERTEX_AI_PROJECT_ID = "your-project-id"
+$env:VERTEX_AI_SERVICE_ACCOUNT_JSON = "C:\path\to\service-account.json"
+```
+
+### Story Format
+
+Each idea needs 2-3 scenes. Each scene has:
+- **Start prompt:** Visual description of opening frame
+- **End prompt:** Visual description of ending frame
+- **Transition prompt:** Description of motion between frames
+
+Keep character descriptions consistent across scenes for visual continuity.
+
+### Aspect Ratios
+
+- `9:16` — TikTok, Instagram Reels, YouTube Shorts (vertical, default)
+- `16:9` — YouTube, LinkedIn (horizontal)
+- `1:1` — Twitter, Instagram feed (square)
+
+### Cost Per Video
+
+~$0.72 (6 images + 3 video clips) = ~$7/day for 10 videos
+
+### Files
+
+- `ideas.md` — Idea tracker with status and story templates
+- `create_clip.py` — Single clip generator (Vertex AI)
+- `chain_clips.py` — FFmpeg clip merger
+- `features.md`, `features_usecases.md`, `why.md` — Content source material
+- `meme-spots.md` — Meme format ideas
