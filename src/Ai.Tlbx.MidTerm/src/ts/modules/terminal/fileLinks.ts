@@ -133,9 +133,7 @@ export function clearPathAllowlist(sessionId: string): void {
  * Keep this function as fast as possible - actual scanning is deferred.
  */
 export function scanOutputForPaths(sessionId: string, data: string | Uint8Array): void {
-  const enabled = isFileRadarEnabled();
-  console.log(`[DIAG] scanOutputForPaths: enabled=${enabled}, dataLen=${data.length}`);
-  if (!enabled) {
+  if (!isFileRadarEnabled()) {
     return;
   }
 
@@ -145,22 +143,15 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
   // Skip tiny frames (likely cursor moves, not real content)
   if (text.length < MIN_SCAN_FRAME_SIZE) return;
 
-  const hasUnix = QUICK_PATH_CHECK_UNIX.test(text);
-  const hasWin = QUICK_PATH_CHECK_WIN.test(text);
-  console.log(
-    `[DIAG] quickCheck: unix=${hasUnix}, win=${hasWin}, text="${text.substring(0, 100)}"`,
-  );
-
   // Quick check: does this text even contain path-like characters?
   // This avoids regex overhead for frames that are clearly not paths
-  if (!hasUnix && !hasWin) {
+  if (!QUICK_PATH_CHECK_UNIX.test(text) && !QUICK_PATH_CHECK_WIN.test(text)) {
     return;
   }
 
   // Append to pending text for this session
   const existing = pendingScanText.get(sessionId) || '';
   pendingScanText.set(sessionId, existing + text);
-  console.log(`[DIAG] accumulated: len=${(existing + text).length}`);
 
   // Debounce: reset timer and schedule scan
   const existingTimer = scanTimers.get(sessionId);
@@ -198,8 +189,6 @@ function performScan(sessionId: string, text: string): void {
     .replace(/\x1b\][^\x07]*/g, ''); // Incomplete OSC (no terminator yet)
   /* eslint-enable no-control-regex */
 
-  console.log(`[DIAG] performScan: cleanText="${cleanText.substring(0, 200)}"`);
-
   const allowlist = getPathAllowlist(sessionId);
   const initialSize = allowlist.size;
 
@@ -208,8 +197,8 @@ function performScan(sessionId: string, text: string): void {
   for (const match of cleanText.matchAll(UNIX_PATH_PATTERN)) {
     const path = match[1];
     if (!path) continue;
-    log.info(() => `Unix match: "${path}" valid=${isValidPath(path)}`);
     if (isValidPath(path)) {
+      log.verbose(() => `Path detected: ${path}`);
       addToAllowlist(allowlist, path);
     }
   }
@@ -219,14 +208,14 @@ function performScan(sessionId: string, text: string): void {
   for (const match of cleanText.matchAll(WIN_PATH_PATTERN)) {
     const path = match[1];
     if (!path) continue;
-    console.log(`[DIAG] Windows match: "${path}" valid=${isValidPath(path)}`);
     if (isValidPath(path)) {
+      log.verbose(() => `Path detected: ${path}`);
       addToAllowlist(allowlist, path);
     }
   }
 
   if (allowlist.size > initialSize) {
-    log.info(
+    log.verbose(
       () => `Added ${allowlist.size - initialSize} paths to allowlist for session ${sessionId}`,
     );
   }
@@ -308,9 +297,6 @@ export function createFileLinkProvider(sessionId: string): ILinkProvider {
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   terminal.registerLinkProvider({
     provideLinks(lineNumber: number, callback: (links: ILink[] | undefined) => void): void {
-      // DIAGNOSTIC: Always log when called
-      console.log(`[DIAG] provideLinks: line=${lineNumber}, session=${sessionId}`);
-
       // Check setting inside callback so toggling works without recreating terminals
       if (!isFileRadarEnabled()) {
         callback(undefined);
@@ -334,9 +320,6 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       }
 
       const lineText = line.translateToString(true);
-      console.log(
-        `[DIAG] provideLinks: line=${lineNumber}, size=${currentAllowlist.size}, text="${lineText.substring(0, 60)}"`,
-      );
 
       // Quick check before regex - does line contain path-like chars?
       if (!QUICK_PATH_CHECK_UNIX.test(lineText) && !QUICK_PATH_CHECK_WIN.test(lineText)) {
@@ -387,9 +370,12 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       findLinks(UNIX_PATH_PATTERN);
       findLinks(WIN_PATH_PATTERN);
 
+      if (links.length > 0) {
+        log.verbose(() => `Providing ${links.length} link(s) for line ${lineNumber}`);
+      }
       callback(links.length > 0 ? links : undefined);
     },
   });
 
-  log.info(() => `Registered file link provider for session ${sessionId}`);
+  log.verbose(() => `Registered file link provider for session ${sessionId}`);
 }
