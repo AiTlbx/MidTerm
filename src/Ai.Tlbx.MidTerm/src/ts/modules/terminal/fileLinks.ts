@@ -2,7 +2,7 @@
  * File Links Module
  *
  * Detects file paths in terminal output and makes them clickable.
- * Only paths that have been seen in terminal output are clickable (allowlist).
+ * Uses xterm-link-provider for robust link detection and rendering.
  * Clicking opens the file viewer modal.
  */
 
@@ -31,7 +31,8 @@
  *
  * =========================================================================== */
 
-import type { Terminal, ILinkProvider, ILink } from '@xterm/xterm';
+import type { Terminal } from '@xterm/xterm';
+import { LinkProvider } from 'xterm-link-provider';
 import type { FilePathInfo, FileCheckResponse } from '../../types';
 import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
@@ -90,16 +91,41 @@ const scanTimers = new Map<string, number>();
 
 /**
  * Unix absolute paths: /path/to/file or /path/to/file.ext
- * Uses non-global version for matchAll (creates fresh iterator each time)
+ * Pattern for xterm-link-provider (uses capture group 1 for the link text)
  */
-const UNIX_PATH_PATTERN = /(?:^|[\s"'`(])(\/([\w.-]+\/)*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
+const UNIX_PATH_PATTERN = /(\/(?:[\w.-]+\/)*[\w.-]+(?:\.\w+)?)/;
 
 /**
  * Windows absolute paths: C:\path\file or C:/path/file
- * Uses non-global version for matchAll (creates fresh iterator each time)
+ * Pattern for xterm-link-provider (uses capture group 1 for the link text)
  */
-const WIN_PATH_PATTERN =
+const WIN_PATH_PATTERN = /([A-Za-z]:[\\/](?:[\w.-]+[\\/])*[\w.-]+(?:\.\w+)?)/;
+
+/**
+ * Global versions for scanning terminal output
+ */
+const UNIX_PATH_PATTERN_GLOBAL = /(?:^|[\s"'`(])(\/([\w.-]+\/)*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
+const WIN_PATH_PATTERN_GLOBAL =
   /(?:^|[\s"'`(])([A-Za-z]:[\\/](?:[\w.-]+[\\/])*[\w.-]+(?:\.\w+)?)(?=[\s"'`)]|$)/g;
+
+// ===========================================================================
+// Toast Notification
+// ===========================================================================
+
+function showFileNotFoundToast(path: string): void {
+  const existing = document.querySelector('.drop-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = 'drop-toast error';
+  toast.textContent = `File not found: ${path}`;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add('hiding');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
 
 // ===========================================================================
 // Public API
@@ -178,47 +204,41 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
 /**
  * Actually perform the regex scan on accumulated text.
  * Called after debounce delay, potentially in idle time.
+ * This pre-caches file existence for faster click response.
  */
 function performScan(sessionId: string, text: string): void {
   // Strip ANSI escape sequences before regex matching
-  // Handles CSI sequences (colors, cursor), OSC sequences (hyperlinks, titles), and other controls
   /* eslint-disable no-control-regex */
   const cleanText = text
-    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') // CSI sequences: \x1b[...m, \x1b[...H, etc.
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '') // OSC sequences: \x1b]...BEL or \x1b]...\x1b\\
-    .replace(/\x1b\][^\x07]*/g, ''); // Incomplete OSC (no terminator yet)
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') // CSI sequences
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '') // OSC sequences
+    .replace(/\x1b\][^\x07]*/g, ''); // Incomplete OSC
   /* eslint-enable no-control-regex */
 
   const allowlist = getPathAllowlist(sessionId);
-  const initialSize = allowlist.size;
 
   // Reset regex lastIndex and scan for Unix paths
-  UNIX_PATH_PATTERN.lastIndex = 0;
-  for (const match of cleanText.matchAll(UNIX_PATH_PATTERN)) {
+  UNIX_PATH_PATTERN_GLOBAL.lastIndex = 0;
+  for (const match of cleanText.matchAll(UNIX_PATH_PATTERN_GLOBAL)) {
     const path = match[1];
     if (!path) continue;
     if (isValidPath(path)) {
-      console.log(`[FileRadar] Path detected: ${path}`);
       addToAllowlist(allowlist, path);
+      // Pre-cache existence check
+      checkPathExists(path);
     }
   }
 
   // Reset regex lastIndex and scan for Windows paths
-  WIN_PATH_PATTERN.lastIndex = 0;
-  for (const match of cleanText.matchAll(WIN_PATH_PATTERN)) {
+  WIN_PATH_PATTERN_GLOBAL.lastIndex = 0;
+  for (const match of cleanText.matchAll(WIN_PATH_PATTERN_GLOBAL)) {
     const path = match[1];
     if (!path) continue;
     if (isValidPath(path)) {
-      console.log(`[FileRadar] Path detected: ${path}`);
       addToAllowlist(allowlist, path);
+      // Pre-cache existence check
+      checkPathExists(path);
     }
-  }
-
-  if (allowlist.size > initialSize) {
-    console.log(`[FileRadar] Allowlist now has ${allowlist.size} paths for session ${sessionId}`);
-    log.verbose(
-      () => `Added ${allowlist.size - initialSize} paths to allowlist for session ${sessionId}`,
-    );
   }
 }
 
@@ -269,128 +289,52 @@ async function checkPathExists(path: string): Promise<FilePathInfo | null> {
 }
 
 // ===========================================================================
+// Click Handler
+// ===========================================================================
+
+async function handlePathClick(path: string): Promise<void> {
+  const info = await checkPathExists(path);
+  if (info?.exists) {
+    openFile(path, info);
+  } else {
+    showFileNotFoundToast(path);
+  }
+}
+
+// ===========================================================================
 // Link Provider Registration
 // ===========================================================================
 
-export function createFileLinkProvider(sessionId: string): ILinkProvider {
-  return {
-    provideLinks(_lineNumber: number, callback: (links: ILink[] | undefined) => void): void {
-      if (!isFileRadarEnabled()) {
-        callback(undefined);
-        return;
-      }
-      const allowlist = getPathAllowlist(sessionId);
-      if (allowlist.size === 0) {
-        callback(undefined);
-        return;
-      }
-      callback(undefined);
-    },
-  };
+/**
+ * Register the file link provider with xterm.js using xterm-link-provider.
+ * This is called once per terminal session.
+ */
+export function registerFileLinkProvider(terminal: Terminal, _sessionId: string): void {
+  if (!isFileRadarEnabled()) return;
+
+  // Cast to 'any' because xterm-link-provider was built for xterm 4.x
+  // but we use @xterm/xterm 5+. The APIs are compatible at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const term = terminal as any;
+
+  // Unix paths
+  terminal.registerLinkProvider(
+    new LinkProvider(term, UNIX_PATH_PATTERN, async (_event, path) => {
+      await handlePathClick(path);
+    }),
+  );
+
+  // Windows paths
+  terminal.registerLinkProvider(
+    new LinkProvider(term, WIN_PATH_PATTERN, async (_event, path) => {
+      await handlePathClick(path);
+    }),
+  );
+
+  log.verbose(() => `Registered file link provider`);
 }
 
-/**
- * Register the file link provider with xterm.js.
- * This is called once per terminal session.
- * NOTE: Always registers the provider - setting is checked inside the callback
- * so toggling the setting works without recreating terminals.
- */
-export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
-  terminal.registerLinkProvider({
-    provideLinks(lineNumber: number, callback: (links: ILink[] | undefined) => void): void {
-      // Check setting inside callback so toggling works without recreating terminals
-      if (!isFileRadarEnabled()) {
-        callback(undefined);
-        return;
-      }
-
-      // Get fresh allowlist reference (in case it changed)
-      const currentAllowlist = getPathAllowlist(sessionId);
-      console.log(
-        `[FileRadar] provideLinks called: line=${lineNumber}, session=${sessionId}, allowlist=${currentAllowlist.size}`,
-      );
-
-      // Early bailout if no paths detected yet
-      if (currentAllowlist.size === 0) {
-        callback(undefined);
-        return;
-      }
-
-      const buffer = terminal.buffer.active;
-      const line = buffer.getLine(lineNumber);
-      if (!line) {
-        callback(undefined);
-        return;
-      }
-
-      const lineText = line.translateToString(true);
-      console.log(`[FileRadar] Line text: "${lineText.substring(0, 80)}"`);
-
-      // Quick check before regex - does line contain path-like chars?
-      if (!QUICK_PATH_CHECK_UNIX.test(lineText) && !QUICK_PATH_CHECK_WIN.test(lineText)) {
-        console.log(`[FileRadar] No path-like chars in line, skipping`);
-        callback(undefined);
-        return;
-      }
-
-      const links: ILink[] = [];
-
-      // lineNumber from provideLinks is already buffer-relative, just convert to 1-indexed
-      const bufferY = lineNumber + 1;
-
-      // Scan with reused patterns (reset lastIndex for safety with global flag)
-      const findLinks = (pattern: RegExp) => {
-        pattern.lastIndex = 0;
-        for (const match of lineText.matchAll(pattern)) {
-          const path = match[1];
-          if (!path) continue;
-          if (!currentAllowlist.has(path)) continue;
-
-          const matchStart = match.index! + match[0].indexOf(path);
-          const matchEnd = matchStart + path.length;
-
-          console.log(
-            `[FileRadar] Creating link: path="${path}", x=${matchStart + 1}-${matchEnd}, y=${bufferY}`,
-          );
-
-          links.push({
-            range: {
-              start: { x: matchStart + 1, y: bufferY },
-              end: { x: matchEnd, y: bufferY },
-            },
-            text: path,
-            decorations: {
-              pointerCursor: true,
-              underline: true,
-            },
-            activate: async (_event: MouseEvent, text: string) => {
-              log.info(() => `Opening file: ${text}`);
-              const info = await checkPathExists(text);
-              if (info && info.exists) {
-                openFile(text, info);
-              } else {
-                log.warn(() => `File not found or inaccessible: ${text}`);
-              }
-            },
-            hover: async (_event: MouseEvent, text: string) => {
-              // Pre-fetch existence on hover for faster click response
-              await checkPathExists(text);
-            },
-          });
-        }
-      };
-
-      findLinks(UNIX_PATH_PATTERN);
-      findLinks(WIN_PATH_PATTERN);
-
-      if (links.length > 0) {
-        console.log(`[FileRadar] Providing ${links.length} link(s) for line ${lineNumber}`);
-      } else {
-        console.log(`[FileRadar] No matching paths in allowlist for this line`);
-      }
-      callback(links.length > 0 ? links : undefined);
-    },
-  });
-
-  log.verbose(() => `Registered file link provider for session ${sessionId}`);
+// Legacy export for compatibility (unused but keeps API stable)
+export function createFileLinkProvider(_sessionId: string): null {
+  return null;
 }
