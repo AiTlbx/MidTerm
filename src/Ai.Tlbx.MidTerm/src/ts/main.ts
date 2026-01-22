@@ -93,6 +93,7 @@ import {
   newlyCreatedSessions,
   pendingSessions,
   bellNotificationsSuppressed,
+  activeNotifications,
 } from './state';
 import {
   $stateWsConnected,
@@ -604,14 +605,31 @@ function showBellNotification(sessionId: string): void {
     Notification.permission === 'granted' &&
     document.hidden
   ) {
+    // Close existing notification for this session (deduplication)
+    const existing = activeNotifications.get(sessionId);
+    if (existing) {
+      existing.close();
+    }
+
     const notification = new Notification(title, {
       body: 'Needs your attention',
       icon: '/favicon.ico',
+      tag: `midterm-bell-${sessionId}`,
     });
+
+    activeNotifications.set(sessionId, notification);
+
     notification.onclick = () => {
       window.focus();
       notification.close();
+      activeNotifications.delete(sessionId);
     };
+
+    // Auto-close after 15 seconds
+    setTimeout(() => {
+      notification.close();
+      activeNotifications.delete(sessionId);
+    }, 15000);
   }
 
   if (bellStyle === 'visual' || bellStyle === 'both') {

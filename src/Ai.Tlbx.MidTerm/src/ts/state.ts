@@ -89,6 +89,9 @@ export const pendingOutputFrames = new Map<string, Uint8Array[]>();
 /** Sessions that overflowed pending frames and need full resync when opened */
 export const sessionsNeedingResync = new Set<string>();
 
+/** Active bell notifications per session (for deduplication + auto-close) */
+export const activeNotifications = new Map<string, Notification>();
+
 /** Font loading promise */
 export let fontsReadyPromise: Promise<void> | null = null;
 
