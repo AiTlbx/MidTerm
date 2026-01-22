@@ -48,3 +48,12 @@ public sealed class DirectoryEntry
     public DateTime? Modified { get; set; }
     public string? MimeType { get; set; }
 }
+
+/// <summary>
+/// Request to register detected file paths for File Radar security allowlist.
+/// </summary>
+public sealed class FileRegisterRequest
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string[] Paths { get; set; } = [];
+}

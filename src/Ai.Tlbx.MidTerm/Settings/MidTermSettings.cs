@@ -101,7 +101,7 @@ public sealed class MidTermSettings
     public bool ScrollbackProtection { get; set; } = false;
 
     // File Radar - Detects file paths in terminal output and makes them clickable
-    public bool FileRadar { get; set; } = false;
+    public bool FileRadar { get; set; } = true;
 
     // Security - User to spawn terminals as (when running as service)
     public string? RunAsUser { get; set; }

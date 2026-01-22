@@ -8,11 +8,13 @@
 
 import type { FilePathInfo, DirectoryEntry, DirectoryListResponse } from '../../types';
 import { createLogger } from '../logging';
+import { $activeSessionId } from '../../stores';
 
 const log = createLogger('fileViewer');
 
 let modal: HTMLElement | null = null;
 let currentPath: string | null = null;
+let currentSessionId: string | null = null;
 let navigationHistory: string[] = [];
 
 const TEXT_EXTENSIONS = new Set([
@@ -108,6 +110,7 @@ export function closeViewer(): void {
     modal.classList.add('hidden');
   }
   currentPath = null;
+  currentSessionId = null;
   navigationHistory = [];
 }
 
@@ -118,6 +121,7 @@ export async function openFile(path: string, info?: FilePathInfo): Promise<void>
   }
 
   currentPath = path;
+  currentSessionId = $activeSessionId.get() ?? null;
   modal.classList.remove('hidden');
 
   const titleEl = modal.querySelector('.file-viewer-title');
@@ -151,7 +155,11 @@ export async function openFile(path: string, info?: FilePathInfo): Promise<void>
 
 async function checkFilePath(path: string): Promise<FilePathInfo | null> {
   try {
-    const resp = await fetch('/api/files/check', {
+    const sessionId = currentSessionId ?? $activeSessionId.get();
+    const url = sessionId
+      ? `/api/files/check?sessionId=${encodeURIComponent(sessionId)}`
+      : '/api/files/check';
+    const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paths: [path] }),
@@ -167,7 +175,12 @@ async function checkFilePath(path: string): Promise<FilePathInfo | null> {
 
 async function renderDirectory(path: string, container: Element): Promise<void> {
   try {
-    const resp = await fetch(`/api/files/list?path=${encodeURIComponent(path)}`);
+    const sessionId = currentSessionId ?? $activeSessionId.get();
+    let url = `/api/files/list?path=${encodeURIComponent(path)}`;
+    if (sessionId) {
+      url += `&sessionId=${encodeURIComponent(sessionId)}`;
+    }
+    const resp = await fetch(url);
     if (!resp.ok) {
       container.innerHTML = '<div class="file-viewer-error">Failed to list directory</div>';
       return;
@@ -238,18 +251,28 @@ function renderDirectoryListing(
   });
 }
 
+function buildViewUrl(path: string): string {
+  const sessionId = currentSessionId ?? $activeSessionId.get();
+  let url = `/api/files/view?path=${encodeURIComponent(path)}`;
+  if (sessionId) {
+    url += `&sessionId=${encodeURIComponent(sessionId)}`;
+  }
+  return url;
+}
+
 async function renderFile(path: string, info: FilePathInfo, container: Element): Promise<void> {
   const mime = info.mimeType || 'application/octet-stream';
   const ext = getExtension(path).toLowerCase();
+  const viewUrl = buildViewUrl(path);
 
   if (IMAGE_MIMES.includes(mime)) {
-    container.innerHTML = `<img class="file-viewer-image" src="/api/files/view?path=${encodeURIComponent(path)}" alt="${escapeHtml(getFileName(path))}" />`;
+    container.innerHTML = `<img class="file-viewer-image" src="${viewUrl}" alt="${escapeHtml(getFileName(path))}" />`;
   } else if (VIDEO_MIMES.includes(mime)) {
-    container.innerHTML = `<video class="file-viewer-video" controls src="/api/files/view?path=${encodeURIComponent(path)}"></video>`;
+    container.innerHTML = `<video class="file-viewer-video" controls src="${viewUrl}"></video>`;
   } else if (AUDIO_MIMES.includes(mime)) {
-    container.innerHTML = `<audio class="file-viewer-audio" controls src="/api/files/view?path=${encodeURIComponent(path)}"></audio>`;
+    container.innerHTML = `<audio class="file-viewer-audio" controls src="${viewUrl}"></audio>`;
   } else if (mime === PDF_MIME) {
-    container.innerHTML = `<iframe class="file-viewer-pdf" src="/api/files/view?path=${encodeURIComponent(path)}"></iframe>`;
+    container.innerHTML = `<iframe class="file-viewer-pdf" src="${viewUrl}"></iframe>`;
   } else if (isTextFile(ext, mime)) {
     await renderTextFile(path, container);
   } else {
@@ -259,7 +282,8 @@ async function renderFile(path: string, info: FilePathInfo, container: Element):
 
 async function renderTextFile(path: string, container: Element): Promise<void> {
   try {
-    const resp = await fetch(`/api/files/view?path=${encodeURIComponent(path)}`);
+    const viewUrl = buildViewUrl(path);
+    const resp = await fetch(viewUrl);
     if (!resp.ok) {
       container.innerHTML = '<div class="file-viewer-error">Failed to load file</div>';
       return;
@@ -294,8 +318,13 @@ function renderBinaryFile(info: FilePathInfo, container: Element): void {
 }
 
 function downloadFile(path: string): void {
+  const sessionId = currentSessionId ?? $activeSessionId.get();
+  let url = `/api/files/download?path=${encodeURIComponent(path)}`;
+  if (sessionId) {
+    url += `&sessionId=${encodeURIComponent(sessionId)}`;
+  }
   const link = document.createElement('a');
-  link.href = `/api/files/download?path=${encodeURIComponent(path)}`;
+  link.href = url;
   link.download = getFileName(path);
   document.body.appendChild(link);
   link.click();

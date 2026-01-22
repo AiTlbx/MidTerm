@@ -7,14 +7,42 @@ public static class FileEndpoints
 {
     private static readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
 
-    public static void MapFileEndpoints(WebApplication app)
+    public static void MapFileEndpoints(
+        WebApplication app,
+        TtyHostSessionManager sessionManager,
+        FileRadarAllowlistService allowlistService)
     {
-        app.MapPost("/api/files/check", async (FileCheckRequest request) =>
+        app.MapPost("/api/files/register", (FileRegisterRequest request) =>
+        {
+            if (string.IsNullOrEmpty(request.SessionId))
+            {
+                return Results.BadRequest("sessionId is required");
+            }
+
+            if (sessionManager.GetSession(request.SessionId) is null)
+            {
+                return Results.BadRequest("Invalid session");
+            }
+
+            allowlistService.RegisterPaths(request.SessionId, request.Paths);
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
         {
             var results = new Dictionary<string, FilePathInfo>();
+            var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
 
             foreach (var path in request.Paths)
             {
+                // For check, we verify the path is accessible before returning info
+                if (!string.IsNullOrEmpty(sessionId) &&
+                    !IsPathAccessible(sessionId, path, workingDir, allowlistService))
+                {
+                    results[path] = new FilePathInfo { Exists = false };
+                    continue;
+                }
+
                 results[path] = await GetFileInfoAsync(path);
             }
 
@@ -23,11 +51,18 @@ public static class FileEndpoints
                 AppJsonContext.Default.FileCheckResponse);
         });
 
-        app.MapGet("/api/files/list", (string path) =>
+        app.MapGet("/api/files/list", (string path, string? sessionId) =>
         {
             if (!ValidatePath(path, out var errorResult))
             {
                 return errorResult!;
+            }
+
+            var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+            if (!string.IsNullOrEmpty(sessionId) &&
+                !IsPathAccessible(sessionId, path, workingDir, allowlistService))
+            {
+                return Results.Forbid();
             }
 
             var fullPath = Path.GetFullPath(path);
@@ -84,22 +119,50 @@ public static class FileEndpoints
             }
         });
 
-        app.MapGet("/api/files/view", (string path) =>
+        app.MapGet("/api/files/view", (string path, string? sessionId) =>
         {
-            return ServeFile(path, inline: true);
+            return ServeFile(path, inline: true, sessionId, sessionManager, allowlistService);
         });
 
-        app.MapGet("/api/files/download", (string path) =>
+        app.MapGet("/api/files/download", (string path, string? sessionId) =>
         {
-            return ServeFile(path, inline: false);
+            return ServeFile(path, inline: false, sessionId, sessionManager, allowlistService);
         });
     }
 
-    private static IResult ServeFile(string path, bool inline)
+    private static string? GetSessionWorkingDirectory(TtyHostSessionManager sessionManager, string? sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return null;
+        var session = sessionManager.GetSession(sessionId);
+        return session?.CurrentDirectory;
+    }
+
+    private static bool IsPathAccessible(
+        string sessionId,
+        string path,
+        string? workingDirectory,
+        FileRadarAllowlistService allowlistService)
+    {
+        return allowlistService.IsPathAllowed(sessionId, path, workingDirectory);
+    }
+
+    private static IResult ServeFile(
+        string path,
+        bool inline,
+        string? sessionId,
+        TtyHostSessionManager sessionManager,
+        FileRadarAllowlistService allowlistService)
     {
         if (!ValidatePath(path, out var errorResult))
         {
             return errorResult!;
+        }
+
+        var workingDir = GetSessionWorkingDirectory(sessionManager, sessionId);
+        if (!string.IsNullOrEmpty(sessionId) &&
+            !IsPathAccessible(sessionId, path, workingDir, allowlistService))
+        {
+            return Results.Forbid();
         }
 
         var fullPath = Path.GetFullPath(path);
@@ -120,8 +183,6 @@ public static class FileEndpoints
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete);
-
-            var disposition = inline ? "inline" : "attachment";
 
             return Results.Stream(
                 stream,

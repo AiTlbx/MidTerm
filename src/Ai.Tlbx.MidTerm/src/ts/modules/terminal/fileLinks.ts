@@ -26,7 +26,7 @@
  * IF UI PERFORMANCE DEGRADES:
  *   - Increase MIN_SCAN_FRAME_SIZE to skip more small frames
  *   - Increase SCAN_DEBOUNCE_MS to batch more aggressively
- *   - Disable via Settings > Behavior > "File Radar (experimental)"
+ *   - Disable via Settings > Behavior > "File Radar"
  *   - Or comment out scanOutputForPaths() call in manager.ts
  *
  * =========================================================================== */
@@ -37,6 +37,7 @@ import type { FilePathInfo, FileCheckResponse } from '../../types';
 import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
 import { currentSettings } from '../../state';
+import { $activeSessionId } from '../../stores';
 
 const log = createLogger('fileLinks');
 
@@ -46,8 +47,8 @@ const log = createLogger('fileLinks');
 
 /**
  * Check if File Radar is enabled via settings.
- * Controlled by Settings > Behavior > "File Radar (experimental)"
- * Default: OFF - user must explicitly enable this feature.
+ * Controlled by Settings > Behavior > "File Radar"
+ * Default: ON
  */
 function isFileRadarEnabled(): boolean {
   return currentSettings?.fileRadar === true;
@@ -204,7 +205,7 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
 /**
  * Actually perform the regex scan on accumulated text.
  * Called after debounce delay, potentially in idle time.
- * This pre-caches file existence for faster click response.
+ * Registers detected paths with backend for security allowlisting.
  */
 function performScan(sessionId: string, text: string): void {
   // Strip ANSI escape sequences before regex matching
@@ -216,6 +217,7 @@ function performScan(sessionId: string, text: string): void {
   /* eslint-enable no-control-regex */
 
   const allowlist = getPathAllowlist(sessionId);
+  const detectedPaths: string[] = [];
 
   // Reset regex lastIndex and scan for Unix paths
   UNIX_PATH_PATTERN_GLOBAL.lastIndex = 0;
@@ -224,8 +226,7 @@ function performScan(sessionId: string, text: string): void {
     if (!path) continue;
     if (isValidPath(path)) {
       addToAllowlist(allowlist, path);
-      // Pre-cache existence check
-      checkPathExists(path);
+      detectedPaths.push(path);
     }
   }
 
@@ -236,10 +237,28 @@ function performScan(sessionId: string, text: string): void {
     if (!path) continue;
     if (isValidPath(path)) {
       addToAllowlist(allowlist, path);
-      // Pre-cache existence check
-      checkPathExists(path);
+      detectedPaths.push(path);
     }
   }
+
+  // Register detected paths with backend for security allowlisting
+  if (detectedPaths.length > 0) {
+    registerPathsWithBackend(sessionId, detectedPaths);
+  }
+}
+
+/**
+ * Register detected file paths with the backend for security allowlisting.
+ * Fire-and-forget - we don't block on this request.
+ */
+function registerPathsWithBackend(sessionId: string, paths: string[]): void {
+  fetch('/api/files/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, paths }),
+  }).catch((e) => {
+    log.warn(() => `Failed to register paths: ${e}`);
+  });
 }
 
 function addToAllowlist(allowlist: Set<string>, path: string): void {
@@ -266,7 +285,11 @@ async function checkPathExists(path: string): Promise<FilePathInfo | null> {
   }
 
   try {
-    const resp = await fetch('/api/files/check', {
+    const sessionId = $activeSessionId.get();
+    const url = sessionId
+      ? `/api/files/check?sessionId=${encodeURIComponent(sessionId)}`
+      : '/api/files/check';
+    const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paths: [path] }),

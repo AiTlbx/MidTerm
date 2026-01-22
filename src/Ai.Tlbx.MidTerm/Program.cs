@@ -149,6 +149,7 @@ public class Program
         var sessionManager = new TtyHostSessionManager(runAsUser: settings.RunAsUser, isServiceMode: settingsService.IsRunningAsService);
         var muxManager = new TtyHostMuxConnectionManager(sessionManager);
         var historyService = new HistoryService(settingsService);
+        var fileRadarAllowlistService = new FileRadarAllowlistService();
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
@@ -157,6 +158,11 @@ public class Program
             {
                 historyService.RecordEntry(session.ShellType, payload.Name, payload.CommandLine, payload.Cwd);
             }
+        };
+
+        sessionManager.OnSessionClosed += sessionId =>
+        {
+            fileRadarAllowlistService.ClearSession(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -190,7 +196,7 @@ public class Program
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
         LogEndpoints.MapLogEndpoints(app, logDirectory, sessionManager);
-        FileEndpoints.MapFileEndpoints(app);
+        FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
         EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, logDirectory);
 
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
