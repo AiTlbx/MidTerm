@@ -332,6 +332,14 @@ function createSessionItem(
 
   item.appendChild(info);
 
+  // Action hint indicator (desktop - subtle dots to indicate hover actions)
+  if (!isPending) {
+    const actionHint = document.createElement('span');
+    actionHint.className = 'session-action-hint';
+    actionHint.innerHTML = icon('more');
+    item.appendChild(actionHint);
+  }
+
   // Mobile menu button (toggles action bar visibility)
   if (!isPending) {
     const menuBtn = document.createElement('button');

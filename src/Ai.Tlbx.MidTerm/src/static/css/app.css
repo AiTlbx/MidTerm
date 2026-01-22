@@ -753,8 +753,8 @@ html, body {
 .session-resize,
 .session-rename,
 .session-close {
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     border: none;
     background: transparent;
     color: var(--text-secondary);
@@ -784,6 +784,23 @@ html, body {
 /* Mobile menu button - hidden on desktop */
 .session-menu-btn {
     display: none;
+}
+
+/* Action hint indicator - subtle dots to indicate hover actions */
+.session-action-hint {
+    position: absolute;
+    right: 8px;
+    color: var(--text-muted);
+    font-size: 14px;
+    opacity: 0.4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s;
+}
+
+.session-item:hover .session-action-hint {
+    opacity: 0;
 }
 
 .session-name {
@@ -1418,6 +1435,11 @@ html, body {
         color: white;
     }
 
+    /* Hide action hint on mobile - use menu button instead */
+    .session-action-hint {
+        display: none;
+    }
+
     /* Larger session items for touch */
     .session-item {
         padding: 12px 16px;
@@ -1762,8 +1784,8 @@ html, body {
 }
 
 .sidebar-btn {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     border: none;
     background-color: var(--btn-secondary);
     color: var(--text-primary);
