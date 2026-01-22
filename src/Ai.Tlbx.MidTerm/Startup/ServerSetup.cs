@@ -205,6 +205,7 @@ public static class ServerSetup
             var voiceCsp = UpdateService.IsDevEnvironment ? " https://localhost:2010" : "";
             var csp = "default-src 'self'; " +
                       "script-src 'self'; " +
+                      "worker-src 'self' blob:; " +
                       "style-src 'self' 'unsafe-inline'; " +
                       "img-src 'self' data:; " +
                       "font-src 'self' data:; " +
