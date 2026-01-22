@@ -488,6 +488,7 @@ export interface VoiceSessionState {
   cols: number;
   rows: number;
   isRunning: boolean;
+  isActive: boolean;
   screenContent: string;
 }
 

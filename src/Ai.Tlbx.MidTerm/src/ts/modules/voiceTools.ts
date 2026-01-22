@@ -50,10 +50,13 @@ export function recordBell(sessionId: string): void {
 
 /**
  * Get only the visible viewport content (cols x rows).
+ * Returns descriptive message if terminal isn't rendered yet.
  */
 function getTerminalViewport(sessionId: string): string {
   const termState = getTerminalState(sessionId);
-  if (!termState?.terminal) return '';
+  if (!termState?.terminal) {
+    return '[terminal not in view - ask user to switch to this session to see content]';
+  }
 
   const terminal = termState.terminal;
   const buffer = terminal.buffer.active;
@@ -110,6 +113,7 @@ async function handleStateOfThings(): Promise<StateOfThingsResult> {
     cols: s.cols,
     rows: s.rows,
     isRunning: true,
+    isActive: s.id === activeId,
     screenContent: getTerminalViewport(s.id),
   }));
 
