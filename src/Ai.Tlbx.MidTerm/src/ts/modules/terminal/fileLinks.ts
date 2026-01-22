@@ -335,6 +335,9 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
       const links: ILink[] = [];
 
+      // Convert viewport line to buffer line (y is 1-indexed in ILink.range)
+      const bufferY = buffer.viewportY + lineNumber + 1;
+
       // Scan with reused patterns (reset lastIndex for safety with global flag)
       const findLinks = (pattern: RegExp) => {
         pattern.lastIndex = 0;
@@ -346,10 +349,14 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
           const matchStart = match.index! + match[0].indexOf(path);
           const matchEnd = matchStart + path.length;
 
+          console.log(
+            `[FileRadar] Creating link: path="${path}", x=${matchStart + 1}-${matchEnd + 1}, y=${bufferY}`,
+          );
+
           links.push({
             range: {
-              start: { x: matchStart + 1, y: lineNumber + 1 },
-              end: { x: matchEnd + 1, y: lineNumber + 1 },
+              start: { x: matchStart + 1, y: bufferY },
+              end: { x: matchEnd + 1, y: bufferY },
             },
             text: path,
             decorations: {
