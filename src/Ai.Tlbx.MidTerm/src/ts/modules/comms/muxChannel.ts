@@ -46,6 +46,7 @@ import {
   setMuxWs,
   setMuxReconnectTimer,
   setServerProtocolVersion,
+  setBellNotificationsSuppressed,
   addWsRxBytes,
   addWsTxBytes,
 } from '../../state';
@@ -298,6 +299,10 @@ export function connectMuxWebSocket(): void {
   setMuxWs(ws);
 
   ws.onopen = () => {
+    // Suppress bell notifications during initial buffer replay
+    setBellNotificationsSuppressed(true);
+    setTimeout(() => setBellNotificationsSuppressed(false), 1000);
+
     // Detect reconnect: we've connected before AND have terminals to refresh
     const isReconnect = $muxHasConnected.get() && sessionTerminals.size > 0;
 

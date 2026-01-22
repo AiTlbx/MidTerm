@@ -92,6 +92,7 @@ import {
   setFontsReadyPromise,
   newlyCreatedSessions,
   pendingSessions,
+  bellNotificationsSuppressed,
 } from './state';
 import {
   $stateWsConnected,
@@ -592,6 +593,7 @@ function requestNotificationPermission(): void {
 
 function showBellNotification(sessionId: string): void {
   if (!currentSettings) return;
+  if (bellNotificationsSuppressed) return;
 
   const bellStyle = currentSettings.bellStyle || 'notification';
   const session = getSession(sessionId);

@@ -42,6 +42,9 @@ export let muxReconnectTimer: number | undefined;
 /** Server's mux protocol version (received in init frame) */
 export let serverProtocolVersion: number | null = null;
 
+/** Suppress bell notifications during initial buffer replay after reconnect */
+export let bellNotificationsSuppressed = true;
+
 // =============================================================================
 // WebSocket Traffic Metrics
 // =============================================================================
@@ -156,6 +159,10 @@ export function setFontsReadyPromise(promise: Promise<void>): void {
 
 export function setWindowsBuildNumber(build: number | null): void {
   windowsBuildNumber = build;
+}
+
+export function setBellNotificationsSuppressed(suppressed: boolean): void {
+  bellNotificationsSuppressed = suppressed;
 }
 
 // =============================================================================
