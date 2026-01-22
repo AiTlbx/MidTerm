@@ -187,7 +187,7 @@ function performScan(sessionId: string, text: string): void {
   // eslint-disable-next-line no-control-regex
   const cleanText = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 
-  log.info(() => `performScan: textLen=${text.length}, cleanLen=${cleanText.length}`);
+  console.log(`[DIAG] performScan: cleanText="${cleanText.substring(0, 200)}"`);
 
   const allowlist = getPathAllowlist(sessionId);
   const initialSize = allowlist.size;
@@ -208,7 +208,7 @@ function performScan(sessionId: string, text: string): void {
   for (const match of cleanText.matchAll(WIN_PATH_PATTERN)) {
     const path = match[1];
     if (!path) continue;
-    log.info(() => `Windows match: "${path}" valid=${isValidPath(path)}`);
+    console.log(`[DIAG] Windows match: "${path}" valid=${isValidPath(path)}`);
     if (isValidPath(path)) {
       addToAllowlist(allowlist, path);
     }
