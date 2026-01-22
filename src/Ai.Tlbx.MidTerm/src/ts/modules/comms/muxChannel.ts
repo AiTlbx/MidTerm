@@ -174,6 +174,7 @@ async function processOutputQueue(): Promise<void> {
  * Process a single frame - decompress if needed, then write to terminal.
  */
 async function processOneFrame(item: OutputFrameItem): Promise<void> {
+  console.log(`[DIAG] processOneFrame: session=${item.sessionId}, payloadLen=${item.payload.length}`);
   try {
     let cols: number;
     let rows: number;
@@ -401,6 +402,7 @@ export function connectMuxWebSocket(): void {
     if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
       // Queue ALL output frames to guarantee strict ordering
       if (payload.length >= 4) {
+        console.log(`[DIAG] WS output frame: session=${sessionId}, len=${payload.length}`);
         queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
       }
     } else if (type === MUX_TYPE_PROCESS_EVENT) {
