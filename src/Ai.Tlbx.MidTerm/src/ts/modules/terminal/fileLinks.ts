@@ -49,11 +49,7 @@ const log = createLogger('fileLinks');
  * Default: OFF - user must explicitly enable this feature.
  */
 function isFileRadarEnabled(): boolean {
-  const enabled = currentSettings?.fileRadar === true;
-  console.log(
-    `[FileRadar] isFileRadarEnabled: ${enabled}, fileRadar: ${currentSettings?.fileRadar}`,
-  );
-  return enabled;
+  return currentSettings?.fileRadar === true;
 }
 
 /** Minimum frame size in bytes to bother scanning (skip tiny cursor moves) */
@@ -140,7 +136,6 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
   if (!isFileRadarEnabled()) {
     return;
   }
-  console.log(`[FileRadar] scanOutputForPaths called, data length: ${data.length}`);
 
   // Decode if needed (reuse decoder to avoid allocation)
   const text = typeof data === 'string' ? data : textDecoder.decode(data);
@@ -185,16 +180,19 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
  * Called after debounce delay, potentially in idle time.
  */
 function performScan(sessionId: string, text: string): void {
-  console.log(`[FileRadar] performScan called, text length: ${text.length}`);
+  // Strip ANSI escape sequences before regex matching
+  // Handles SGR (colors), cursor movement, and other control sequences
+  // eslint-disable-next-line no-control-regex
+  const cleanText = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+
   const allowlist = getPathAllowlist(sessionId);
   const initialSize = allowlist.size;
 
   // Reset regex lastIndex and scan for Unix paths
   UNIX_PATH_PATTERN.lastIndex = 0;
-  for (const match of text.matchAll(UNIX_PATH_PATTERN)) {
+  for (const match of cleanText.matchAll(UNIX_PATH_PATTERN)) {
     const path = match[1];
     if (!path) continue;
-    console.log(`[FileRadar] Unix match: "${path}", valid: ${isValidPath(path)}`);
     if (isValidPath(path)) {
       addToAllowlist(allowlist, path);
     }
@@ -202,22 +200,19 @@ function performScan(sessionId: string, text: string): void {
 
   // Reset regex lastIndex and scan for Windows paths
   WIN_PATH_PATTERN.lastIndex = 0;
-  for (const match of text.matchAll(WIN_PATH_PATTERN)) {
+  for (const match of cleanText.matchAll(WIN_PATH_PATTERN)) {
     const path = match[1];
     if (!path) continue;
-    console.log(`[FileRadar] Windows match: "${path}", valid: ${isValidPath(path)}`);
     if (isValidPath(path)) {
       addToAllowlist(allowlist, path);
     }
   }
 
   if (allowlist.size > initialSize) {
-    console.log(`[FileRadar] Added ${allowlist.size - initialSize} paths to allowlist`);
     log.verbose(
       () => `Added ${allowlist.size - initialSize} paths to allowlist for session ${sessionId}`,
     );
   }
-  console.log(`[FileRadar] Allowlist now has ${allowlist.size} paths`);
 }
 
 function addToAllowlist(allowlist: Set<string>, path: string): void {
@@ -294,8 +289,6 @@ export function createFileLinkProvider(sessionId: string): ILinkProvider {
  * so toggling the setting works without recreating terminals.
  */
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
-  console.log(`[FileRadar] Registering link provider for session ${sessionId}`);
-
   const allowlist = getPathAllowlist(sessionId);
 
   terminal.registerLinkProvider({
@@ -320,13 +313,9 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       }
 
       const lineText = line.translateToString(true);
-      console.log(
-        `[FileRadar] provideLinks called for line ${lineNumber}: "${lineText.substring(0, 80)}..."`,
-      );
 
       // Quick check before regex - does line contain path-like chars?
       if (!QUICK_PATH_CHECK_UNIX.test(lineText) && !QUICK_PATH_CHECK_WIN.test(lineText)) {
-        console.log(`[FileRadar] Line has no path-like chars, skipping`);
         callback(undefined);
         return;
       }
@@ -334,21 +323,16 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       const links: ILink[] = [];
 
       // Scan with reused patterns (reset lastIndex for safety with global flag)
-      const findLinks = (pattern: RegExp, patternName: string) => {
+      const findLinks = (pattern: RegExp) => {
         pattern.lastIndex = 0;
         for (const match of lineText.matchAll(pattern)) {
           const path = match[1];
           if (!path) continue;
-          const inAllowlist = allowlist.has(path);
-          console.log(`[FileRadar] ${patternName} match: "${path}", inAllowlist: ${inAllowlist}`);
-          if (!inAllowlist) continue;
+          if (!allowlist.has(path)) continue;
 
           const matchStart = match.index! + match[0].indexOf(path);
           const matchEnd = matchStart + path.length;
 
-          console.log(
-            `[FileRadar] Creating link for "${path}" at x:${matchStart + 1}-${matchEnd + 1}`,
-          );
           links.push({
             range: {
               start: { x: matchStart + 1, y: lineNumber + 1 },
@@ -360,7 +344,6 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
               underline: true,
             },
             activate: async (_event: MouseEvent, text: string) => {
-              console.log(`[FileRadar] Link activated: ${text}`);
               log.info(() => `Opening file: ${text}`);
               const info = await checkPathExists(text);
               if (info && info.exists) {
@@ -370,7 +353,6 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
               }
             },
             hover: async (_event: MouseEvent, text: string) => {
-              console.log(`[FileRadar] Link hover: ${text}`);
               // Pre-fetch existence on hover for faster click response
               await checkPathExists(text);
             },
@@ -378,14 +360,12 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
         }
       };
 
-      findLinks(UNIX_PATH_PATTERN, 'Unix');
-      findLinks(WIN_PATH_PATTERN, 'Windows');
+      findLinks(UNIX_PATH_PATTERN);
+      findLinks(WIN_PATH_PATTERN);
 
-      console.log(`[FileRadar] Returning ${links.length} links for line ${lineNumber}`);
       callback(links.length > 0 ? links : undefined);
     },
   });
 
-  console.log(`[FileRadar] Link provider registered for session ${sessionId}`);
   log.info(() => `Registered file link provider for session ${sessionId}`);
 }
