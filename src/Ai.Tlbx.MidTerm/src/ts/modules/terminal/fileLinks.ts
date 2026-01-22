@@ -350,13 +350,13 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
           const matchEnd = matchStart + path.length;
 
           console.log(
-            `[FileRadar] Creating link: path="${path}", x=${matchStart + 1}-${matchEnd + 1}, y=${bufferY}`,
+            `[FileRadar] Creating link: path="${path}", x=${matchStart + 1}-${matchEnd}, y=${bufferY}`,
           );
 
           links.push({
             range: {
               start: { x: matchStart + 1, y: bufferY },
-              end: { x: matchEnd + 1, y: bufferY },
+              end: { x: matchEnd, y: bufferY },
             },
             text: path,
             decorations: {
