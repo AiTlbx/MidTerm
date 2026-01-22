@@ -335,8 +335,8 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
 
       const links: ILink[] = [];
 
-      // Convert viewport line to buffer line (y is 1-indexed in ILink.range)
-      const bufferY = buffer.viewportY + lineNumber + 1;
+      // lineNumber from provideLinks is already buffer-relative, just convert to 1-indexed
+      const bufferY = lineNumber + 1;
 
       // Scan with reused patterns (reset lastIndex for safety with global flag)
       const findLinks = (pattern: RegExp) => {
