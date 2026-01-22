@@ -134,7 +134,7 @@ export function clearPathAllowlist(sessionId: string): void {
  */
 export function scanOutputForPaths(sessionId: string, data: string | Uint8Array): void {
   const enabled = isFileRadarEnabled();
-  log.info(() => `scanOutputForPaths called, enabled=${enabled}, dataLen=${data.length}`);
+  console.log(`[DIAG] scanOutputForPaths: enabled=${enabled}, dataLen=${data.length}`);
   if (!enabled) {
     return;
   }
