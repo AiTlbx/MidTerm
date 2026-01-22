@@ -600,6 +600,34 @@
                     </div>
                 </div>
             </div>
+
+            <!-- File Viewer Dock Panel -->
+            <aside id="file-viewer-dock" class="file-viewer-dock hidden">
+                <div class="file-viewer-dock-header">
+                    <span class="file-viewer-dock-title"></span>
+                    <span class="file-viewer-dock-path"></span>
+                    <div class="file-viewer-dock-actions">
+                        <button class="btn-icon" id="dock-download" title="Download">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z"/>
+                                <path d="M2 13h12v1H2v-1z"/>
+                            </svg>
+                        </button>
+                        <button class="btn-icon" id="dock-refresh" title="Refresh">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M13.5 8c0 3-2.5 5.5-5.5 5.5S2.5 11 2.5 8 5 2.5 8 2.5c1.5 0 2.9.6 3.9 1.6L10 6h5V1l-1.9 1.9C11.6 1.5 9.9.8 8 .8 3.8.8.8 3.8.8 8s3 7.2 7.2 7.2 7.2-3.2 7.2-7.2h-1.7z"/>
+                            </svg>
+                        </button>
+                        <button class="btn-icon" id="dock-undock" title="Pop out to modal">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M2 3h8v2H4v8h8V9h2v6H2V3zm8-1h5v5h-1V4l-5 5-1-1 5-5h-3V1z"/>
+                            </svg>
+                        </button>
+                        <button class="btn-icon" id="dock-close" title="Close">&times;</button>
+                    </div>
+                </div>
+                <div class="file-viewer-dock-body"></div>
+            </aside>
         </div>
     </div>
 
@@ -663,6 +691,16 @@
                     <span class="file-viewer-path"></span>
                 </div>
                 <div class="file-viewer-header-actions">
+                    <button id="file-viewer-dock-btn" class="btn-icon" title="Dock to right">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M1 2h14v12H1V2zm1 1v10h8V3H2zm9 0v10h3V3h-3z"/>
+                        </svg>
+                    </button>
+                    <button id="file-viewer-maximize" class="btn-icon" title="Fullscreen">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M2 2h5v1H3v4H2V2zm7 0h5v5h-1V3H9V2zM3 9v4h4v1H2V9h1zm10 0v5H9v-1h4V9h1z"/>
+                        </svg>
+                    </button>
                     <button id="file-viewer-download" class="btn-icon" title="Download">
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                             <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z"/>

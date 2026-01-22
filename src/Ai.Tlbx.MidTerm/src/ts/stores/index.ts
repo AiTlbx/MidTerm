@@ -109,6 +109,12 @@ export const $sidebarOpen = atom<boolean>(false);
 /** Desktop sidebar collapsed state */
 export const $sidebarCollapsed = atom<boolean>(false);
 
+/** File viewer docked state */
+export const $fileViewerDocked = atom<boolean>(false);
+
+/** Docked file path */
+export const $dockedFilePath = atom<string | null>(null);
+
 // =============================================================================
 // Connection State Stores
 // =============================================================================
