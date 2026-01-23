@@ -119,7 +119,7 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     private void EventLoop()
     {
         var events = new kevent_s[4];
-        var timeout = new timespec { tv_sec = 1, tv_nsec = 0 };
+        var timeout = new Timespec { tv_sec = 1, tv_nsec = 0 };
 
         while (!_disposed)
         {
@@ -295,7 +295,7 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct timespec
+    private struct Timespec
     {
         public long tv_sec;
         public long tv_nsec;
@@ -324,7 +324,7 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     private static extern int kevent(int kq, ref kevent_s changelist, int nchanges, IntPtr eventlist, int nevents, IntPtr timeout);
 
     [DllImport("libc")]
-    private static extern int kevent(int kq, IntPtr changelist, int nchanges, [Out] kevent_s[] eventlist, int nevents, ref timespec timeout);
+    private static extern int kevent(int kq, IntPtr changelist, int nchanges, [Out] kevent_s[] eventlist, int nevents, ref Timespec timeout);
 
     [DllImport("libc")]
     private static extern int close(int fd);
