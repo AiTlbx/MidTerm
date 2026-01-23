@@ -125,6 +125,9 @@ export const $stateWsConnected = atom<boolean>(false);
 /** Mux WebSocket connected flag */
 export const $muxWsConnected = atom<boolean>(false);
 
+/** Data loss detected for a session (output queue overflow) */
+export const $dataLossDetected = atom<{ sessionId: string; timestamp: number } | null>(null);
+
 /** Tracks if mux WebSocket has ever connected (for reconnect detection) */
 export const $muxHasConnected = atom<boolean>(false);
 

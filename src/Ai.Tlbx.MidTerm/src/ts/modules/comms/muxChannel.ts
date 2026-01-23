@@ -54,12 +54,25 @@ import {
   $muxHasConnected,
   $activeSessionId,
   $stateWsConnected,
+  $dataLossDetected,
 } from '../../stores';
 
 const log = createLogger('mux');
 
 // Cached TextDecoder to avoid allocation per frame
 const textDecoder = new TextDecoder();
+
+// =============================================================================
+// Input Buffering (Issue #2: Lost keystrokes during reconnection)
+// =============================================================================
+
+interface PendingInput {
+  sessionId: string;
+  data: string;
+}
+
+const pendingInputQueue: PendingInput[] = [];
+const MAX_PENDING_INPUT = 100;
 
 /**
  * Fetch fresh session list from server via REST API.
@@ -132,7 +145,14 @@ function compactQueue(): void {
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const pendingCount = outputQueue.length - queueIndex;
   if (pendingCount >= MAX_QUEUE_SIZE) {
-    log.warn(() => 'Output queue full, dropping oldest frame');
+    const droppedItem = outputQueue[queueIndex];
+    log.warn(
+      () => `Output queue full, dropping oldest frame for session ${droppedItem?.sessionId}`,
+    );
+    // Notify UI of data loss
+    if (droppedItem) {
+      $dataLossDetected.set({ sessionId: droppedItem.sessionId, timestamp: Date.now() });
+    }
     queueIndex++; // Skip oldest unprocessed frame
     // Compact to actually free memory
     if (queueIndex >= COMPACT_THRESHOLD) {
@@ -339,6 +359,9 @@ export function connectMuxWebSocket(): void {
       sendActiveSessionHint(activeId);
     }
 
+    // Flush any input buffered during disconnection
+    flushPendingInput();
+
     // DISABLED: Was causing cursor to disappear in some cases
     // sessionTerminals.forEach((state) => {
     //   if (state.opened) {
@@ -454,9 +477,16 @@ function sendFrame(frame: Uint8Array): void {
 
 /**
  * Send terminal input to server.
+ * Buffers input when WebSocket is disconnected for replay on reconnect.
  */
 export function sendInput(sessionId: string, data: string): void {
-  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
+    // Buffer input during disconnection (prevents lost keystrokes during reconnect)
+    if (pendingInputQueue.length < MAX_PENDING_INPUT) {
+      pendingInputQueue.push({ sessionId, data });
+    }
+    return;
+  }
 
   const payload = new TextEncoder().encode(data);
   const frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
@@ -464,6 +494,16 @@ export function sendInput(sessionId: string, data: string): void {
   encodeSessionId(frame, 1, sessionId);
   frame.set(payload, MUX_HEADER_SIZE);
   sendFrame(frame);
+}
+
+/**
+ * Flush any input buffered during WebSocket disconnection.
+ */
+function flushPendingInput(): void {
+  while (pendingInputQueue.length > 0) {
+    const item = pendingInputQueue.shift()!;
+    sendInput(item.sessionId, item.data);
+  }
 }
 
 /**

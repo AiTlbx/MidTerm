@@ -1676,6 +1676,20 @@ html, body {
     opacity: 1;
 }
 
+/* Data loss warning - positioned above paste indicator */
+.data-loss-warning {
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--accent-red, #dc2626);
+    color: #fff;
+    pointer-events: none;
+    bottom: 60px;
+}
+
+.data-loss-warning.active {
+    opacity: 1;
+}
+
 /* Version update banner */
 .update-banner {
     position: fixed;

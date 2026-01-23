@@ -228,6 +228,12 @@ export function createTerminalForSession(
 
     state.opened = true;
 
+    // Register onData immediately to avoid losing keystrokes during font/rAF delay
+    // Other event handlers are set up later in setupTerminalEvents
+    state.earlyDataDisposable = terminal.onData((data: string) => {
+      sendInput(sessionId, data);
+    });
+
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
     if (currentSettings?.useWebGL !== false && terminalsWithWebgl.size < MAX_WEBGL_CONTEXTS) {
@@ -359,7 +365,14 @@ export function setupTerminalEvents(
   // Collect disposables for cleanup
   const disposables: Array<{ dispose: () => void }> = [];
 
-  // Wire up events
+  // Dispose early data handler (was registered immediately after terminal.open)
+  const termState = sessionTerminals.get(sessionId);
+  if (termState?.earlyDataDisposable) {
+    termState.earlyDataDisposable.dispose();
+    delete termState.earlyDataDisposable;
+  }
+
+  // Wire up events - onData replaces the early handler
   disposables.push(
     terminal.onData((data: string) => {
       sendInput(sessionId, data);
@@ -543,6 +556,11 @@ export function destroyTerminalForSession(sessionId: string): void {
   // Clean up xterm event disposables
   if (state.disposables) {
     state.disposables.forEach((d) => d.dispose());
+  }
+
+  // Clean up early data handler if terminal was destroyed before setupTerminalEvents ran
+  if (state.earlyDataDisposable) {
+    state.earlyDataDisposable.dispose();
   }
 
   // Clean up DOM event listeners

@@ -68,6 +68,8 @@ export interface TerminalState {
   mouseMoveHandler?: () => void;
   /** Mouse leave handler for cursor hiding */
   mouseLeaveHandler?: () => void;
+  /** Early onData handler (registered immediately, disposed when full handlers set up) */
+  earlyDataDisposable?: { dispose: () => void };
 }
 
 // =============================================================================

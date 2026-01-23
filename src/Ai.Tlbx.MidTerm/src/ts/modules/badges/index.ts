@@ -1,14 +1,19 @@
 /**
  * Badges Module
  *
- * Manages global status badges (connection, paste indicator).
+ * Manages global status badges (connection, paste indicator, data loss warning).
  * Per-terminal badges (scaled view) remain in their respective modules.
  */
 
-import { $connectionStatus } from '../../stores';
+import { $connectionStatus, $dataLossDetected, getSession } from '../../stores';
+import { getSessionDisplayName } from '../sidebar/sessionList';
 
 let connectionBadge: HTMLElement | null = null;
 let pasteBadge: HTMLElement | null = null;
+let dataLossBadge: HTMLElement | null = null;
+let dataLossTimer: number | null = null;
+
+const DATA_LOSS_DISPLAY_MS = 10000;
 
 /**
  * Initialize all global badges. Call once during bootstrap.
@@ -16,6 +21,7 @@ let pasteBadge: HTMLElement | null = null;
 export function initBadges(): void {
   connectionBadge = document.getElementById('connection-status');
   pasteBadge = document.getElementById('paste-indicator');
+  dataLossBadge = document.getElementById('data-loss-warning');
 
   $connectionStatus.subscribe((status) => {
     if (!connectionBadge) return;
@@ -30,6 +36,50 @@ export function initBadges(): void {
     connectionBadge.className = `status-badge connection-status ${status}`;
     connectionBadge.textContent = text;
   });
+
+  $dataLossDetected.subscribe((loss) => {
+    if (!loss) {
+      hideDataLossWarning();
+      return;
+    }
+    showDataLossWarning(loss.sessionId);
+  });
+}
+
+/**
+ * Show data loss warning badge.
+ */
+function showDataLossWarning(sessionId: string): void {
+  if (!dataLossBadge) return;
+
+  const session = getSession(sessionId);
+  const name = session ? getSessionDisplayName(session) : sessionId;
+  dataLossBadge.textContent = `⚠ Output overflow (${name})`;
+  dataLossBadge.classList.add('active');
+
+  // Clear any existing timer
+  if (dataLossTimer !== null) {
+    window.clearTimeout(dataLossTimer);
+  }
+
+  // Auto-hide after timeout
+  dataLossTimer = window.setTimeout(() => {
+    hideDataLossWarning();
+    $dataLossDetected.set(null);
+  }, DATA_LOSS_DISPLAY_MS);
+}
+
+/**
+ * Hide data loss warning badge.
+ */
+function hideDataLossWarning(): void {
+  if (dataLossBadge) {
+    dataLossBadge.classList.remove('active');
+  }
+  if (dataLossTimer !== null) {
+    window.clearTimeout(dataLossTimer);
+    dataLossTimer = null;
+  }
 }
 
 /**

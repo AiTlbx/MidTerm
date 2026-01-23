@@ -363,8 +363,8 @@ function createSessionItem(
 }
 
 /**
- * Render the session list in the sidebar.
- * This is a full re-render - use surgical updates for data-only changes.
+ * Render the session list in the sidebar using diff-based updates.
+ * Only adds/removes/reorders items as needed, avoiding full DOM rebuilds.
  */
 export function renderSessionList(): void {
   if (!dom.sessionList) return;
@@ -373,16 +373,53 @@ export function renderSessionList(): void {
   const sessions = $sessionList.get();
   const activeSessionId = $activeSessionId.get();
 
-  // Clear and rebuild
-  sessionList.innerHTML = '';
+  // Build set of current session IDs
+  const newIds = new Set(sessions.map((s) => s.id));
 
-  sessions.forEach((session) => {
-    const isPending = pendingSessions.has(session.id);
-    const item = createSessionItem(session, session.id === activeSessionId, isPending);
-    sessionList.appendChild(item);
+  // Remove items that no longer exist
+  const existingItems = sessionList.querySelectorAll('.session-item');
+  existingItems.forEach((item) => {
+    const itemId = (item as HTMLElement).dataset.sessionId;
+    if (itemId && !newIds.has(itemId)) {
+      item.remove();
+    }
   });
 
-  // Count only non-pending sessions
+  // Add/update items in order
+  let previousElement: Element | null = null;
+  sessions.forEach((session) => {
+    const existingItem = sessionList.querySelector(
+      `[data-session-id="${session.id}"]`,
+    ) as HTMLElement | null;
+    const isPending = pendingSessions.has(session.id);
+
+    if (existingItem) {
+      // Update active state and pending state
+      existingItem.classList.toggle('active', session.id === activeSessionId);
+      existingItem.classList.toggle('pending', isPending);
+
+      // Ensure correct order
+      if (previousElement) {
+        if (existingItem.previousElementSibling !== previousElement) {
+          previousElement.after(existingItem);
+        }
+      } else if (existingItem !== sessionList.firstElementChild) {
+        sessionList.prepend(existingItem);
+      }
+      previousElement = existingItem;
+    } else {
+      // Create new item
+      const item = createSessionItem(session, session.id === activeSessionId, isPending);
+      if (previousElement) {
+        previousElement.after(item);
+      } else {
+        sessionList.prepend(item);
+      }
+      previousElement = item;
+    }
+  });
+
+  // Update count (only non-pending sessions)
   const realSessionCount = sessions.filter((s) => !pendingSessions.has(s.id)).length;
   if (dom.sessionCount) {
     dom.sessionCount.textContent = String(realSessionCount);
