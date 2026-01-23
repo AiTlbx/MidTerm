@@ -365,14 +365,15 @@ async function checkPathExists(path: string): Promise<FilePathInfo | null> {
 
 /**
  * Resolve a relative path against the session's working directory.
- * Called on hover - this is where filesystem access happens.
+ * @param deep - If true, search subdirectories when exact path not found (expensive, for click only)
  */
 async function resolveRelativePath(
   sessionId: string,
   relativePath: string,
+  deep: boolean = false,
   signal?: AbortSignal,
 ): Promise<FileResolveResponse | null> {
-  const cacheKey = `${sessionId}:${relativePath}`;
+  const cacheKey = `${sessionId}:${relativePath}:${deep}`;
   const cached = resolveCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     return cached.response;
@@ -381,7 +382,8 @@ async function resolveRelativePath(
   try {
     const url =
       `/api/files/resolve?sessionId=${encodeURIComponent(sessionId)}` +
-      `&path=${encodeURIComponent(relativePath)}`;
+      `&path=${encodeURIComponent(relativePath)}` +
+      (deep ? '&deep=true' : '');
     const fetchOptions: RequestInit = {};
     if (signal) fetchOptions.signal = signal;
     const resp = await fetch(url, fetchOptions);
@@ -422,23 +424,26 @@ function throttledResolveRelativePath(
     pendingResolve = null;
   }
 
-  // Check cache immediately - no delay needed for cached results
-  const cacheKey = `${sessionId}:${path}`;
+  // Check cache - if we already checked this path, show link immediately
+  const cacheKey = `${sessionId}:${path}:false`;
   const cached = resolveCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
-    callback(cached.response.exists ? matchText : undefined);
+    callback(matchText); // Always show link - deep search on click may find it
     return;
   }
 
-  // Schedule delayed resolve
+  // Schedule delayed resolve to warm cache, but always show link
+  // Deep search on click will find files in subdirectories
   const abort = new AbortController();
   const timeout = window.setTimeout(async () => {
     if (abort.signal.aborted) return;
 
-    const resolved = await resolveRelativePath(sessionId, path, abort.signal);
+    // Warm cache with shallow search (result ignored for link display)
+    await resolveRelativePath(sessionId, path, false, abort.signal);
     if (abort.signal.aborted) return;
 
-    callback(resolved?.exists ? matchText : undefined);
+    // Always show link - regex already validated file extension
+    callback(matchText);
 
     if (pendingResolve?.abort === abort) {
       pendingResolve = null;
@@ -468,7 +473,8 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
     return;
   }
 
-  const resolved = await resolveRelativePath(sessionId, relativePath);
+  // Use deep=true for click - search subdirectories if exact path not found
+  const resolved = await resolveRelativePath(sessionId, relativePath, true);
   if (resolved?.exists && resolved.resolvedPath) {
     const info: FilePathInfo = {
       exists: true,

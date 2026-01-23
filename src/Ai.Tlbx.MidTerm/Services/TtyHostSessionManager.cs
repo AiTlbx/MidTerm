@@ -413,6 +413,26 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _sessionCache.TryGetValue(sessionId, out var info) ? info : null;
     }
 
+    public async Task<SessionInfo?> GetSessionFreshAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (!_clients.TryGetValue(sessionId, out var client))
+        {
+            return null;
+        }
+
+        var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
+        if (info is not null)
+        {
+            if (_sessionCache.TryGetValue(sessionId, out var existing))
+            {
+                info.TerminalTitle = existing.TerminalTitle;
+                info.ManuallyNamed = existing.ManuallyNamed;
+            }
+            _sessionCache[sessionId] = info;
+        }
+        return info;
+    }
+
     /// <summary>
     /// Get or create the temp directory for file uploads for a session.
     /// </summary>

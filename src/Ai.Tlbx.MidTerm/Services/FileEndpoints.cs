@@ -129,82 +129,116 @@ public static class FileEndpoints
             return ServeFile(path, inline: false, sessionId, sessionManager, allowlistService);
         });
 
-        // Resolve relative path against session's working directory (lazy, on hover only)
-        app.MapGet("/api/files/resolve", (string sessionId, string path) =>
+        // Resolve relative path against session's working directory
+        // deep=false (default): exact path only (fast, for hover)
+        // deep=true: also search CWD tree (slower, for click)
+        app.MapGet("/api/files/resolve", async (string sessionId, string path, bool deep = false) =>
         {
-            if (string.IsNullOrEmpty(sessionId))
+            if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path) || path.Contains(".."))
             {
-                return Results.Json(
-                    new FileResolveResponse { Exists = false },
-                    AppJsonContext.Default.FileResolveResponse);
+                return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
             }
 
-            var session = sessionManager.GetSession(sessionId);
-            if (session is null)
+            var session = await sessionManager.GetSessionFreshAsync(sessionId);
+            var cwd = session?.CurrentDirectory;
+            if (string.IsNullOrEmpty(cwd) || !Directory.Exists(cwd))
             {
-                return Results.Json(
-                    new FileResolveResponse { Exists = false },
-                    AppJsonContext.Default.FileResolveResponse);
+                return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
             }
 
-            var cwd = session.CurrentDirectory;
-            if (string.IsNullOrEmpty(cwd))
+            // Strategy 1: Try exact path relative to CWD (always)
+            var exactPath = Path.GetFullPath(Path.Combine(cwd, path));
+            if (IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
             {
-                return Results.Json(
-                    new FileResolveResponse { Exists = false },
-                    AppJsonContext.Default.FileResolveResponse);
+                return Results.Json(BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
             }
 
-            // Block path traversal attempts
-            if (path.Contains(".."))
+            // Strategy 2: Search CWD tree (only on click, when deep=true)
+            if (deep)
             {
-                return Results.Json(
-                    new FileResolveResponse { Exists = false },
-                    AppJsonContext.Default.FileResolveResponse);
-            }
-
-            try
-            {
-                var resolvedPath = Path.GetFullPath(Path.Combine(cwd, path));
-
-                // Security: ensure resolved path stays within cwd tree
-                var normalizedCwd = Path.GetFullPath(cwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (!resolvedPath.StartsWith(normalizedCwd + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
-                    !resolvedPath.Equals(normalizedCwd, StringComparison.OrdinalIgnoreCase))
+                var found = SearchTree(cwd, path, maxDepth: 5);
+                if (found is not null && IsWithinDirectory(found, cwd))
                 {
-                    return Results.Json(
-                        new FileResolveResponse { Exists = false },
-                        AppJsonContext.Default.FileResolveResponse);
+                    return Results.Json(BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
                 }
-
-                var response = new FileResolveResponse { ResolvedPath = resolvedPath };
-
-                if (Directory.Exists(resolvedPath))
-                {
-                    var dirInfo = new DirectoryInfo(resolvedPath);
-                    response.Exists = true;
-                    response.IsDirectory = true;
-                    response.Modified = dirInfo.LastWriteTimeUtc;
-                }
-                else if (File.Exists(resolvedPath))
-                {
-                    var fileInfo = new FileInfo(resolvedPath);
-                    response.Exists = true;
-                    response.IsDirectory = false;
-                    response.Size = fileInfo.Length;
-                    response.Modified = fileInfo.LastWriteTimeUtc;
-                    response.MimeType = GetMimeType(fileInfo.Name);
-                }
-
-                return Results.Json(response, AppJsonContext.Default.FileResolveResponse);
             }
-            catch
-            {
-                return Results.Json(
-                    new FileResolveResponse { Exists = false },
-                    AppJsonContext.Default.FileResolveResponse);
-            }
+
+            return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
         });
+    }
+
+    private static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
+    {
+        var hasDirectory = searchPattern.Contains('/') || searchPattern.Contains('\\');
+        var normalizedPattern = searchPattern.Replace('\\', '/');
+
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                MaxRecursionDepth = maxDepth,
+                IgnoreInaccessible = true
+            };
+
+            foreach (var file in Directory.EnumerateFiles(rootDir, "*", options))
+            {
+                var relativePath = Path.GetRelativePath(rootDir, file).Replace('\\', '/');
+
+                if (hasDirectory)
+                {
+                    if (relativePath.EndsWith(normalizedPattern, StringComparison.OrdinalIgnoreCase) ||
+                        relativePath.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return file;
+                    }
+                }
+                else
+                {
+                    if (Path.GetFileName(file).Equals(searchPattern, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return file;
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static bool IsWithinDirectory(string path, string directory)
+    {
+        var normalizedPath = Path.GetFullPath(path);
+        var normalizedDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return normalizedPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+               normalizedPath.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static FileResolveResponse BuildResolveResponse(string resolvedPath)
+    {
+        var response = new FileResolveResponse { ResolvedPath = resolvedPath };
+
+        if (Directory.Exists(resolvedPath))
+        {
+            var dirInfo = new DirectoryInfo(resolvedPath);
+            response.Exists = true;
+            response.IsDirectory = true;
+            response.Modified = dirInfo.LastWriteTimeUtc;
+        }
+        else if (File.Exists(resolvedPath))
+        {
+            var fileInfo = new FileInfo(resolvedPath);
+            response.Exists = true;
+            response.IsDirectory = false;
+            response.Size = fileInfo.Length;
+            response.Modified = fileInfo.LastWriteTimeUtc;
+            response.MimeType = GetMimeType(fileInfo.Name);
+        }
+
+        return response;
     }
 
     private static string? GetSessionWorkingDirectory(TtyHostSessionManager sessionManager, string? sessionId)
