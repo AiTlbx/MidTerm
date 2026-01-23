@@ -394,6 +394,7 @@ public static class FileEndpoints
                 info.Size = fileInfo.Length;
                 info.Modified = fileInfo.LastWriteTimeUtc;
                 info.MimeType = GetMimeType(fileInfo.Name);
+                info.IsText = CheckIsText(fullPath, fileInfo.Length);
             }
         }
         catch
@@ -401,6 +402,37 @@ public static class FileEndpoints
         }
 
         return await Task.FromResult(info);
+    }
+
+    private static bool? CheckIsText(string filePath, long fileSize)
+    {
+        if (fileSize == 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            var sampleSize = (int)Math.Min(8192, fileSize);
+            var buffer = new byte[sampleSize];
+
+            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var bytesRead = fs.Read(buffer, 0, sampleSize);
+
+            for (var i = 0; i < bytesRead; i++)
+            {
+                if (buffer[i] == 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string GetMimeType(string fileName)

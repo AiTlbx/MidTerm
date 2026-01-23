@@ -481,7 +481,7 @@ async function renderFile(path: string, info: FilePathInfo, container: Element):
     container.innerHTML = `<audio class="file-viewer-audio" controls src="${viewUrl}"></audio>`;
   } else if (mime === PDF_MIME) {
     container.innerHTML = `<iframe class="file-viewer-pdf" src="${viewUrl}"></iframe>`;
-  } else if (isTextFile(ext, mime)) {
+  } else if (isTextFile(ext, mime, info.isText)) {
     await renderTextFile(path, container);
   } else {
     renderBinaryFile(info, container);
@@ -543,7 +543,10 @@ function downloadFile(path: string): void {
   document.body.removeChild(link);
 }
 
-function isTextFile(ext: string, mime: string): boolean {
+function isTextFile(ext: string, mime: string, serverIsText?: boolean): boolean {
+  // Server null-byte check is authoritative if available
+  if (serverIsText !== undefined) return serverIsText;
+  // Fallback to extension/MIME heuristics
   if (TEXT_EXTENSIONS.has(ext)) return true;
   if (mime.startsWith('text/')) return true;
   if (mime === 'application/json' || mime === 'application/xml') return true;

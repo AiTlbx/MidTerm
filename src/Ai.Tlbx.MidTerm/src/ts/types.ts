@@ -525,6 +525,7 @@ export interface FilePathInfo {
   isDirectory: boolean;
   mimeType?: string;
   modified?: string;
+  isText?: boolean;
 }
 
 /** Response from /api/files/check */

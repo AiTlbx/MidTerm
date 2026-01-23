@@ -26,6 +26,7 @@ public sealed class FilePathInfo
     public bool IsDirectory { get; set; }
     public string? MimeType { get; set; }
     public DateTime? Modified { get; set; }
+    public bool? IsText { get; set; }
 }
 
 /// <summary>
