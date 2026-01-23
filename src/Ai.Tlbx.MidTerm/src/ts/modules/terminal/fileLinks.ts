@@ -461,6 +461,12 @@ function throttledResolveRelativePath(
 // ===========================================================================
 
 async function handlePathClick(path: string): Promise<void> {
+  // Register clicked path with backend allowlist (fire-and-forget)
+  const sessionId = $activeSessionId.get();
+  if (sessionId) {
+    registerPathsWithBackend(sessionId, [path]);
+  }
+
   const info = await checkPathExists(path);
   if (info?.exists) {
     openFile(path, info);
@@ -469,7 +475,6 @@ async function handlePathClick(path: string): Promise<void> {
 
   // Fallback: Unix-style paths on Windows (e.g., /foo/bar.cs) aren't truly absolute
   // Try resolving as relative path with deep search
-  const sessionId = $activeSessionId.get();
   if (sessionId) {
     // Strip leading slash for relative resolution
     const relativePath = path.startsWith('/') ? path.slice(1) : path;
@@ -501,6 +506,9 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
   // Use deep=true for click - search subdirectories if exact path not found
   const resolved = await resolveRelativePath(sessionId, relativePath, true);
   if (resolved?.exists && resolved.resolvedPath) {
+    // Register resolved path with backend allowlist (fire-and-forget)
+    registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
+
     const info: FilePathInfo = {
       exists: true,
       isDirectory: resolved.isDirectory ?? false,
