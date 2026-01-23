@@ -266,6 +266,7 @@ public static class FileEndpoints
             response.Size = fileInfo.Length;
             response.Modified = fileInfo.LastWriteTimeUtc;
             response.MimeType = GetMimeType(fileInfo.Name);
+            response.IsText = CheckIsText(resolvedPath, fileInfo.Length);
         }
 
         return response;

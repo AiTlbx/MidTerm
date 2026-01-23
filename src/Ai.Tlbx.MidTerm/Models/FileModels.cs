@@ -71,4 +71,5 @@ public sealed class FileResolveResponse
     public long? Size { get; set; }
     public string? MimeType { get; set; }
     public DateTime? Modified { get; set; }
+    public bool? IsText { get; set; }
 }

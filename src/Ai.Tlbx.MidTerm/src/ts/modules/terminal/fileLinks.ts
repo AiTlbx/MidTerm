@@ -481,6 +481,7 @@ async function handlePathClick(path: string): Promise<void> {
       if (resolved.size !== undefined) resolvedInfo.size = resolved.size;
       if (resolved.mimeType !== undefined) resolvedInfo.mimeType = resolved.mimeType;
       if (resolved.modified !== undefined) resolvedInfo.modified = resolved.modified;
+      if (resolved.isText !== undefined) resolvedInfo.isText = resolved.isText;
       openFile(resolved.resolvedPath, resolvedInfo);
       return;
     }
@@ -506,6 +507,7 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
     if (resolved.size !== undefined) info.size = resolved.size;
     if (resolved.mimeType !== undefined) info.mimeType = resolved.mimeType;
     if (resolved.modified !== undefined) info.modified = resolved.modified;
+    if (resolved.isText !== undefined) info.isText = resolved.isText;
     openFile(resolved.resolvedPath, info);
   } else {
     showFileNotFoundToast(relativePath);

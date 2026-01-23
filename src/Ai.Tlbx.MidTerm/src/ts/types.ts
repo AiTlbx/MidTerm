@@ -556,6 +556,7 @@ export interface FileResolveResponse {
   size?: number;
   mimeType?: string;
   modified?: string;
+  isText?: boolean;
 }
 
 // =============================================================================

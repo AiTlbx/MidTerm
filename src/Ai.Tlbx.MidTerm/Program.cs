@@ -57,6 +57,18 @@ public class Program
         WriteEventLog(message, isError ? DiagLogLevel.Error : DiagLogLevel.Info);
     }
 
+#if WINDOWS
+    private static int GetTrayHelperPort(string[] args)
+    {
+        var portIndex = Array.IndexOf(args, "--port");
+        if (portIndex >= 0 && portIndex + 1 < args.Length && int.TryParse(args[portIndex + 1], out var port))
+        {
+            return port;
+        }
+        return 2000;
+    }
+#endif
+
     public static async Task Main(string[] args)
     {
         try
@@ -79,6 +91,19 @@ public class Program
         {
             return;
         }
+
+#if WINDOWS
+#pragma warning disable CA1416 // Platform compatibility - guarded by #if WINDOWS
+        // Tray helper mode: runs as standalone process in user session (spawned by service)
+        if (args.Contains("--tray-helper"))
+        {
+            var helperPort = GetTrayHelperPort(args);
+            WriteEventLog($"MainCore: Starting tray helper on port {helperPort}");
+            TrayHelperService.Run(helperPort);
+            return;
+        }
+#pragma warning restore CA1416
+#endif
 
         WriteEventLog("MainCore: Acquiring instance guard");
 
@@ -189,21 +214,52 @@ public class Program
         });
 
         var shutdownService = new ShutdownService();
+        var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
-        EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
+        EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version, lifetime);
         SessionApiEndpoints.MapSessionEndpoints(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
         LogEndpoints.MapLogEndpoints(app, logDirectory, sessionManager);
         FileEndpoints.MapFileEndpoints(app, sessionManager, fileRadarAllowlistService);
         EndpointSetup.MapWebSocketMiddleware(app, sessionManager, muxManager, updateService, settingsService, authService, shutdownService, logDirectory);
 
-        var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-
         lifetime.ApplicationStarted.Register(() =>
         {
             Log.Info(() => $"Server fully operational - listening on https://{bindAddress}:{port}");
+
+#if WINDOWS
+#pragma warning disable CA1416 // Platform compatibility - guarded by #if WINDOWS
+            // Start system tray icon (Windows only)
+            if (OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    var trayService = new SystemTrayService(
+                        sessionManager,
+                        updateService,
+                        certInfoService,
+                        lifetime,
+                        settingsService,
+                        port,
+                        version);
+                    trayService.Start();
+
+                    lifetime.ApplicationStopping.Register(() =>
+                    {
+                        trayService.Dispose();
+                    });
+
+                    Log.Info(() => "System tray icon started");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn(() => $"Failed to start system tray: {ex.Message}");
+                }
+            }
+#pragma warning restore CA1416
+#endif
         });
 
         lifetime.ApplicationStopping.Register(() =>
