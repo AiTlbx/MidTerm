@@ -115,7 +115,7 @@ const WIN_PATH_PATTERN_GLOBAL =
  * Relative path pattern - matches filenames with common file extensions.
  * Resolves against session's working directory on hover (lazy filesystem access).
  *
- * Matches: output.pdf, result.mp4, ./data.json, src/main.ts, test/fixtures/data.csv
+ * Matches: output.pdf, ./data.json, src/main.ts, src\Ai\Services\Foo.cs (Windows paths)
  * Does NOT match: package (no extension), http://... (URLs), e.g. (abbreviations)
  */
 const FILE_EXTENSIONS =
@@ -135,8 +135,8 @@ const FILE_EXTENSIONS =
 const RELATIVE_PATH_PATTERN = new RegExp(
   // Capture group 1: the full relative path
   '(' +
-    '(?:\\.\\/|\\.\\.\\/)?' + // optional ./ or ../
-    '(?:[\\w.-]+\\/)*' + // zero or more directories
+    '(?:\\.[/\\\\]|\\.\\.[/\\\\])?' + // optional ./ or ../ or .\ or ..\
+    '(?:[\\w.-]+[/\\\\])*' + // zero or more directories (supports / and \)
     '[\\w.-]+' + // filename (no leading dot to avoid matching .gitignore)
     '\\.(?:' +
     FILE_EXTENSIONS +
