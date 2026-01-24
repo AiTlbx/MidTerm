@@ -1,5 +1,5 @@
 {
-  "web": "6.10.32-dev.1",
+  "web": "6.10.33-dev",
   "pty": "6.10.30",
   "protocol": 1,
   "minCompatiblePty": "2.0.0",
