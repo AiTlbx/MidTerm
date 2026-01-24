@@ -5141,7 +5141,7 @@ html, body {
     margin: 0;
     padding: 16px;
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.5;
     color: var(--text-primary);
     background: var(--bg-primary);
@@ -5267,12 +5267,31 @@ html, body {
 }
 
 /* Syntax Highlighting */
-.hl-keyword { color: #c586c0; }
+.hl-keyword { color: #569cd6; }
 .hl-string { color: #ce9178; }
 .hl-comment { color: #6a9955; font-style: italic; }
 .hl-number { color: #b5cea8; }
 .hl-function { color: #dcdcaa; }
 .hl-type { color: #4ec9b0; }
+
+/* Code line numbers */
+.code-line {
+    display: block;
+    position: relative;
+    padding-left: calc(var(--gutter-width, 3ch) + 2ch);
+    min-height: 1.5em;
+}
+
+.code-line::before {
+    content: attr(data-line);
+    position: absolute;
+    left: 0;
+    width: var(--gutter-width, 3ch);
+    text-align: right;
+    color: #4a4a4a;
+    user-select: none;
+    padding-right: 1ch;
+}
 
 /* Markdown Rendering */
 .md-content {
