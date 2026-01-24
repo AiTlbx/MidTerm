@@ -4,6 +4,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 [JsonSerializable(typeof(GitHubRelease))]
 [JsonSerializable(typeof(GitHubAsset))]
+[JsonSerializable(typeof(List<GitHubRelease>))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 internal partial class GitHubReleaseContext : JsonSerializerContext
 {
