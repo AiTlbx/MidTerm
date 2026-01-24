@@ -3,7 +3,9 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Security;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.Update;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -21,6 +23,7 @@ public sealed class UpdateService : IDisposable
     private static readonly TimeSpan DevCheckInterval = TimeSpan.FromMinutes(2);
 
     private readonly HttpClient _httpClient;
+    private readonly SettingsService _settingsService;
     private readonly ConcurrentDictionary<string, Action<UpdateInfo>> _updateListeners = new();
     private readonly Timer _checkTimer;
     private readonly string _currentVersion;
@@ -32,8 +35,13 @@ public sealed class UpdateService : IDisposable
     public string CurrentVersion => _currentVersion;
     public VersionManifest InstalledManifest => _installedManifest;
 
-    public UpdateService()
+    public UpdateService() : this(new SettingsService())
     {
+    }
+
+    public UpdateService(SettingsService settingsService)
+    {
+        _settingsService = settingsService;
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "MidTerm-UpdateCheck");
 
@@ -140,10 +148,19 @@ public sealed class UpdateService : IDisposable
         try
         {
             var devEnv = GetDevEnvironment();
+            var updateChannel = _settingsService.Load().UpdateChannel;
 
-            var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
-            var response = await _httpClient.GetStringAsync(apiUrl);
-            var release = JsonSerializer.Deserialize<GitHubRelease>(response, GitHubReleaseContext.Default.GitHubRelease);
+            GitHubRelease? release;
+            if (updateChannel == "dev")
+            {
+                release = await FetchLatestDevReleaseAsync();
+            }
+            else
+            {
+                var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
+                var response = await _httpClient.GetStringAsync(apiUrl);
+                release = JsonSerializer.Deserialize<GitHubRelease>(response, GitHubReleaseContext.Default.GitHubRelease);
+            }
 
             if (release is null || string.IsNullOrEmpty(release.TagName))
             {
@@ -151,8 +168,12 @@ public sealed class UpdateService : IDisposable
             }
 
             var latestVersion = release.TagName.TrimStart('v');
+            var comparison = CompareVersions(latestVersion, _currentVersion);
 
-            if (!IsNewerVersion(latestVersion, _currentVersion))
+            // For stable channel on a dev version, offer downgrade to stable
+            var isDowngrade = updateChannel == "stable" && comparison < 0;
+
+            if (comparison <= 0 && !isDowngrade)
             {
                 // No GitHub update, but check for local update in dev mode
                 if (devEnv is not null)
@@ -196,7 +217,8 @@ public sealed class UpdateService : IDisposable
                 ReleaseNotes = release.Body,
                 Type = updateType,
                 Environment = devEnv,
-                LocalUpdate = localUpdate
+                LocalUpdate = localUpdate,
+                IsDowngrade = isDowngrade
             };
 
             NotifyListeners(_latestUpdate);
@@ -226,6 +248,44 @@ public sealed class UpdateService : IDisposable
             }
             return null;
         }
+    }
+
+    private async Task<GitHubRelease?> FetchLatestDevReleaseAsync()
+    {
+        var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases?per_page=50";
+        var response = await _httpClient.GetStringAsync(apiUrl);
+        var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(response, GitHubReleaseContext.Default.ListGitHubRelease);
+
+        if (releases is null || releases.Count == 0)
+        {
+            return null;
+        }
+
+        // Find the highest version (including prereleases)
+        GitHubRelease? best = null;
+        foreach (var release in releases)
+        {
+            if (string.IsNullOrEmpty(release.TagName))
+            {
+                continue;
+            }
+
+            if (best is null)
+            {
+                best = release;
+                continue;
+            }
+
+            var bestVersion = best.TagName!.TrimStart('v');
+            var currentVersion = release.TagName!.TrimStart('v');
+
+            if (CompareVersions(currentVersion, bestVersion) > 0)
+            {
+                best = release;
+            }
+        }
+
+        return best;
     }
 
     private async Task<VersionManifest> FetchReleaseManifestAsync(string tagName)
@@ -453,11 +513,54 @@ public sealed class UpdateService : IDisposable
 
     public static int CompareVersions(string v1, string v2)
     {
+        // Strip build metadata (e.g., +abc123)
         var v1Clean = v1.Split('+')[0];
         var v2Clean = v2.Split('+')[0];
 
-        var v1Parts = v1Clean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
-        var v2Parts = v2Clean.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        // Parse version and prerelease (e.g., "6.10.30-dev.1" -> base="6.10.30", pre="dev.1")
+        var (v1Base, v1Pre) = ParseVersionWithPrerelease(v1Clean);
+        var (v2Base, v2Pre) = ParseVersionWithPrerelease(v2Clean);
+
+        // Compare base versions first
+        var baseCompare = CompareBaseVersions(v1Base, v2Base);
+        if (baseCompare != 0)
+        {
+            return baseCompare;
+        }
+
+        // Same base version - compare prereleases
+        // Stable (no prerelease) beats any prerelease
+        if (v1Pre is null && v2Pre is not null)
+        {
+            return 1;  // v1 is stable, v2 is prerelease -> v1 wins
+        }
+        if (v1Pre is not null && v2Pre is null)
+        {
+            return -1; // v1 is prerelease, v2 is stable -> v2 wins
+        }
+        if (v1Pre is null && v2Pre is null)
+        {
+            return 0;  // Both stable
+        }
+
+        // Both have prereleases - compare them (e.g., dev.5 > dev.4)
+        return ComparePrereleases(v1Pre!, v2Pre!);
+    }
+
+    private static (string baseVersion, string? prerelease) ParseVersionWithPrerelease(string version)
+    {
+        var dashIndex = version.IndexOf('-');
+        if (dashIndex < 0)
+        {
+            return (version, null);
+        }
+        return (version[..dashIndex], version[(dashIndex + 1)..]);
+    }
+
+    private static int CompareBaseVersions(string v1, string v2)
+    {
+        var v1Parts = v1.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        var v2Parts = v2.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
 
         for (var i = 0; i < Math.Max(v1Parts.Length, v2Parts.Length); i++)
         {
@@ -471,6 +574,23 @@ public sealed class UpdateService : IDisposable
         }
 
         return 0;
+    }
+
+    private static int ComparePrereleases(string pre1, string pre2)
+    {
+        // Format: "dev.N" - extract the numeric part
+        var match1 = Regex.Match(pre1, @"\.(\d+)$");
+        var match2 = Regex.Match(pre2, @"\.(\d+)$");
+
+        if (match1.Success && match2.Success)
+        {
+            var num1 = int.Parse(match1.Groups[1].Value);
+            var num2 = int.Parse(match2.Groups[1].Value);
+            return num1 - num2;
+        }
+
+        // Fallback to string comparison
+        return string.Compare(pre1, pre2, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsNewerVersion(string latest, string current)
@@ -534,6 +654,7 @@ internal sealed class GitHubRelease
     public string? TagName { get; set; }
     public string? HtmlUrl { get; set; }
     public string? Body { get; set; }
+    public bool Prerelease { get; set; }
     public List<GitHubAsset>? Assets { get; set; }
 }
 

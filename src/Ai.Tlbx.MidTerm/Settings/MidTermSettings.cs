@@ -135,4 +135,7 @@ public sealed class MidTermSettings
 
     // Diagnostics
     public LogSeverity LogLevel { get; set; } = LogSeverity.Warn;
+
+    // Update channel: "stable" (default) or "dev" (prereleases)
+    public string UpdateChannel { get; set; } = "stable";
 }

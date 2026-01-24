@@ -91,6 +91,20 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Ensure we're on main branch
+$currentBranch = git branch --show-current
+if ($currentBranch -ne "main") {
+    Write-Host ""
+    Write-Host "ERROR: release.ps1 must be run from the main branch." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Current branch: $currentBranch" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "For dev/prerelease builds, use:" -ForegroundColor Cyan
+    Write-Host "  .\release-dev.ps1 -Bump patch -ReleaseTitle '...' -ReleaseNotes @(...) -mthostUpdate no" -ForegroundColor White
+    Write-Host ""
+    exit 1
+}
+
 # Validate ReleaseTitle doesn't contain version prefix
 if ($ReleaseTitle -match "^v?\d+\.\d+") {
     Write-Host ""

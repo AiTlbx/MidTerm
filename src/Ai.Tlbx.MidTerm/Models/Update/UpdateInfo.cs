@@ -19,4 +19,6 @@ public sealed class UpdateInfo
     public string? Environment { get; init; }
     /// <summary>Local update info when running in dev environment.</summary>
     public LocalUpdateInfo? LocalUpdate { get; init; }
+    /// <summary>True when switching from dev to stable channel offers a downgrade.</summary>
+    public bool IsDowngrade { get; init; }
 }

@@ -269,38 +269,89 @@ $activeSessionId.set(newId);            // Write
 | macOS | forkpty (via mthost) | Zsh, Bash | Zsh |
 | Linux | forkpty (via mthost) | Bash, Zsh | Bash |
 
-## Release Process
+## Branch Strategy & Release Process
 
-**IMPORTANT:** Release notes are user-facing documentation shown in the changelog UI. Write detailed, helpful entries that explain what changed and why it matters.
+### ⚠️ MANDATORY WORKFLOW - DO NOT DEVIATE ⚠️
 
-```powershell
-.\scripts\release.ps1 -Bump patch `
-    -ReleaseTitle "Fix settings panel closing unexpectedly" `
-    -ReleaseNotes @(
-        "Fixed bug where settings panel would close when checking for updates",
-        "Update button now correctly shows 'Update & Restart' text",
-        "Added session preservation warning in settings panel"
-    ) `
-    -mthostUpdate no
+**ALL development happens on the `dev` branch. The `main` branch is for stable releases ONLY.**
+
+```
+dev (default branch - all work here)
+  ↓ (PR merge when ready to release)
+main (stable releases only - never commit directly)
 ```
 
-**Parameters:**
-- `-ReleaseTitle`: One-line headline (NO version number - it's in the git tag)
-- `-ReleaseNotes`: MANDATORY array of detailed changelog entries. Each entry should be a complete sentence explaining what changed and why.
-- `-mthostUpdate`: `yes` if TtyHost/Common/protocol changed, `no` for frontend/web-only changes
+**If the user tries to:**
+- Commit directly to `main` → **DECLINE.** Explain they must work on `dev` and promote via PR.
+- Run `release.ps1` on `dev` → **DECLINE.** Explain they should use `release-dev.ps1` for dev releases.
+- Run `release-dev.ps1` on `main` → **DECLINE.** Explain `main` only gets stable releases via promotion.
+- Push changes to `main` without a PR → **DECLINE.** All changes to `main` come through PR merges from `dev`.
 
-**Good ReleaseNotes examples:**
+### Daily Development (on `dev` branch)
+
+```powershell
+# 1. Make changes on dev branch
+git checkout dev
+# ... code changes ...
+git commit -m "Add feature X"
+git push
+
+# 2. Create dev/prerelease for testing
+.\scripts\release-dev.ps1 -Bump patch `
+    -ReleaseTitle "Test feature X" `
+    -ReleaseNotes @("Added feature X for testing") `
+    -mthostUpdate no
+# Creates: v6.10.30-dev.1 (prerelease on GitHub)
+```
+
+The `-dev.N` suffix auto-increments. Running again creates `v6.10.30-dev.2`, etc.
+
+### Promoting to Stable Release
+
+When dev is tested and ready for stable release:
+
+```powershell
+# 1. Create PR on GitHub: dev → main
+# 2. Review and merge the PR
+# 3. Locally:
+git checkout main
+git pull
+
+# 4. Create stable release
+.\scripts\release.ps1 -Bump patch `
+    -ReleaseTitle "Feature X" `
+    -ReleaseNotes @("Added feature X") `
+    -mthostUpdate no
+# Creates: v6.10.30 (full release on GitHub)
+```
+
+### Update Channels
+
+Users can choose which releases to receive via `settings.json`:
+
+| Channel | Setting | Receives |
+|---------|---------|----------|
+| Stable (default) | `"updateChannel": "stable"` | Only full releases (v6.10.30) |
+| Dev | `"updateChannel": "dev"` | Prereleases + full releases (v6.10.30-dev.1) |
+
+### Release Script Parameters
+
+Both scripts share the same parameters:
+- `-Bump`: `major`, `minor`, or `patch`
+- `-ReleaseTitle`: One-line headline (NO version number)
+- `-ReleaseNotes`: MANDATORY array of detailed changelog entries
+- `-mthostUpdate`: `yes` if TtyHost/Common/protocol changed, `no` for web-only
+
+**Good ReleaseNotes:**
 - "Fixed bug where settings panel would close when checking for updates"
 - "Complete rewrite of update script with 6-phase process and automatic rollback"
-- "File lock detection with 15 retry attempts prevents failed updates on Windows"
 
-**Bad ReleaseNotes examples:**
+**Bad ReleaseNotes:**
 - "Fix bug" (too vague)
 - "Update UI" (what specifically?)
-- "v5.3.4: Changes" (version is redundant, "changes" says nothing)
 
-With `-mthostUpdate no`: Only mt version bumped, terminals survive the update.
-With `-mthostUpdate yes`: Both mt and mthost versions bumped, terminals restart on update.
+With `-mthostUpdate no`: Only mt version bumped, terminals survive update.
+With `-mthostUpdate yes`: Both mt and mthost bumped, terminals restart.
 
 ## Install System
 
@@ -317,6 +368,7 @@ With `-mthostUpdate yes`: Both mt and mthost versions bumped, terminals restart 
 
 ## Important Rules
 
+- **Branch workflow is mandatory:** All work on `dev`, promote to `main` via PR only
 - Never `dotnet run` without user permission
 - Never `Task.Run` unless explicitly asked for threading
 - Aim for 0 build warnings
