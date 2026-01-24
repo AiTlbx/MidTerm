@@ -301,10 +301,8 @@ git push
     -ReleaseTitle "Test feature X" `
     -ReleaseNotes @("Added feature X for testing") `
     -mthostUpdate no
-# Creates: v6.10.30-dev.1 (prerelease on GitHub)
+# Creates: v6.10.32-dev (prerelease on GitHub)
 ```
-
-The `-dev.N` suffix auto-increments. Running again creates `v6.10.30-dev.2`, etc.
 
 ### Promoting to Stable Release
 
@@ -331,8 +329,8 @@ Users can choose which releases to receive via `settings.json`:
 
 | Channel | Setting | Receives |
 |---------|---------|----------|
-| Stable (default) | `"updateChannel": "stable"` | Only full releases (v6.10.30) |
-| Dev | `"updateChannel": "dev"` | Prereleases + full releases (v6.10.30-dev.1) |
+| Stable (default) | `"updateChannel": "stable"` | Only full releases (v6.10.32) |
+| Dev | `"updateChannel": "dev"` | Prereleases + full releases (v6.10.32-dev) |
 
 ### Release Script Parameters
 
