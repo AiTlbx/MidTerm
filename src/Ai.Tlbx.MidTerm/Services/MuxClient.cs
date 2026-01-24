@@ -173,10 +173,18 @@ public sealed class MuxClient : IAsyncDisposable
     /// Queue raw terminal output for buffered delivery.
     /// Copies data into a pooled buffer owned by this client.
     /// </summary>
-    public void QueueOutput(string sessionId, int cols, int rows, SharedOutputBuffer buffer)
+    internal void QueueOutput(string sessionId, int cols, int rows, SharedOutputBuffer buffer)
     {
-        if (_cts.IsCancellationRequested) return;
-        if (WebSocket.State != WebSocketState.Open) return;
+        if (_cts.IsCancellationRequested)
+        {
+            buffer.Release();
+            return;
+        }
+        if (WebSocket.State != WebSocketState.Open)
+        {
+            buffer.Release();
+            return;
+        }
 
         var queueCount = _inputChannel.Reader.Count;
         if (queueCount >= MaxQueuedItems - 1)
