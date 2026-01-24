@@ -14,12 +14,10 @@ namespace Ai.Tlbx.MidTerm.Services;
 public sealed class TtyHostMuxConnectionManager
 {
     private readonly record struct PooledOutputItem(
-        string SessionId, int Cols, int Rows,
-        byte[] Buffer, int Length)
-    {
-        public ReadOnlySpan<byte> Data => Buffer.AsSpan(0, Length);
-        public void Return() => ArrayPool<byte>.Shared.Return(Buffer);
-    }
+        string SessionId,
+        int Cols,
+        int Rows,
+        SharedOutputBuffer Buffer);
 
     private readonly TtyHostSessionManager _sessionManager;
     private readonly ConcurrentDictionary<string, MuxClient> _clients = new();
@@ -29,13 +27,20 @@ public sealed class TtyHostMuxConnectionManager
             new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropOldest });
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
+    private readonly Action<string, int, int, ReadOnlyMemory<byte>> _outputHandler;
+    private readonly Action<string> _sessionClosedHandler;
+    private readonly Action<string, ForegroundChangePayload> _foregroundChangedHandler;
+    private bool _disposed;
 
     public TtyHostMuxConnectionManager(TtyHostSessionManager sessionManager)
     {
         _sessionManager = sessionManager;
-        _sessionManager.OnOutput += HandleOutput;
-        _sessionManager.OnSessionClosed += HandleSessionClosed;
-        _sessionManager.OnForegroundChanged += HandleForegroundChanged;
+        _outputHandler = HandleOutput;
+        _sessionClosedHandler = HandleSessionClosed;
+        _foregroundChangedHandler = HandleForegroundChanged;
+        _sessionManager.OnOutput += _outputHandler;
+        _sessionManager.OnSessionClosed += _sessionClosedHandler;
+        _sessionManager.OnForegroundChanged += _foregroundChangedHandler;
 
         _cts = new CancellationTokenSource();
         _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
@@ -51,9 +56,13 @@ public sealed class TtyHostMuxConnectionManager
 
     private void HandleOutput(string sessionId, int cols, int rows, ReadOnlyMemory<byte> data)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(data.Length);
-        data.Span.CopyTo(buffer);
-        _outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, cols, rows, buffer, data.Length));
+        var shared = SharedOutputBuffer.Rent(data.Length);
+        data.Span.CopyTo(shared.WriteSpan);
+
+        if (!_outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, cols, rows, shared)))
+        {
+            shared.Release();
+        }
     }
 
     private void HandleForegroundChanged(string sessionId, ForegroundChangePayload payload)
@@ -76,9 +85,9 @@ public sealed class TtyHostMuxConnectionManager
         {
             try
             {
-                if (item.Length < 50)
+                if (item.Buffer.Length < 50)
                 {
-                    Log.Verbose(() => $"[WS-OUTPUT] {item.SessionId}: {BitConverter.ToString(item.Buffer, 0, item.Length)}");
+                    Log.Verbose(() => $"[WS-OUTPUT] {item.SessionId}: {BitConverter.ToString(item.Buffer.Memory[..item.Buffer.Length].Span.ToArray())}");
                 }
 
                 // Queue raw data to each client - clients handle buffering and framing
@@ -86,13 +95,14 @@ public sealed class TtyHostMuxConnectionManager
                 {
                     if (client.WebSocket.State == WebSocketState.Open)
                     {
-                        client.QueueOutput(item.SessionId, item.Cols, item.Rows, item.Buffer, item.Length);
+                        item.Buffer.AddRef();
+                        client.QueueOutput(item.SessionId, item.Cols, item.Rows, item.Buffer);
                     }
                 }
             }
             finally
             {
-                item.Return();
+                item.Buffer.Release();
             }
         }
     }
@@ -129,20 +139,27 @@ public sealed class TtyHostMuxConnectionManager
         var rows = sessionInfo?.Rows ?? 24;
 
         // Queue raw data to each client - clients handle buffering and framing
-        var buffer = ArrayPool<byte>.Shared.Rent(data.Length);
-        data.Span.CopyTo(buffer);
+        var buffer = SharedOutputBuffer.Rent(data.Length);
+        data.Span.CopyTo(buffer.WriteSpan);
         foreach (var client in _clients.Values)
         {
             if (client.WebSocket.State == WebSocketState.Open)
             {
-                client.QueueOutput(sessionId, cols, rows, buffer, data.Length);
+                buffer.AddRef();
+                client.QueueOutput(sessionId, cols, rows, buffer);
             }
         }
-        ArrayPool<byte>.Shared.Return(buffer);
+        buffer.Release();
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
+
         _cts?.Cancel();
         if (_outputProcessor is not null)
         {
@@ -150,5 +167,9 @@ public sealed class TtyHostMuxConnectionManager
         }
         _outputQueue.Writer.Complete();
         _cts?.Dispose();
+
+        _sessionManager.OnOutput -= _outputHandler;
+        _sessionManager.OnSessionClosed -= _sessionClosedHandler;
+        _sessionManager.OnForegroundChanged -= _foregroundChangedHandler;
     }
 }

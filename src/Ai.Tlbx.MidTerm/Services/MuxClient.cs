@@ -1,10 +1,54 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using System.Threading;
 using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services;
+
+/// <summary>
+/// Reference-counted pooled buffer shared across mux clients to avoid per-client copies.
+/// </summary>
+internal sealed class SharedOutputBuffer
+{
+    private byte[] _buffer;
+    private int _length;
+    private int _refCount;
+
+    private SharedOutputBuffer(byte[] buffer, int length)
+    {
+        _buffer = buffer;
+        _length = length;
+        _refCount = 1;
+    }
+
+    public int Length => _length;
+    public ReadOnlySpan<byte> Span => _buffer.AsSpan(0, _length);
+    public Memory<byte> Memory => _buffer.AsMemory(0, _length);
+    public Span<byte> WriteSpan => _buffer.AsSpan(0, _length);
+
+    public static SharedOutputBuffer Rent(int length)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
+        return new SharedOutputBuffer(buffer, length);
+    }
+
+    public void AddRef()
+    {
+        Interlocked.Increment(ref _refCount);
+    }
+
+    public void Release()
+    {
+        if (Interlocked.Decrement(ref _refCount) == 0)
+        {
+            var buffer = _buffer;
+            _buffer = Array.Empty<byte>();
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+}
 
 /// <summary>
 /// WebSocket client with per-session output buffering.
@@ -37,7 +81,7 @@ public sealed class MuxClient : IAsyncDisposable
     public string Id { get; }
     public WebSocket WebSocket { get; }
 
-    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, byte[] Data, int Length, bool OwnsBuffer);
+    private readonly record struct OutputItem(string SessionId, int Cols, int Rows, SharedOutputBuffer Buffer);
 
     /// <summary>
     /// Pooled contiguous buffer for session output. Uses ArrayPool to avoid GC pressure.
@@ -129,7 +173,7 @@ public sealed class MuxClient : IAsyncDisposable
     /// Queue raw terminal output for buffered delivery.
     /// Copies data into a pooled buffer owned by this client.
     /// </summary>
-    public void QueueOutput(string sessionId, int cols, int rows, byte[] buffer, int length)
+    public void QueueOutput(string sessionId, int cols, int rows, SharedOutputBuffer buffer)
     {
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
@@ -144,10 +188,10 @@ public sealed class MuxClient : IAsyncDisposable
             }
         }
 
-        // Copy data into our own pooled buffer (caller may return original buffer before we process)
-        var ownedBuffer = ArrayPool<byte>.Shared.Rent(length);
-        buffer.AsSpan(0, length).CopyTo(ownedBuffer);
-        _inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, ownedBuffer, length, OwnsBuffer: true));
+        if (!_inputChannel.Writer.TryWrite(new OutputItem(sessionId, cols, rows, buffer)))
+        {
+            buffer.Release();
+        }
     }
 
     /// <summary>
@@ -241,16 +285,13 @@ public sealed class MuxClient : IAsyncDisposable
                 _sessionBuffers[item.SessionId] = buffer;
             }
 
-            buffer.Write(item.Data.AsSpan(0, item.Length));
+            buffer.Write(item.Buffer.Span);
             buffer.LastCols = item.Cols;
             buffer.LastRows = item.Rows;
         }
         finally
         {
-            if (item.OwnsBuffer)
-            {
-                ArrayPool<byte>.Shared.Return(item.Data);
-            }
+            item.Buffer.Release();
         }
     }
 
