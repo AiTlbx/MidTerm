@@ -5,8 +5,9 @@ MidTerm is a web-based terminal multiplexer. A native binary serves terminal ses
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Browser (xterm.js)                                         │
-│  ├─ /ws/mux    Binary multiplexed terminal I/O             │
-│  └─ /ws/state  JSON session list updates                   │
+│  ├─ /ws/mux       Binary multiplexed terminal I/O          │
+│  ├─ /ws/state     JSON session list updates                │
+│  └─ /ws/settings  Real-time settings sync                  │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
@@ -14,7 +15,8 @@ MidTerm is a web-based terminal multiplexer. A native binary serves terminal ses
 │  mt (Web Server)                                            │
 │  ├─ Kestrel HTTP/WebSocket                                  │
 │  ├─ SessionManager                                          │
-│  └─ MuxClient per browser connection                        │
+│  ├─ MuxClient per browser connection                        │
+│  └─ SettingsWebSocketHandler (settings sync)                │
 └─────────────────────────────────────────────────────────────┘
                            │
               ┌────────────┼────────────┐
@@ -35,7 +37,7 @@ MidTerm is a web-based terminal multiplexer. A native binary serves terminal ses
 
 The server compiles to a self-contained native binary via .NET's AOT compilation.
 
-**Source-generated serialization**: `AppJsonContext.cs` declares all 48 serializable types at compile time. The runtime never touches reflection. See `Services/AppJsonContext.cs`.
+**Source-generated serialization**: `AppJsonContext.cs` declares all 79 serializable types at compile time. The runtime never touches reflection. See `Services/AppJsonContext.cs`.
 
 **Platform APIs via P/Invoke**: ConPTY on Windows, forkpty on Unix. Direct system calls, no abstraction layers. See `src/Ai.Tlbx.MidTerm.TtyHost/Pty/`.
 
@@ -44,6 +46,23 @@ The server compiles to a self-contained native binary via .NET's AOT compilation
 **Kestrel's async I/O**: The same WebSocket infrastructure that handles production traffic at scale. WebSocket handlers in `Program.cs` lines 300-400.
 
 Binary size: 15-25MB depending on platform. Startup: instant. Memory: stable after initial allocation.
+
+### Key Services
+
+| Service | Purpose |
+|---------|---------|
+| SessionManager | Terminal session lifecycle |
+| AuthService | Password hashing (PBKDF2), session tokens |
+| SettingsService | Settings persistence |
+| UpdateService | GitHub release check, version comparison |
+| FileRadarAllowlistService | File path detection security (max 1000 paths/session) |
+| HistoryService | Command execution history (50 entries/shell) |
+| SecurityStatusService | Security status reporting |
+| CertificateGenerator/InfoService | HTTPS certificate lifecycle |
+| SystemTrayService | Windows system tray integration |
+| UserEnumerationService | Windows RunAsUser feature |
+| ISecretStorage | Cross-platform secret storage (platform-specific implementations) |
+| SharedOutputBuffer | Zero-copy buffer sharing via reference counting |
 
 ### Frontend: Vanilla TypeScript
 
@@ -101,6 +120,8 @@ All terminal I/O multiplexed over a single WebSocket connection using a binary p
 | 0x06 | BufferRequest | Client→Server | Request buffer refresh |
 | 0x07 | CompressedOutput | Server→Client | `[cols:2][rows:2][uncompLen:4][gzip...]` |
 | 0x08 | ActiveSessionHint | Client→Server | Hint for priority |
+| 0x0A | ForegroundChange | Server→Client | Process monitoring update |
+| 0x0B | DataLoss | Server→Client | Background session overflow notification |
 
 **Priority buffering** (see `MuxClient.cs`):
 
@@ -112,6 +133,8 @@ The server buffers output differently based on session activity:
 This ensures the focused terminal feels responsive while reducing bandwidth for background sessions running builds or logs.
 
 **Resync mechanism**: If the bounded queue overflows (>1000 items), oldest frames are dropped. The server detects this and sends a `Resync` frame, causing clients to clear all terminals and rebuild from current buffers.
+
+**Data loss notification**: When a background session's buffer overflows, the server sends a `DataLoss` (0x0B) frame to notify the client. The frontend displays a warning indicator for affected sessions.
 
 ### State WebSocket (JSON)
 
@@ -132,6 +155,23 @@ Separate channel for sidebar synchronization. Pushes session list whenever sessi
 
 Clients use this to render the sidebar without polling. Multiple browser tabs receive updates simultaneously.
 
+### Settings WebSocket (JSON)
+
+Endpoint: `/ws/settings`
+
+Real-time settings synchronization across all connected clients. When settings change on one client, updates propagate to all others.
+
+**Bidirectional protocol:**
+- Server→Client: Full settings object when settings change
+- Client→Server: Settings update requests
+
+This enables features like:
+- Settings panel updates reflected across browser tabs instantly
+- Theme changes applied to all connected sessions
+- Coordinated settings state without polling
+
+Handler: `SettingsWebSocketHandler.cs`
+
 ### REST API
 
 Authentication, session management, and settings via REST endpoints.
@@ -145,6 +185,20 @@ Authentication, session management, and settings via REST endpoints.
 - `POST /api/sessions` — Create session with optional shell type, working directory
 - `DELETE /api/sessions/{id}` — Close session
 - `POST /api/sessions/{id}/resize` — Resize terminal dimensions
+
+**Bootstrap endpoint:**
+- `GET /api/bootstrap` — Consolidated startup data (replaces multiple calls to sessions, settings, version, shells, update check)
+
+**Command history:**
+- `GET /api/history` — Retrieve command history
+- `POST /api/history` — Add command to history
+
+**File operations:**
+- `GET /api/files/*` — File content and metadata
+- `POST /api/files/*` — File operations (for File Radar integration)
+
+**Diagnostics:**
+- `GET /api/logs/*` — Diagnostic log access
 
 **Rate limiting:** 5 failures = 30s lockout, 10 failures = 5min lockout.
 
@@ -181,7 +235,7 @@ Native AOT compilation prohibits runtime reflection. All dynamic behavior must b
 ```csharp
 [JsonSerializable(typeof(SessionListDto))]
 [JsonSerializable(typeof(CreateSessionRequest))]
-// ... 46 more types
+// ... 77 more types
 internal partial class AppJsonContext : JsonSerializerContext { }
 ```
 
@@ -210,8 +264,15 @@ State is split between nanostores (reactive) and module-level variables (ephemer
 - `map<Record>` for collections (`$sessions`)
 - `computed` for derived state (`$sessionList` auto-sorts when `$sessions` changes)
 
+**New stores for advanced features:**
+- `$processStates` — Per-session foreground process info
+- `$dataLossDetected` — Tracks sessions with buffer overflow
+
 **Ephemeral state (`state.ts`)** - Non-reactive:
 - WebSocket instances, DOM cache, timers, pending buffers
+- Pending rename handling (survives reconnect)
+- Strictly ordered output queue with cursor-based dequeue
+- Traffic metrics with EMA smoothing
 
 ```typescript
 // stores/index.ts
@@ -248,6 +309,68 @@ WebSocket message
 ```
 
 Nanostores handles derived state automatically. Explicit render calls remain—no hidden re-renders.
+
+## Features
+
+### File Radar
+
+Terminal file path detection with security controls.
+
+- **Path detection**: Parses terminal output for file paths
+- **Allowlist service**: Security boundary (max 1000 paths/session)
+- **Integration**: Clicking detected paths opens file viewer or external editor
+
+Settings: `fileRadar` (enable/disable path detection)
+
+### Voice Chat
+
+Voice input integration for terminal commands.
+
+- **Module**: `voice.ts` (760 lines)
+- **Integration**: Speech-to-text for command input
+- **UI**: Voice panel with recording controls
+
+### Touch Controller
+
+Mobile gesture support for touch devices.
+
+- **Module**: `touchController/` (995 lines)
+- **Gestures**: Swipe, pinch-zoom, tap handling
+- **Responsive**: Adapts UI for touch interaction
+
+### Command History
+
+Searchable command execution history.
+
+- **Service**: `HistoryService` (50 entries per shell type)
+- **Module**: `history/` (frontend)
+- **API**: `GET/POST /api/history`
+- **UI**: Command launcher with fuzzy search
+
+### Foreground Process Monitoring
+
+Tracks and displays currently running process in each terminal.
+
+- **Protocol**: `ForegroundChange` (0x0A) message type
+- **Store**: `$processStates` for UI updates
+- **Tab titles**: `tabTitleMode: foregroundProcess` option
+
+### Settings Synchronization
+
+Real-time settings sync across all connected clients via `/ws/settings` WebSocket.
+
+### New Settings
+
+| Setting | Purpose |
+|---------|---------|
+| `fileRadar` | Terminal file path detection |
+| `scrollbackProtection` | Claude Code glitch protection |
+| `minimumContrastRatio` | Accessibility color contrast |
+| `tabTitleMode` | 5 modes: hostname, static, sessionName, terminalTitle, foregroundProcess |
+| `cursorInactiveStyle` | 5 styles for unfocused cursor |
+| `runAsUser` / `runAsUserSid` | Windows service user impersonation |
+| `keyProtection` | OsProtected or LegacyPfx |
+| `updateChannel` | stable or dev |
 
 ## Design Philosophy
 
@@ -295,7 +418,7 @@ C# AOT trades some flexibility for deployment simplicity:
 
 **What works**: P/Invoke to platform APIs (ConPTY, forkpty) compiles cleanly. Source-generated JSON handles all serialization. Kestrel's WebSocket implementation is AOT-compatible.
 
-**Constraints**: No runtime code generation. All types must be known at compile time. The 48-type `AppJsonContext` declares everything upfront.
+**Constraints**: No runtime code generation. All types must be known at compile time. The 79-type `AppJsonContext` declares everything upfront.
 
 **Binary size**: 15-25MB includes the runtime, HTTP server, WebSocket handling, and compression. Most of this would exist in any web server; the delta for AOT is minimal.
 
@@ -311,18 +434,27 @@ Terminal multiplexing in a browser involves inherent constraints:
 
 ## Testing
 
-The test project (`src/Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
+The project has two test projects:
 
+**Integration tests** (`src/Ai.Tlbx.MidTerm.Tests/`):
 - REST API endpoints (sessions, version, resize)
 - WebSocket protocols (mux binary frames, state JSON updates)
 - Session lifecycle (create, list, delete)
 
-**Current coverage**: Integration tests for core API and WebSocket functionality. Unit tests for isolated services are a focus for upcoming releases.
+**Unit tests** (`src/Ai.Tlbx.MidTerm.UnitTests/`):
+- `AuthServiceTests` — Password hashing, token validation
+- `MuxProtocolTests` — Binary protocol encoding/decoding
 
 **Test patterns**:
 - `WebApplicationFactory<Program>` for in-process HTTP/WebSocket testing
 - `IAsyncLifetime` for test setup/teardown with session cleanup
 - Polling helpers for async state verification
+
+## Build System
+
+- `version.json` — Central version management for coordinated mt/mthost versioning
+- MSBuild targets for frontend build integration
+- AOT publish scripts per platform (`build-aot.cmd`, `build-aot-linux.sh`, `build-aot-macos.sh`)
 
 ## File Reference
 
@@ -332,6 +464,9 @@ The test project (`src/Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
 | Mux protocol | `src/Ai.Tlbx.MidTerm/Services/MuxClient.cs`, `MuxProtocol.cs` |
 | Session management | `src/Ai.Tlbx.MidTerm/Services/TtyHostSessionManager.cs` |
 | AOT JSON | `src/Ai.Tlbx.MidTerm/Services/AppJsonContext.cs` |
+| Settings WebSocket | `src/Ai.Tlbx.MidTerm/Services/SettingsWebSocketHandler.cs` |
+| File Radar | `src/Ai.Tlbx.MidTerm/Services/FileRadarAllowlistService.cs` |
+| History | `src/Ai.Tlbx.MidTerm/Services/HistoryService.cs` |
 | PTY (Windows) | `src/Ai.Tlbx.MidTerm.TtyHost/Pty/ConPty/` |
 | PTY (Unix) | `src/Ai.Tlbx.MidTerm.TtyHost/Pty/UnixPty.cs` |
 | Frontend stores | `src/Ai.Tlbx.MidTerm/src/ts/stores/index.ts` |
@@ -339,3 +474,8 @@ The test project (`src/Ai.Tlbx.MidTerm.Tests/`) provides integration tests for:
 | Frontend wiring | `src/Ai.Tlbx.MidTerm/src/ts/main.ts` |
 | Mux client (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/comms/muxChannel.ts` |
 | State client (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/comms/stateChannel.ts` |
+| Settings client (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/comms/settingsChannel.ts` |
+| Voice | `src/Ai.Tlbx.MidTerm/src/ts/modules/voice.ts` |
+| Touch | `src/Ai.Tlbx.MidTerm/src/ts/modules/touchController/` |
+| File links | `src/Ai.Tlbx.MidTerm/src/ts/modules/fileLinks.ts` |
+| History (TS) | `src/Ai.Tlbx.MidTerm/src/ts/modules/history/` |
