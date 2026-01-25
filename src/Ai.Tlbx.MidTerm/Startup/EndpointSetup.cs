@@ -159,33 +159,9 @@ public static class EndpointSetup
         TtyHostSessionManager sessionManager,
         UpdateService updateService,
         SettingsService settingsService,
-        string version,
-        IHostApplicationLifetime? lifetime = null)
+        string version)
     {
         var shellRegistry = app.Services.GetRequiredService<ShellRegistry>();
-
-        // Shutdown endpoint for tray helper (localhost only for security)
-        if (lifetime is not null)
-        {
-            app.MapPost("/api/shutdown", (HttpContext context) =>
-            {
-                var remoteIp = context.Connection.RemoteIpAddress;
-                var isLocalhost = remoteIp is not null &&
-                    (System.Net.IPAddress.IsLoopback(remoteIp) ||
-                     remoteIp.Equals(System.Net.IPAddress.IPv6Loopback) ||
-                     remoteIp.ToString() == "::ffff:127.0.0.1");
-
-                if (!isLocalhost)
-                {
-                    Log.Warn(() => $"Shutdown request rejected from non-localhost IP: {remoteIp}");
-                    return Results.Forbid();
-                }
-
-                Log.Info(() => "Shutdown requested via API (localhost)");
-                lifetime.StopApplication();
-                return Results.Ok("Shutdown initiated");
-            });
-        }
 
         // Consolidated system endpoint (replaces /api/version, /api/health, /api/version/details)
         app.MapGet("/api/system", () =>
