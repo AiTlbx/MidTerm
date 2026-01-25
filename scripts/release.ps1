@@ -199,13 +199,16 @@ $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $currentVersion = $versionJson.web
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 
-# Parse and bump version (strip 4th component if present from local releases)
-$parts = $currentVersion.Split('.')
+# Parse and bump version (strip -dev suffix and 4th component if present)
+$baseVersion = $currentVersion -replace '-dev$', ''
+$parts = $baseVersion.Split('.')
 $major = [int]$parts[0]
 $minor = [int]$parts[1]
 $patch = [int]$parts[2]
 
-if ($parts.Count -eq 4) {
+if ($currentVersion -match '-dev$') {
+    Write-Host "  (Promoting from dev version to stable release)" -ForegroundColor Yellow
+} elseif ($parts.Count -eq 4) {
     Write-Host "  (Promoting from local dev version to release)" -ForegroundColor Yellow
 }
 
@@ -246,27 +249,27 @@ if ($isPtyBreaking) {
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" -ForegroundColor Gray
 
-# Update web csproj (regex handles both 3-part and 4-part versions from local releases)
+# Update web csproj (regex handles versions with -dev suffix)
 $content = Get-Content $webCsprojPath -Raw
-$content = $content -replace "<Version>\d+\.\d+\.\d+(\.\d+)?</Version>", "<Version>$newVersion</Version>"
+$content = $content -replace "<Version>[^<]+</Version>", "<Version>$newVersion</Version>"
 Set-Content $webCsprojPath $content -NoNewline
 Write-Host "  Updated: Ai.Tlbx.MidTerm.csproj" -ForegroundColor Gray
 
 # Update TtyHost files only for PTY-breaking changes
 if ($isPtyBreaking) {
-    # Update TtyHost csproj (regex handles both 3-part and 4-part versions)
+    # Update TtyHost csproj (regex handles versions with -dev suffix)
     $content = Get-Content $ttyHostCsprojPath -Raw
-    $content = $content -replace "<Version>\d+\.\d+\.\d+(\.\d+)?</Version>", "<Version>$newVersion</Version>"
+    $content = $content -replace "<Version>[^<]+</Version>", "<Version>$newVersion</Version>"
     # FileVersion must be exactly 4 parts - add .0 only if version is 3-part
     $versionParts = $newVersion.Split('.').Count
     $fileVersion = if ($versionParts -eq 3) { "$newVersion.0" } else { $newVersion }
-    $content = $content -replace "<FileVersion>\d+(\.\d+){2,4}</FileVersion>", "<FileVersion>$fileVersion</FileVersion>"
+    $content = $content -replace "<FileVersion>[^<]+</FileVersion>", "<FileVersion>$fileVersion</FileVersion>"
     Set-Content $ttyHostCsprojPath $content -NoNewline
     Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost.csproj" -ForegroundColor Gray
 
-    # Update TtyHost Program.cs (regex handles both 3-part and 4-part versions)
+    # Update TtyHost Program.cs (regex handles versions with -dev suffix)
     $content = Get-Content $ttyHostProgramPath -Raw
-    $content = $content -replace 'public const string Version = "\d+\.\d+\.\d+(\.\d+)?"', "public const string Version = `"$newVersion`""
+    $content = $content -replace 'public const string Version = "[^"]+"', "public const string Version = `"$newVersion`""
     Set-Content $ttyHostProgramPath $content -NoNewline
     Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost\Program.cs" -ForegroundColor Gray
 } else {
