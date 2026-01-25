@@ -118,7 +118,7 @@ $currentVersion = $versionJson.web
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 
 # Parse current version - strip any existing prerelease suffix
-$baseVersion = $currentVersion -replace '-dev\.\d+$', ''
+$baseVersion = $currentVersion -replace '-dev(\.\d+)?$', ''
 $parts = $baseVersion.Split('.')
 $major = [int]$parts[0]
 $minor = [int]$parts[1]
@@ -131,26 +131,7 @@ switch ($Bump) {
     "patch" { $patch++ }
 }
 
-$newBaseVersion = "$major.$minor.$patch"
-
-# Find highest existing dev tag for this base version
-$existingDevTags = git tag -l "v$newBaseVersion-dev.*" 2>$null | Sort-Object -Descending
-$devNumber = 1
-
-if ($existingDevTags) {
-    # Extract the highest dev number
-    foreach ($tag in $existingDevTags) {
-        if ($tag -match "-dev\.(\d+)$") {
-            $existingNum = [int]$Matches[1]
-            if ($existingNum -ge $devNumber) {
-                $devNumber = $existingNum + 1
-            }
-            break
-        }
-    }
-}
-
-$newVersion = "$newBaseVersion-dev.$devNumber"
+$newVersion = "$major.$minor.$patch-dev"
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
 # Determine release type
@@ -186,7 +167,7 @@ if ($isPtyBreaking) {
     $content = Get-Content $ttyHostCsprojPath -Raw
     $content = $content -replace "<Version>[^<]+</Version>", "<Version>$newVersion</Version>"
     # FileVersion must be exactly 4 parts - use base version + 0
-    $fileVersion = "$newBaseVersion.0"
+    $fileVersion = "$major.$minor.$patch.0"
     $content = $content -replace "<FileVersion>[^<]+</FileVersion>", "<FileVersion>$fileVersion</FileVersion>"
     Set-Content $ttyHostCsprojPath $content -NoNewline
     Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost.csproj" -ForegroundColor Gray

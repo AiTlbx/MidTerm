@@ -805,20 +805,29 @@ safe_copy() {{
         return 1
     fi
 
-    # CRITICAL: On macOS, cp -f over existing binary corrupts code signature!
-    # The signature metadata gets mangled when overwriting in-place.
-    # Solution: Remove destination first, then copy fresh.
-    # This issue caused SIGKILL/SIGABRT crashes on macOS ARM64.
-    rm -f ""$dst"" 2>/dev/null || true
-    cp ""$src"" ""$dst""
-    chmod +x ""$dst""
+    # Atomic update: copy to temp, sign if needed, then mv (atomic rename)
+    # This ensures the destination is never in a partial state.
+    local tmp_dst=""$dst.new""
+    cp ""$src"" ""$tmp_dst""
+    chmod +x ""$tmp_dst""
 
     # macOS requires ad-hoc codesigning for binaries to run
     # Without this, the binary gets killed immediately with SIGKILL
     if $IS_MACOS; then
         log ""Signing $desc for macOS...""
-        codesign -s - ""$dst"" 2>/dev/null || log ""Warning: codesign failed for $dst"" ""WARN""
+        if ! codesign -s - ""$tmp_dst"" 2>/dev/null; then
+            log ""WARNING: codesign failed for $tmp_dst"" ""WARN""
+        fi
+        if ! codesign --verify ""$tmp_dst"" 2>/dev/null; then
+            log ""ERROR: Signature verification failed for $tmp_dst"" ""ERROR""
+            rm -f ""$tmp_dst"" 2>/dev/null || true
+            return 1
+        fi
+        log ""Signature verified for $desc""
     fi
+
+    # Atomic rename - either succeeds completely or fails
+    mv -f ""$tmp_dst"" ""$dst""
 
     if ! verify_copy ""$src"" ""$dst""; then
         return 1
@@ -1105,11 +1114,6 @@ log ""All files installed""
 log """"
 log '=== PHASE 5: Starting new version ==='
 
-# Try to start service first
-log ""Starting service...""
-{startServiceCmd}
-sleep 8
-
 # Ensure main service log file has correct ownership BEFORE starting service
 # Without this, the service (running as user) can't write to root-owned log
 MAIN_LOG=""$LOG_DIR/MidTerm.log""
@@ -1118,6 +1122,11 @@ if [[ -n ""$SERVICE_USER"" ]]; then
     chown ""$SERVICE_USER"" ""$MAIN_LOG"" 2>/dev/null || true
     log ""Set $MAIN_LOG ownership to $SERVICE_USER""
 fi
+
+# Try to start service
+log ""Starting service...""
+{startServiceCmd}
+sleep 8
 
 # Check if service is running
 if {checkServiceCmd}; then

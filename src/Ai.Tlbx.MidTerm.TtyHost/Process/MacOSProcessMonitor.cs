@@ -17,6 +17,7 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
     private int _kq = -1;
     private int? _currentChildPid;
     private string? _currentCwd;
+    private readonly object _stateLock = new();
     private Thread? _eventThread;
     private Timer? _cwdTimer;
     private volatile bool _disposed;
@@ -148,10 +149,19 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
             var childPid = GetFirstDirectChild(_shellPid);
             var cwd = GetShellCwd();
 
-            if (childPid != _currentChildPid || cwd != _currentCwd)
+            bool shouldNotify;
+            lock (_stateLock)
             {
-                _currentChildPid = childPid;
-                _currentCwd = cwd;
+                shouldNotify = childPid != _currentChildPid || cwd != _currentCwd;
+                if (shouldNotify)
+                {
+                    _currentChildPid = childPid;
+                    _currentCwd = cwd;
+                }
+            }
+
+            if (shouldNotify)
+            {
                 OnForegroundChanged?.Invoke(GetCurrentForeground());
             }
         }
@@ -168,9 +178,19 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         try
         {
             var cwd = GetShellCwd();
-            if (cwd != _currentCwd)
+
+            bool shouldNotify;
+            lock (_stateLock)
             {
-                _currentCwd = cwd;
+                shouldNotify = cwd != _currentCwd;
+                if (shouldNotify)
+                {
+                    _currentCwd = cwd;
+                }
+            }
+
+            if (shouldNotify)
+            {
                 OnForegroundChanged?.Invoke(GetCurrentForeground());
             }
         }
@@ -184,10 +204,19 @@ public sealed class MacOSProcessMonitor : IProcessMonitor
         var childPid = GetFirstDirectChild(_shellPid);
         var cwd = GetShellCwd();
 
-        if (childPid != _currentChildPid || cwd != _currentCwd)
+        bool shouldNotify;
+        lock (_stateLock)
         {
-            _currentChildPid = childPid;
-            _currentCwd = cwd;
+            shouldNotify = childPid != _currentChildPid || cwd != _currentCwd;
+            if (shouldNotify)
+            {
+                _currentChildPid = childPid;
+                _currentCwd = cwd;
+            }
+        }
+
+        if (shouldNotify)
+        {
             OnForegroundChanged?.Invoke(GetCurrentForeground());
         }
     }

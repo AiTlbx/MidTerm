@@ -507,7 +507,12 @@ async function renderTextFile(path: string, container: Element): Promise<void> {
       container.innerHTML = `<div class="md-content">${renderMarkdown(displayText)}${truncated ? '<p><em>... (truncated)</em></p>' : ''}</div>`;
     } else {
       const highlighted = highlightCode(displayText, ext);
-      container.innerHTML = `<pre class="file-viewer-text">${highlighted}${truncated ? '\n\n... (truncated)' : ''}</pre>`;
+      const lines = highlighted.split('\n');
+      const gutterWidth = Math.max(3, String(lines.length).length);
+      const linesHtml = lines
+        .map((line, i) => `<div class="code-line" data-line="${i + 1}">${line || ' '}</div>`)
+        .join('');
+      container.innerHTML = `<pre class="file-viewer-text" style="--gutter-width: ${gutterWidth}ch">${linesHtml}${truncated ? '<div class="code-line">... (truncated)</div>' : ''}</pre>`;
     }
   } catch (e) {
     log.error(() => `Failed to load text file: ${e}`);
@@ -657,361 +662,174 @@ function renderMarkdown(text: string): string {
   return html;
 }
 
-// Pre-compiled regex patterns (allocated once at module load)
+// Universal syntax highlighting - works across all languages
+// Uses pattern recognition instead of per-language keyword lists
+
+// Universal keywords (merged from common programming languages)
+const UNIVERSAL_KEYWORDS = [
+  'if',
+  'else',
+  'elif',
+  'for',
+  'foreach',
+  'while',
+  'do',
+  'switch',
+  'case',
+  'default',
+  'break',
+  'continue',
+  'return',
+  'goto',
+  'throw',
+  'try',
+  'catch',
+  'except',
+  'finally',
+  'with',
+  'match',
+  'when',
+  'then',
+  'fi',
+  'done',
+  'esac',
+  'function',
+  'func',
+  'fn',
+  'def',
+  'sub',
+  'proc',
+  'method',
+  'lambda',
+  'class',
+  'struct',
+  'interface',
+  'trait',
+  'impl',
+  'enum',
+  'union',
+  'type',
+  'typedef',
+  'const',
+  'let',
+  'var',
+  'mut',
+  'val',
+  'final',
+  'public',
+  'private',
+  'protected',
+  'internal',
+  'static',
+  'readonly',
+  'abstract',
+  'virtual',
+  'async',
+  'await',
+  'yield',
+  'defer',
+  'go',
+  'import',
+  'export',
+  'from',
+  'use',
+  'using',
+  'require',
+  'include',
+  'package',
+  'module',
+  'namespace',
+  'mod',
+  'crate',
+  'extern',
+  'new',
+  'delete',
+  'extends',
+  'implements',
+  'override',
+  'true',
+  'false',
+  'True',
+  'False',
+  'null',
+  'nil',
+  'None',
+  'undefined',
+  'void',
+  'this',
+  'self',
+  'super',
+  'base',
+  'and',
+  'or',
+  'not',
+  'in',
+  'is',
+  'as',
+  'typeof',
+  'instanceof',
+  'sizeof',
+  'exit',
+  'local',
+  'select',
+  'chan',
+  'map',
+  'range',
+  'move',
+  'pass',
+  'pub',
+];
+
+// Build keyword regex once at module load
+const RE_KEYWORDS = new RegExp(`\\b(${UNIVERSAL_KEYWORDS.join('|')})\\b`, 'g');
+
+// Pattern regexes (allocated once at module load)
 const RE_COMMENT_SLASH = /(\/\/.*$)/gm;
-const RE_COMMENT_HASH = /(#.*$)/gm;
+const RE_COMMENT_HASH = /(#(?![[(]).*$)/gm;
+const RE_COMMENT_DASHDASH = /(--.*$)/gm;
 const RE_STRING_DOUBLE = /(&quot;[^&]*&quot;)/g;
 const RE_STRING_SINGLE = /(&#39;[^&]*&#39;)/g;
 const RE_STRING_TEMPLATE = /(`[^`]*`)/g;
-const RE_NUMBER = /\b(\d+\.?\d*)\b/g;
+const RE_NUMBER = /\b(0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\d[\d_]*\.?[\d_]*(?:[eE][+-]?\d+)?)\b/g;
+const RE_TYPE = /\b([A-Z][a-z]+[A-Za-z0-9]*)\b(?!\s*\()/g;
+const RE_FUNCTION_CALL = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/g;
 
-// Keyword lists per language
-const LANGUAGE_KEYWORDS: Record<string, readonly string[]> = {
-  js: [
-    'const',
-    'let',
-    'var',
-    'function',
-    'return',
-    'if',
-    'else',
-    'for',
-    'while',
-    'class',
-    'extends',
-    'import',
-    'export',
-    'from',
-    'default',
-    'async',
-    'await',
-    'try',
-    'catch',
-    'throw',
-    'new',
-    'this',
-    'typeof',
-    'instanceof',
-    'true',
-    'false',
-    'null',
-    'undefined',
-  ],
-  ts: [
-    'const',
-    'let',
-    'var',
-    'function',
-    'return',
-    'if',
-    'else',
-    'for',
-    'while',
-    'class',
-    'extends',
-    'import',
-    'export',
-    'from',
-    'default',
-    'async',
-    'await',
-    'try',
-    'catch',
-    'throw',
-    'new',
-    'this',
-    'typeof',
-    'instanceof',
-    'true',
-    'false',
-    'null',
-    'undefined',
-    'interface',
-    'type',
-    'enum',
-    'implements',
-    'public',
-    'private',
-    'protected',
-    'readonly',
-  ],
-  py: [
-    'def',
-    'class',
-    'return',
-    'if',
-    'elif',
-    'else',
-    'for',
-    'while',
-    'import',
-    'from',
-    'as',
-    'try',
-    'except',
-    'finally',
-    'with',
-    'lambda',
-    'yield',
-    'pass',
-    'break',
-    'continue',
-    'True',
-    'False',
-    'None',
-    'and',
-    'or',
-    'not',
-    'in',
-    'is',
-    'async',
-    'await',
-  ],
-  cs: [
-    'public',
-    'private',
-    'protected',
-    'internal',
-    'class',
-    'interface',
-    'struct',
-    'enum',
-    'namespace',
-    'using',
-    'return',
-    'if',
-    'else',
-    'for',
-    'foreach',
-    'while',
-    'switch',
-    'case',
-    'break',
-    'continue',
-    'try',
-    'catch',
-    'finally',
-    'throw',
-    'new',
-    'this',
-    'base',
-    'static',
-    'readonly',
-    'const',
-    'async',
-    'await',
-    'void',
-    'var',
-    'true',
-    'false',
-    'null',
-  ],
-  go: [
-    'func',
-    'return',
-    'if',
-    'else',
-    'for',
-    'range',
-    'switch',
-    'case',
-    'default',
-    'break',
-    'continue',
-    'go',
-    'defer',
-    'select',
-    'chan',
-    'map',
-    'struct',
-    'interface',
-    'package',
-    'import',
-    'const',
-    'var',
-    'type',
-    'true',
-    'false',
-    'nil',
-  ],
-  rs: [
-    'fn',
-    'let',
-    'mut',
-    'const',
-    'return',
-    'if',
-    'else',
-    'for',
-    'while',
-    'loop',
-    'match',
-    'struct',
-    'enum',
-    'impl',
-    'trait',
-    'pub',
-    'use',
-    'mod',
-    'crate',
-    'self',
-    'super',
-    'async',
-    'await',
-    'move',
-    'true',
-    'false',
-  ],
-  java: [
-    'public',
-    'private',
-    'protected',
-    'class',
-    'interface',
-    'extends',
-    'implements',
-    'return',
-    'if',
-    'else',
-    'for',
-    'while',
-    'switch',
-    'case',
-    'break',
-    'continue',
-    'try',
-    'catch',
-    'finally',
-    'throw',
-    'new',
-    'this',
-    'super',
-    'static',
-    'final',
-    'void',
-    'import',
-    'package',
-    'true',
-    'false',
-    'null',
-  ],
-  c: [
-    'if',
-    'else',
-    'for',
-    'while',
-    'switch',
-    'case',
-    'break',
-    'continue',
-    'return',
-    'struct',
-    'enum',
-    'typedef',
-    'const',
-    'static',
-    'extern',
-    'sizeof',
-    'void',
-    'int',
-    'char',
-    'float',
-    'double',
-    'long',
-    'short',
-    'unsigned',
-    'signed',
-  ],
-  sh: [
-    'if',
-    'then',
-    'else',
-    'elif',
-    'fi',
-    'for',
-    'while',
-    'do',
-    'done',
-    'case',
-    'esac',
-    'function',
-    'return',
-    'exit',
-    'export',
-    'local',
-    'readonly',
-    'true',
-    'false',
-  ],
-};
-
-// Pre-compiled keyword regexes (cached on first use per language)
-const keywordRegexCache = new Map<string, RegExp>();
-
-function getKeywordRegex(lang: string): RegExp | null {
-  const cached = keywordRegexCache.get(lang);
-  if (cached) return cached;
-
-  const keywords = LANGUAGE_KEYWORDS[lang];
-  if (!keywords) return null;
-
-  const regex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
-  keywordRegexCache.set(lang, regex);
-  return regex;
-}
-
-const EXT_TO_LANG: Record<string, string> = {
-  '.js': 'js',
-  '.jsx': 'js',
-  '.mjs': 'js',
-  '.ts': 'ts',
-  '.tsx': 'ts',
-  '.py': 'py',
-  '.cs': 'cs',
-  '.go': 'go',
-  '.rs': 'rs',
-  '.java': 'java',
-  '.c': 'c',
-  '.h': 'c',
-  '.cpp': 'c',
-  '.hpp': 'c',
-  '.sh': 'sh',
-  '.bash': 'sh',
-  '.zsh': 'sh',
-};
-
-function highlightCode(text: string, ext: string): string {
-  const lang = EXT_TO_LANG[ext];
+function highlightCode(text: string, _ext: string): string {
   let escaped = escapeHtml(text);
 
   // Reset regex lastIndex (required for reused global regexes)
   RE_COMMENT_SLASH.lastIndex = 0;
   RE_COMMENT_HASH.lastIndex = 0;
+  RE_COMMENT_DASHDASH.lastIndex = 0;
   RE_STRING_DOUBLE.lastIndex = 0;
   RE_STRING_SINGLE.lastIndex = 0;
   RE_STRING_TEMPLATE.lastIndex = 0;
   RE_NUMBER.lastIndex = 0;
+  RE_KEYWORDS.lastIndex = 0;
+  RE_TYPE.lastIndex = 0;
+  RE_FUNCTION_CALL.lastIndex = 0;
 
-  // Comments (single-line)
+  // 1. Comments first (can contain anything)
   escaped = escaped.replace(RE_COMMENT_SLASH, '<span class="hl-comment">$1</span>');
   escaped = escaped.replace(RE_COMMENT_HASH, '<span class="hl-comment">$1</span>');
+  escaped = escaped.replace(RE_COMMENT_DASHDASH, '<span class="hl-comment">$1</span>');
 
-  // Strings (double and single quotes)
+  // 2. Strings (can contain keywords/numbers)
   escaped = escaped.replace(RE_STRING_DOUBLE, '<span class="hl-string">$1</span>');
   escaped = escaped.replace(RE_STRING_SINGLE, '<span class="hl-string">$1</span>');
   escaped = escaped.replace(RE_STRING_TEMPLATE, '<span class="hl-string">$1</span>');
 
-  // Numbers
+  // 3. Numbers
   escaped = escaped.replace(RE_NUMBER, '<span class="hl-number">$1</span>');
 
-  // Keywords (use cached regex)
-  if (lang) {
-    const keywordRegex = getKeywordRegex(lang);
-    if (keywordRegex) {
-      keywordRegex.lastIndex = 0;
-      escaped = escaped.replace(keywordRegex, '<span class="hl-keyword">$1</span>');
-    }
-  }
+  // 4. Keywords (universal set)
+  escaped = escaped.replace(RE_KEYWORDS, '<span class="hl-keyword">$1</span>');
+
+  // 5. Types (PascalCase identifiers not followed by paren)
+  escaped = escaped.replace(RE_TYPE, '<span class="hl-type">$1</span>');
+
+  // 6. Function calls (identifier followed by paren)
+  escaped = escaped.replace(RE_FUNCTION_CALL, '<span class="hl-function">$1</span>');
 
   return escaped;
 }

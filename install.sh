@@ -666,11 +666,18 @@ execute_certificate_trust() {
     fi
 
     if [ "$(uname -s)" = "Darwin" ]; then
-        if security add-trusted-cert -d -r trustRoot \
-            -k /Library/Keychains/System.keychain "$cert_path" 2>/dev/null; then
+        local output exit_code
+        output=$(security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$cert_path" 2>&1)
+        exit_code=$?
+        if [ $exit_code -eq 0 ]; then
             echo -e "  ${GREEN}Certificate trusted${NC}"
         else
-            echo -e "  ${YELLOW}Could not auto-trust certificate${NC}"
+            echo -e "  ${YELLOW}Could not auto-trust certificate (code: $exit_code)${NC}"
+            if [ -n "$output" ]; then
+                echo -e "  ${GRAY}$output${NC}"
+            fi
+            echo -e "  ${GRAY}You may need to trust manually in Keychain Access${NC}"
         fi
     else
         if cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
@@ -693,11 +700,18 @@ prompt_certificate_trust() {
 
     if [[ "$trust_choice" != "n" && "$trust_choice" != "N" ]]; then
         if [ "$(uname -s)" = "Darwin" ]; then
-            if sudo security add-trusted-cert -d -r trustRoot \
-                -k /Library/Keychains/System.keychain "$cert_path" 2>/dev/null; then
+            local output exit_code
+            output=$(sudo security add-trusted-cert -d -r trustRoot \
+                -k /Library/Keychains/System.keychain "$cert_path" 2>&1)
+            exit_code=$?
+            if [ $exit_code -eq 0 ]; then
                 echo -e "  ${GREEN}Certificate trusted${NC}"
             else
-                echo -e "  ${YELLOW}Could not auto-trust - use manual command above${NC}"
+                echo -e "  ${YELLOW}Could not auto-trust certificate (code: $exit_code)${NC}"
+                if [ -n "$output" ]; then
+                    echo -e "  ${GRAY}$output${NC}"
+                fi
+                echo -e "  ${GRAY}You may need to trust manually in Keychain Access${NC}"
             fi
         else
             if sudo cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
@@ -929,21 +943,21 @@ install_launchd() {
     touch "$log_dir/MidTerm.log"
     chown "$INSTALLING_USER" "$log_dir/MidTerm.log"
 
-    # Unload existing services if present
-    launchctl unload "$plist_path" 2>/dev/null || true
+    # Unload existing services if present (try modern bootout first, fallback to legacy unload)
+    launchctl bootout system/"$LAUNCHD_LABEL" 2>/dev/null || launchctl unload "$plist_path" 2>/dev/null || true
 
     # Migration: remove old org launchd service
     local old_org_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist"
     if [ -f "$old_org_plist" ]; then
         echo -e "${YELLOW}Migrating from old org service name...${NC}"
-        launchctl unload "$old_org_plist" 2>/dev/null || true
+        launchctl bootout system/"$OLD_LAUNCHD_LABEL" 2>/dev/null || launchctl unload "$old_org_plist" 2>/dev/null || true
         rm -f "$old_org_plist"
     fi
 
     # Migration: remove old host service from pre-v4
     if [ -f "$old_host_plist" ]; then
         echo -e "${YELLOW}Migrating from old architecture...${NC}"
-        launchctl unload "$old_host_plist" 2>/dev/null || true
+        launchctl bootout system/"$OLD_LAUNCHD_HOST_LABEL" 2>/dev/null || launchctl unload "$old_host_plist" 2>/dev/null || true
         rm -f "$old_host_plist"
     fi
 
@@ -982,9 +996,9 @@ install_launchd() {
 </plist>
 EOF
 
-    # Load service
+    # Load service (try modern bootstrap first, fallback to legacy load)
     echo -e "${GRAY}Starting service...${NC}"
-    if launchctl load "$plist_path"; then
+    if launchctl bootstrap system "$plist_path" 2>/dev/null || launchctl load "$plist_path"; then
         sleep 1
         if launchctl list | grep -q "$LAUNCHD_LABEL"; then
             echo -e "  ${GREEN}Service started successfully${NC}"
@@ -1024,10 +1038,12 @@ After=network.target
 
 [Service]
 Type=simple
+User=${INSTALLING_USER}
+WorkingDirectory=/tmp
 ExecStart=${install_dir}/mt --port ${PORT} --bind ${BIND_ADDRESS}
 Restart=always
 RestartSec=5
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target
@@ -1139,13 +1155,13 @@ set -e
 echo "Uninstalling MidTerm..."
 
 if [ "$(uname -s)" = "Darwin" ]; then
-    # macOS - unload service
-    sudo launchctl unload /Library/LaunchDaemons/ai.tlbx.midterm.plist 2>/dev/null || true
+    # macOS - unload service (try modern bootout first, fallback to legacy unload)
+    sudo launchctl bootout system/ai.tlbx.midterm 2>/dev/null || sudo launchctl unload /Library/LaunchDaemons/ai.tlbx.midterm.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/ai.tlbx.midterm.plist
     # Cleanup old service names from previous org
-    sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm.plist 2>/dev/null || true
+    sudo launchctl bootout system/com.aitlbx.MidTerm 2>/dev/null || sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/com.aitlbx.MidTerm.plist
-    sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm-host.plist 2>/dev/null || true
+    sudo launchctl bootout system/com.aitlbx.MidTerm-host 2>/dev/null || sudo launchctl unload /Library/LaunchDaemons/com.aitlbx.MidTerm-host.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/com.aitlbx.MidTerm-host.plist
 else
     # Linux - stop and remove service
