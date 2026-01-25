@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # MidTerm Windows Installer
 # Usage: irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
+# Dev:   & ([scriptblock]::Create((irm https://tlbx-ai.github.io/MidTerm/install.ps1))) -Dev
 
 param(
     [string]$RunAsUser,
@@ -10,11 +11,69 @@ param(
     [string]$BindAddress = "",
     [switch]$ServiceMode,
     [switch]$TrustCert,
-    [string]$LogFile
+    [string]$LogFile,
+    [switch]$Dev
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+# Logging
+$script:UpdateLogFile = $null
+$script:LogInitialized = $false
+
+function Initialize-Log
+{
+    param(
+        [string]$Mode  # "service" or "user"
+    )
+
+    if ($Mode -eq "service")
+    {
+        $logDir = "$env:ProgramData\MidTerm"
+    }
+    else
+    {
+        $logDir = "$env:USERPROFILE\.MidTerm"
+    }
+
+    if (-not (Test-Path $logDir))
+    {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    $script:UpdateLogFile = Join-Path $logDir "update.log"
+
+    # Clear previous log
+    "" | Set-Content $script:UpdateLogFile -Force -ErrorAction SilentlyContinue
+
+    $script:LogInitialized = $true
+
+    $channelLabel = if ($Dev) { "dev" } else { "stable" }
+    Write-Log "=========================================="
+    Write-Log "MidTerm Install Script Starting"
+    Write-Log "Mode: $Mode"
+    Write-Log "Channel: $channelLabel"
+    Write-Log "Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    Write-Log "Platform: Windows $([Environment]::OSVersion.Version)"
+    Write-Log "User: $env:USERNAME"
+    Write-Log "=========================================="
+}
+
+function Write-Log
+{
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+
+    if ($script:LogInitialized -and $script:UpdateLogFile)
+    {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+        $line = "[$timestamp] [$Level] $Message"
+        Add-Content -Path $script:UpdateLogFile -Value $line -ErrorAction SilentlyContinue
+    }
+}
 
 $ServiceName = "MidTerm"
 $OldHostServiceName = "MidTermHost"
@@ -302,10 +361,13 @@ function Generate-Certificate
         [bool]$TrustCert = $false
     )
 
+    Write-Log "Generating certificate: InstallDir=$InstallDir, SettingsDir=$SettingsDir, IsService=$IsService"
+
     # First check if a valid certificate already exists
     $existingCert = Test-ExistingCertificate -SettingsDir $SettingsDir
     if ($existingCert)
     {
+        Write-Log "Existing valid certificate found: $($existingCert.Path), expires $($existingCert.NotAfter)"
         Write-Host "  Existing valid certificate found (expires $($existingCert.NotAfter.ToString('yyyy-MM-dd')))" -ForegroundColor Green
         $certPath = $existingCert.Path
         $certThumbprint = $existingCert.Thumbprint
@@ -313,11 +375,13 @@ function Generate-Certificate
     }
     else
     {
+        Write-Log "No valid certificate found, generating new one..."
         Write-Host "  Generating HTTPS certificate with OS-protected private key..." -ForegroundColor Gray
 
         $mtPath = Join-Path $InstallDir "mt.exe"
         if (-not (Test-Path $mtPath))
         {
+            Write-Log "mt.exe not found at $mtPath" "ERROR"
             Write-Host "  Error: mt.exe not found at $mtPath" -ForegroundColor Red
             return $null
         }
@@ -508,10 +572,35 @@ function Prompt-NetworkConfig
 
 function Get-LatestRelease
 {
-    Write-Host "Fetching latest release..." -ForegroundColor Gray
-    $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
-    $release = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
-    return $release
+    param(
+        [bool]$DevChannel = $false
+    )
+
+    if ($DevChannel)
+    {
+        Write-Host "Fetching latest dev release..." -ForegroundColor Gray
+        $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
+        $releases = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+
+        # Find the first prerelease
+        $release = $releases | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
+
+        if (-not $release)
+        {
+            Write-Host "  No dev releases found, falling back to latest stable..." -ForegroundColor Yellow
+            $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
+            $release = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+        }
+
+        return $release
+    }
+    else
+    {
+        Write-Host "Fetching latest release..." -ForegroundColor Gray
+        $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
+        $release = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+        return $release
+    }
 }
 
 function Get-AssetUrl
@@ -610,9 +699,15 @@ function Install-MidTerm
         [bool]$TrustCert = $false
     )
 
+    # Initialize logging
+    $mode = if ($AsService) { "service" } else { "user" }
+    Initialize-Log -Mode $mode
+    Write-Log "Starting installation: Version=$Version, AsService=$AsService, RunAsUser=$RunAsUser"
+
     if ($AsService)
     {
         $installDir = "$env:ProgramFiles\MidTerm"
+        Write-Log "Install directory: $installDir"
 
         # Stop and remove old two-service architecture if present
         $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -668,14 +763,20 @@ function Install-MidTerm
     $tempZip = Join-Path $env:TEMP "mt-download.zip"
     $tempExtract = Join-Path $env:TEMP "mt-extract"
 
+    Write-Log "=== PHASE 1: Downloading binaries ==="
     Write-Host "Downloading..." -ForegroundColor Gray
     $assetUrl = Get-AssetUrl -Release $script:release
+    Write-Log "Downloading from: $assetUrl"
     Invoke-WebRequest -Uri $assetUrl -OutFile $tempZip
+    Write-Log "Download complete"
 
     Write-Host "Extracting..." -ForegroundColor Gray
+    Write-Log "Extracting to: $tempExtract"
     if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force }
     Expand-Archive -Path $tempZip -DestinationPath $tempExtract
+    Write-Log "Extraction complete"
 
+    Write-Log "=== PHASE 2: Installing binaries ==="
     # Copy binaries
     $sourceWebBinary = Join-Path $tempExtract $WebBinaryName
     $sourceConHostBinary = Join-Path $tempExtract $TtyHostBinaryName
@@ -683,6 +784,7 @@ function Install-MidTerm
     $destConHostBinary = Join-Path $installDir $TtyHostBinaryName
 
     Write-Host "Installing binaries to $installDir..." -ForegroundColor Gray
+    Write-Log "Installing binaries to $installDir"
 
     # Retry logic for file copy (handles may take time to release)
     $maxRetries = 15
@@ -763,9 +865,11 @@ function Install-MidTerm
     Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
     Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
 
+    Write-Log "=== PHASE 3: Password configuration ==="
     # Hash pending password now that mt.exe is installed
     if ($PasswordHash -and $PasswordHash.StartsWith("__PENDING__:"))
     {
+        Write-Log "Hashing pending password..."
         $plainPassword = $PasswordHash.Substring(12)
         try
         {
@@ -773,21 +877,34 @@ function Install-MidTerm
             if ($hash -match '^\$PBKDF2\$')
             {
                 $PasswordHash = $hash
+                Write-Log "Password hashed successfully"
                 Write-Host "  Password: hashed" -ForegroundColor Gray
             }
             else
             {
+                Write-Log "Password hashing failed, using fallback" "WARN"
                 Write-Host "  Warning: Password hashing failed, using fallback" -ForegroundColor Yellow
             }
         }
         catch
         {
+            Write-Log "Could not hash password: $_" "WARN"
             Write-Host "  Warning: Could not hash password: $_" -ForegroundColor Yellow
         }
     }
+    elseif ($PasswordHash)
+    {
+        Write-Log "Using existing password hash"
+    }
+    else
+    {
+        Write-Log "No password hash provided (existing password will be preserved)"
+    }
 
+    Write-Log "=== PHASE 4: Certificate configuration ==="
     # Always generate certificate now that mt.exe is installed (always HTTPS)
     $settingsDir = if ($AsService) { "$env:ProgramData\MidTerm" } else { "$env:USERPROFILE\.midterm" }
+    Write-Log "Settings directory: $settingsDir"
     $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService -TrustCert $TrustCert
     if (-not $CertPath)
     {
@@ -799,14 +916,17 @@ function Install-MidTerm
         Show-CertificateFingerprint -CertPath $CertPath
     }
 
+    Write-Log "=== PHASE 5: Service/App installation ==="
     if ($AsService)
     {
         # Write settings with runAsUser info and password
         if ($RunAsUser -and $RunAsUserSid)
         {
+            Write-Log "Writing service settings..."
             Write-ServiceSettings -InstallDir $installDir -Username $RunAsUser -UserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -CertPath $CertPath
         }
 
+        Write-Log "Installing as Windows service..."
         Install-AsService -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
 
         # Wait for mt.exe to spawn
@@ -879,6 +999,13 @@ function Install-MidTerm
         Install-AsUserApp -InstallDir $installDir -Version $Version
     }
 
+    Write-Log "=========================================="
+    Write-Log "INSTALLATION COMPLETE"
+    Write-Log "  Location: $installDir"
+    Write-Log "  URL: https://localhost:$Port"
+    Write-Log "  Settings: $settingsDir"
+    Write-Log "=========================================="
+
     Write-Host ""
     Write-Host "Installation complete!" -ForegroundColor Green
     Write-Host ""
@@ -924,14 +1051,34 @@ function Install-AsService
     $bindArg = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
 
     # Create service - mt.exe spawns mthost per terminal session
+    Write-Log "Creating Windows service..."
     Write-Host "Creating MidTerm service..." -ForegroundColor Gray
     $binPath = "`"$webBinaryPath`" --port $Port --bind $bindArg"
-    sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "$DisplayName" | Out-Null
+    Write-Log "Service binPath: $binPath"
+    $scCreateOutput = sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "$DisplayName" 2>&1
+    Write-Log "sc.exe create output: $scCreateOutput"
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
 
     # Start service
+    Write-Log "Starting service..."
     Write-Host "Starting service..." -ForegroundColor Gray
-    Start-Service -Name $ServiceName
+    try
+    {
+        Start-Service -Name $ServiceName -ErrorAction Stop
+        Write-Log "Service started successfully"
+    }
+    catch
+    {
+        Write-Log "Failed to start service: $_" "ERROR"
+        throw
+    }
+
+    # Verify service is running
+    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($svc)
+    {
+        Write-Log "Service status: $($svc.Status)"
+    }
 
     # Register in Add/Remove Programs
     Register-Uninstall -InstallDir $InstallDir -Version $Version -IsService $true
@@ -1087,9 +1234,10 @@ if ($ServiceMode)
             Write-Host ""
             Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
             Write-Host ""
-            $script:release = Get-LatestRelease
+            $script:release = Get-LatestRelease -DevChannel $Dev
             $version = $script:release.tag_name -replace "^v", ""
-            Write-Host "  Latest version: $version" -ForegroundColor White
+            $channelLabel = if ($Dev) { "dev" } else { "stable" }
+            Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
             Write-Host ""
             Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -TrustCert:$TrustCert
         } *>&1 | ForEach-Object {
@@ -1103,9 +1251,10 @@ if ($ServiceMode)
         Write-Host ""
         Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
         Write-Host ""
-        $script:release = Get-LatestRelease
+        $script:release = Get-LatestRelease -DevChannel $Dev
         $version = $script:release.tag_name -replace "^v", ""
-        Write-Host "  Latest version: $version" -ForegroundColor White
+        $channelLabel = if ($Dev) { "dev" } else { "stable" }
+        Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
         Write-Host ""
         Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -TrustCert:$TrustCert
     }
@@ -1117,11 +1266,19 @@ $currentUser = Get-CurrentUserInfo
 
 Write-Header
 
-# Fetch release info first
-$script:release = Get-LatestRelease
-$version = $script:release.tag_name -replace "^v", ""
+# Show channel info
+if ($Dev)
+{
+    Write-Host "  Channel: dev (prereleases)" -ForegroundColor Yellow
+    Write-Host ""
+}
 
-Write-Host "  Latest version: $version" -ForegroundColor White
+# Fetch release info first
+$script:release = Get-LatestRelease -DevChannel $Dev
+$version = $script:release.tag_name -replace "^v", ""
+$channelLabel = if ($Dev) { "dev" } else { "stable" }
+
+Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
 Write-Host ""
 
 # Prompt for install mode with validation
@@ -1232,6 +1389,7 @@ if ($asService)
             "-LogFile", $tempLogFile
         )
         if ($trustCert) { $arguments += "-TrustCert" }
+        if ($Dev) { $arguments += "-Dev" }
 
         # Start elevated process hidden
         $elevatedProcess = Start-Process pwsh -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
