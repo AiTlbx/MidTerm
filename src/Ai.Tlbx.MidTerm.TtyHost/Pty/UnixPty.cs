@@ -127,12 +127,18 @@ public sealed class UnixPty : IPtyConnection
         }
         var slaveName = Marshal.PtrToStringAnsi(slaveNamePtr)!;
 
+        cols = Math.Clamp(cols, 1, 500);
+        rows = Math.Clamp(rows, 1, 500);
         var winSize = new WinSize
         {
             ws_col = (ushort)cols,
             ws_row = (ushort)rows
         };
-        ioctl(_masterFd, TIOCSWINSZ, ref winSize);
+        var result = ioctl(_masterFd, TIOCSWINSZ, ref winSize);
+        if (result != 0)
+        {
+            Log.Warn(() => $"Initial resize ioctl failed: errno {Marshal.GetLastWin32Error()}");
+        }
 
         // Use a single SafeFileHandle for both streams to avoid double-close risk
         // ownsHandle: false because we manage the FD lifecycle manually with close()
@@ -188,6 +194,9 @@ public sealed class UnixPty : IPtyConnection
             return;
         }
 
+        cols = Math.Clamp(cols, 1, 500);
+        rows = Math.Clamp(rows, 1, 500);
+
         lock (_lock)
         {
             if (_masterFd >= 0)
@@ -197,7 +206,11 @@ public sealed class UnixPty : IPtyConnection
                     ws_col = (ushort)cols,
                     ws_row = (ushort)rows
                 };
-                ioctl(_masterFd, TIOCSWINSZ, ref winSize);
+                var result = ioctl(_masterFd, TIOCSWINSZ, ref winSize);
+                if (result != 0)
+                {
+                    Log.Warn(() => $"Resize ioctl failed: errno {Marshal.GetLastWin32Error()}");
+                }
             }
         }
     }

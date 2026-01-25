@@ -77,6 +77,10 @@ public static class Program
         // Register Unix signal handlers for graceful shutdown
         PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal);
         PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal);
+        // SIGPIPE: Prevent crash when client disconnects mid-write
+        PosixSignalRegistration.Create(PosixSignal.SIGPIPE, ctx => ctx.Cancel = true);
+        // SIGHUP: Handle terminal hangup (treat as shutdown)
+        PosixSignalRegistration.Create(PosixSignal.SIGHUP, OnSignal);
 #endif
 
         Log.Info(() => $"mthost {VersionInfo.Version} starting, session={config.SessionId}");

@@ -817,7 +817,14 @@ safe_copy() {{
     # Without this, the binary gets killed immediately with SIGKILL
     if $IS_MACOS; then
         log ""Signing $desc for macOS...""
-        codesign -s - ""$dst"" 2>/dev/null || log ""Warning: codesign failed for $dst"" ""WARN""
+        if ! codesign -s - ""$dst"" 2>/dev/null; then
+            log ""WARNING: codesign failed for $dst"" ""WARN""
+        fi
+        if ! codesign --verify ""$dst"" 2>/dev/null; then
+            log ""ERROR: Signature verification failed for $dst"" ""ERROR""
+            return 1
+        fi
+        log ""Signature verified for $desc""
     fi
 
     if ! verify_copy ""$src"" ""$dst""; then
@@ -1105,11 +1112,6 @@ log ""All files installed""
 log """"
 log '=== PHASE 5: Starting new version ==='
 
-# Try to start service first
-log ""Starting service...""
-{startServiceCmd}
-sleep 8
-
 # Ensure main service log file has correct ownership BEFORE starting service
 # Without this, the service (running as user) can't write to root-owned log
 MAIN_LOG=""$LOG_DIR/MidTerm.log""
@@ -1118,6 +1120,11 @@ if [[ -n ""$SERVICE_USER"" ]]; then
     chown ""$SERVICE_USER"" ""$MAIN_LOG"" 2>/dev/null || true
     log ""Set $MAIN_LOG ownership to $SERVICE_USER""
 fi
+
+# Try to start service
+log ""Starting service...""
+{startServiceCmd}
+sleep 8
 
 # Check if service is running
 if {checkServiceCmd}; then
