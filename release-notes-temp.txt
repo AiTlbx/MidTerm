@@ -1,0 +1,37 @@
+### UI Polish & Theming
+- Login page: animated logo entrance, card rise effect, gold button with hover lift
+- Gold accent integration across buttons, settings tabs, and focus states
+- Micro-animations: session items slide on hover, button press feedback, modal entrance
+- Empty state with floating logo animation and keyboard shortcut hints
+- Settings: card-style sections with background/border, row hover highlights
+
+### File Viewer
+- Universal pattern-based syntax highlighting (replaces per-language keyword lists)
+- Dim line numbers, type detection (PascalCase in cyan), function calls (yellow)
+- VS Code blue for keywords, increased font size from 13px to 15px
+- Disabled word wrap, added horizontal scrollbar for long lines
+
+### Terminal Scaling
+- Increased scaling buffer from 8px to 16px to prevent content clipping
+- Raised badge threshold from 1.5% to 5% to reduce false positives
+
+### Dock & Layout
+- Fixed dock positioning - properly contained within main content area
+- Terminal area shrinks correctly when dock is open
+- Hidden dock on mobile where side-by-side layout is impractical
+- Fixed unwanted horizontal scrollbar in sidebar on hover
+
+### Linux/macOS Stability
+- Fixed SIGPIPE handling using native signal() instead of PosixSignal enum
+- Reverted to awaited client handling pattern (pre-6.10.24 behavior)
+- Removed handshake timeout causing premature disconnects
+- Fixed version compatibility fallback killing sessions incorrectly
+- Added crash handlers for tombstone logging
+
+### Settings & Config
+- Fixed text inputs to match 200px width of select dropdowns
+- Fixed text input alignment with absolutely positioned save button
+- Added VoiceServerPassword setting for MidTerm.Voice authentication
+
+### Update System
+- Added dev/stable update channels (updateChannel setting)
