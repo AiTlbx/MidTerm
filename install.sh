@@ -1,6 +1,7 @@
 #!/bin/bash
 # MidTerm macOS/Linux Installer
 # Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
+# Dev:   curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash -s -- --dev
 
 set -e
 
@@ -19,6 +20,7 @@ REPO_OWNER="tlbx-ai"
 REPO_NAME="MidTerm"
 SERVICE_NAME="MidTerm"
 LAUNCHD_LABEL="ai.tlbx.midterm"
+DEV_CHANNEL=false
 # Legacy service names for migration
 OLD_HOST_SERVICE_NAME="MidTerm-host"
 OLD_LAUNCHD_HOST_LABEL="com.aitlbx.MidTerm-host"
@@ -31,6 +33,62 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 NC='\033[0m' # No Color
+
+# Logging
+LOG_FILE=""
+LOG_INITIALIZED=false
+
+init_log() {
+    local mode="$1"  # "service" or "user"
+    local log_dir
+
+    if [ "$mode" = "service" ]; then
+        log_dir="/usr/local/var/log"
+    else
+        log_dir="$HOME/.MidTerm"
+    fi
+
+    mkdir -p "$log_dir" 2>/dev/null || true
+    LOG_FILE="$log_dir/update.log"
+
+    # Clear previous log and start fresh
+    echo "" > "$LOG_FILE" 2>/dev/null || true
+    LOG_INITIALIZED=true
+
+    log "=========================================="
+    log "MidTerm Install Script Starting"
+    log "Mode: $mode"
+    log "Channel: $(if [ "$DEV_CHANNEL" = true ]; then echo 'dev'; else echo 'stable'; fi)"
+    log "Date: $(date '+%Y-%m-%d %H:%M:%S')"
+    log "Platform: $(uname -s) $(uname -m)"
+    log "User: ${INSTALLING_USER:-$(whoami)}"
+    log "=========================================="
+}
+
+log() {
+    local message="$1"
+    local level="${2:-INFO}"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S.%3N' 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')
+    local line="[$timestamp] [$level] $message"
+
+    if [ "$LOG_INITIALIZED" = true ] && [ -n "$LOG_FILE" ]; then
+        echo "$line" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+}
+
+log_echo() {
+    # Log and echo to console (for important user-facing messages)
+    local message="$1"
+    local color="$2"
+    local level="${3:-INFO}"
+
+    log "$message" "$level"
+    if [ -n "$color" ]; then
+        echo -e "  ${color}${message}${NC}"
+    else
+        echo -e "  $message"
+    fi
+}
 
 # Variables passed through sudo
 INSTALLING_USER="${INSTALLING_USER:-}"
@@ -89,18 +147,62 @@ detect_platform() {
 }
 
 get_latest_release() {
-    echo -e "${GRAY}Fetching latest release...${NC}"
-    RELEASE_INFO=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
-    VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
-    ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+    if [ "$DEV_CHANNEL" = true ]; then
+        echo -e "${GRAY}Fetching latest dev release...${NC}"
+        # Fetch all releases and find first prerelease
+        ALL_RELEASES=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases")
 
-    if [ -z "$ASSET_URL" ]; then
-        echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
-        exit 1
+        # Find the first prerelease entry
+        # Use grep/sed to extract the first release where prerelease is true
+        RELEASE_INFO=$(echo "$ALL_RELEASES" | awk '
+            BEGIN { in_release=0; brace_count=0; release="" }
+            /{/ {
+                if (in_release == 0) { in_release=1; release="" }
+                brace_count++
+            }
+            in_release { release = release $0 "\n" }
+            /}/ {
+                brace_count--
+                if (brace_count == 0 && in_release) {
+                    if (release ~ /"prerelease": *true/) {
+                        print release
+                        exit
+                    }
+                    in_release=0
+                    release=""
+                }
+            }
+        ')
+
+        if [ -z "$RELEASE_INFO" ]; then
+            echo -e "${YELLOW}No dev releases found, falling back to latest stable...${NC}"
+            RELEASE_INFO=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
+        fi
+
+        VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
+        ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | head -1 | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+
+        if [ -z "$ASSET_URL" ]; then
+            echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
+            exit 1
+        fi
+
+        echo -e "  Latest dev version: ${CYAN}$VERSION${NC}"
+        echo ""
+    else
+        echo -e "${GRAY}Fetching latest release...${NC}"
+        RELEASE_INFO=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
+        VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
+        ASSET_URL=$(echo "$RELEASE_INFO" | grep "browser_download_url.*$ASSET_NAME" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+
+        if [ -z "$ASSET_URL" ]; then
+            echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
+            exit 1
+        fi
+
+        echo -e "  Latest version: ${CYAN}$VERSION${NC}"
+        echo ""
     fi
-
-    echo -e "  Latest version: ${CYAN}$VERSION${NC}"
-    echo ""
 }
 
 prompt_service_mode() {
@@ -449,11 +551,16 @@ generate_certificate() {
 
     mkdir -p "$settings_dir"
 
+    log "Generating certificate..."
+    log "  install_dir: $install_dir"
+    log "  settings_dir: $settings_dir"
+    log "  is_service: $is_service"
     echo ""
     echo -e "  ${GRAY}Generating self-signed certificate with OS-protected key...${NC}"
 
     local mt_path="$install_dir/mt"
     if [ ! -f "$mt_path" ]; then
+        log "mt not found at $mt_path" "ERROR"
         echo -e "  ${RED}Error: mt not found at $mt_path${NC}"
         return 1
     fi
@@ -463,13 +570,18 @@ generate_certificate() {
     if [ "$is_service" = true ]; then
         cert_args="--generate-cert --service-mode --force"
     fi
+    log "Running: $mt_path $cert_args"
 
     # Use mt --generate-cert to generate certificate with encrypted private key
     local output
     output=$("$mt_path" $cert_args 2>&1)
     local exit_code=$?
 
+    log "Certificate generation exit code: $exit_code"
+    log "Certificate generation output: $output"
+
     if [ $exit_code -ne 0 ]; then
+        log "Certificate generation failed" "ERROR"
         echo -e "  ${RED}Failed to generate certificate: $output${NC}"
         return 1
     fi
@@ -485,6 +597,7 @@ generate_certificate() {
         CERT_PATH="$settings_dir/midterm.pem"
     fi
 
+    log "Certificate path: $CERT_PATH"
     echo -e "  ${GREEN}Certificate generated with OS-protected private key${NC}"
 
     return 0
@@ -799,9 +912,17 @@ install_binary() {
     local install_dir="$1"
     local temp_dir=$(mktemp -d)
 
+    log "Downloading from: $ASSET_URL"
     echo -e "${GRAY}Downloading...${NC}"
-    curl -fsSL "$ASSET_URL" -o "$temp_dir/mt.tar.gz"
+    if ! curl -fsSL "$ASSET_URL" -o "$temp_dir/mt.tar.gz"; then
+        log "Download failed" "ERROR"
+        echo -e "${RED}Download failed${NC}"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    log "Download complete"
 
+    log "Extracting to: $temp_dir"
     echo -e "${GRAY}Extracting...${NC}"
     tar -xzf "$temp_dir/mt.tar.gz" -C "$temp_dir"
 
@@ -809,30 +930,38 @@ install_binary() {
     mkdir -p "$install_dir"
 
     # Copy web binary with retry (handles file lock during updates)
+    log "Copying mt to $install_dir/mt"
     if ! copy_with_retry "$temp_dir/mt" "$install_dir/mt"; then
+        log "Failed to copy mt - file locked" "ERROR"
         echo -e "${RED}Failed to copy mt - file locked${NC}"
         rm -rf "$temp_dir"
         exit 1
     fi
     chmod +x "$install_dir/mt"
+    log "mt copied and made executable"
 
     # Copy tty host binary (terminal subprocess)
     if [ -f "$temp_dir/mthost" ]; then
+        log "Copying mthost to $install_dir/mthost"
         if ! copy_with_retry "$temp_dir/mthost" "$install_dir/mthost"; then
+            log "Failed to copy mthost - file locked" "ERROR"
             echo -e "${RED}Failed to copy mthost - file locked${NC}"
             rm -rf "$temp_dir"
             exit 1
         fi
         chmod +x "$install_dir/mthost"
+        log "mthost copied and made executable"
     fi
 
     # Copy version manifest
     if [ -f "$temp_dir/version.json" ]; then
         copy_with_retry "$temp_dir/version.json" "$install_dir/version.json" || true
+        log "version.json copied"
     fi
 
     # Cleanup
     rm -rf "$temp_dir"
+    log "Temp directory cleaned up"
 
     # Remove legacy mt-host if present (from pre-v4)
     rm -f "$install_dir/mt-host"
@@ -843,11 +972,18 @@ install_as_service() {
     local lib_dir="/usr/local/lib/MidTerm"
     local settings_dir="/usr/local/etc/MidTerm"
 
+    # Initialize logging (needs to happen early, even before root check for re-exec)
+    init_log "service"
+
     # Check for root
     if [ "$EUID" -ne 0 ]; then
         echo ""
         echo -e "${YELLOW}Requesting sudo privileges...${NC}"
         # Re-exec with sudo, passing all collected info as environment variables
+        local dev_flag=""
+        if [ "$DEV_CHANNEL" = true ]; then
+            dev_flag="--dev"
+        fi
         exec sudo env INSTALLING_USER="$INSTALLING_USER" \
                      INSTALLING_UID="$INSTALLING_UID" \
                      INSTALLING_GID="$INSTALLING_GID" \
@@ -855,60 +991,96 @@ install_as_service() {
                      PORT="$PORT" \
                      BIND_ADDRESS="$BIND_ADDRESS" \
                      TRUST_CERT="$TRUST_CERT" \
-                     "$SCRIPT_PATH" --service
+                     "$SCRIPT_PATH" --service $dev_flag
     fi
 
+    log "=== PHASE 1: Installing binaries ==="
     install_binary "$install_dir"
+    log "Binaries installed to $install_dir"
 
     # Create lib directory for support files
     mkdir -p "$lib_dir"
 
+    log "=== PHASE 2: Password configuration ==="
     # Handle password - either preserve existing or hash the pending one
     existing_hash=$(get_existing_password_hash || true)
     if [ -n "$existing_hash" ]; then
+        log "Existing password hash found and preserved"
         echo -e "  ${GREEN}Existing password preserved${NC}"
         PASSWORD_HASH="$existing_hash"
     elif [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
         # Hash the password now that binary is installed
+        log "Hashing new password..."
         local plain_password="${PASSWORD_HASH#__PENDING__:}"
         local hash
         hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
+            log "Password hashed successfully"
             echo -e "  ${GRAY}Password: hashed${NC}"
         else
+            log "Failed to hash password" "ERROR"
             echo -e "  ${RED}Failed to hash password${NC}"
             exit 1
+        fi
+    else
+        # Broken install: password file existed but couldn't read hash
+        # Prompt for new password now that binary is installed
+        log "Could not read existing password - prompting for new one" "WARN"
+        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
+        MT_BINARY_PATH="$install_dir/mt" prompt_password
+        if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+            local plain_password="${PASSWORD_HASH#__PENDING__:}"
+            local hash
+            hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+            if [[ "$hash" == '$PBKDF2$'* ]]; then
+                PASSWORD_HASH="$hash"
+                log "Password hashed successfully (after re-prompt)"
+                echo -e "  ${GRAY}Password: hashed${NC}"
+            else
+                log "Failed to hash password after re-prompt" "ERROR"
+                echo -e "  ${RED}Failed to hash password${NC}"
+                exit 1
+            fi
         fi
     fi
 
     # Store password in secrets.bin (secure storage)
     if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode 2>/dev/null; then
+            log "Password stored in secrets.bin"
             echo -e "  ${GRAY}Password: stored securely${NC}"
         else
+            log "Failed to store password in secrets.bin" "WARN"
             echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
         fi
     fi
 
+    log "=== PHASE 3: Certificate configuration ==="
     # Check existing certificate before generating
     local existing_cert="$settings_dir/midterm.pem"
     if check_existing_certificate "$existing_cert"; then
+        log "Existing certificate is valid, reusing"
         CERT_PATH="$existing_cert"
     elif ! generate_certificate "$install_dir" "$settings_dir" true; then
+        log "Certificate generation failed - app will use fallback" "WARN"
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
     else
+        log "Certificate generated: $CERT_PATH"
         # Show fingerprint so user can verify connections from other devices
         show_certificate_fingerprint "$CERT_PATH"
         # Execute trust if user chose to trust (choice made before elevation)
         execute_certificate_trust "$CERT_PATH"
     fi
 
+    log "=== PHASE 4: Writing settings ==="
     # Write settings with runAsUser info
     if [ -n "$INSTALLING_USER" ] && [ -n "$INSTALLING_UID" ]; then
         write_service_settings
+        log "Settings written to $settings_dir/settings.json"
     fi
 
+    log "=== PHASE 5: Service installation ==="
     if [ "$(uname -s)" = "Darwin" ]; then
         install_launchd "$install_dir"
     else
@@ -920,6 +1092,18 @@ install_as_service() {
 
     # Create uninstall script
     create_uninstall_script "$lib_dir" true
+
+    # Ensure log file is owned by service user so frontend can read it
+    if [ -n "$INSTALLING_USER" ] && [ -n "$LOG_FILE" ]; then
+        chown "$INSTALLING_USER" "$LOG_FILE" 2>/dev/null || true
+    fi
+
+    log "=========================================="
+    log "INSTALLATION COMPLETE"
+    log "  Location: $install_dir/mt"
+    log "  URL: https://localhost:$PORT"
+    log "  Settings: $settings_dir"
+    log "=========================================="
 
     echo ""
     echo -e "${GREEN}Installation complete!${NC}"
@@ -936,6 +1120,10 @@ install_launchd() {
     local old_host_plist="/Library/LaunchDaemons/${OLD_LAUNCHD_HOST_LABEL}.plist"
     local log_dir="/usr/local/var/log"
 
+    log "Creating launchd service..."
+    log "  Plist path: $plist_path"
+    log "  Install dir: $install_dir"
+    log "  Service user: $INSTALLING_USER"
     echo -e "${GRAY}Creating launchd service...${NC}"
 
     # Create log directory and ensure log file is owned by the service user
@@ -996,19 +1184,104 @@ install_launchd() {
 </plist>
 EOF
 
-    # Load service (try modern bootstrap first, fallback to legacy load)
+    # Load and start service
+    log "Starting launchd service..."
     echo -e "${GRAY}Starting service...${NC}"
-    if launchctl bootstrap system "$plist_path" 2>/dev/null || launchctl load "$plist_path"; then
-        sleep 1
-        if launchctl list | grep -q "$LAUNCHD_LABEL"; then
-            echo -e "  ${GREEN}Service started successfully${NC}"
+
+    # Bootstrap registers the service (modern macOS)
+    # Legacy load also works but bootstrap is preferred
+    local bootstrap_ok=false
+    local bootstrap_output
+    bootstrap_output=$(launchctl bootstrap system "$plist_path" 2>&1) && bootstrap_ok=true
+    if [ "$bootstrap_ok" = false ]; then
+        log "launchctl bootstrap failed: $bootstrap_output"
+        log "Trying legacy launchctl load..."
+        bootstrap_output=$(launchctl load "$plist_path" 2>&1) && bootstrap_ok=true
+        if [ "$bootstrap_ok" = true ]; then
+            log "launchctl load succeeded"
         else
-            echo -e "  ${YELLOW}Service may still be starting...${NC}"
+            log "launchctl load failed: $bootstrap_output" "ERROR"
         fi
     else
-        echo -e "  ${RED}Failed to start service${NC}"
-        echo -e "  ${GRAY}Check logs at: /usr/local/var/log/MidTerm.log${NC}"
+        log "launchctl bootstrap succeeded"
     fi
+
+    if [ "$bootstrap_ok" = false ]; then
+        log "Failed to register service with launchd" "ERROR"
+        echo -e "  ${RED}Failed to register service${NC}"
+        echo -e "  ${GRAY}Check logs at: /usr/local/var/log/MidTerm.log${NC}"
+        return 1
+    fi
+
+    # Kickstart actually starts the service (bootstrap only registers it)
+    # -k flag kills any existing instance first
+    log "Kickstarting service..."
+    local kickstart_output
+    kickstart_output=$(launchctl kickstart -k system/"$LAUNCHD_LABEL" 2>&1) || true
+    log "Kickstart output: $kickstart_output"
+
+    # Wait for service to start and verify it's running
+    log "Waiting for service to start..."
+    sleep 2
+
+    # Check if service is running (PID > 0 means running)
+    local service_info
+    service_info=$(launchctl list "$LAUNCHD_LABEL" 2>/dev/null || true)
+    log "launchctl list output: $service_info"
+
+    local pid
+    pid=$(echo "$service_info" | awk 'NR==1 {print $1}')
+    log "Parsed PID: $pid"
+
+    if [ -n "$pid" ] && [ "$pid" != "-" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
+        log "Service started successfully with PID $pid"
+        echo -e "  ${GREEN}Service started successfully (PID $pid)${NC}"
+    else
+        # Service registered but not running - check for errors
+        local last_exit
+        last_exit=$(echo "$service_info" | awk 'NR==1 {print $2}')
+        log "Service not running. Last exit code: $last_exit" "WARN"
+
+        if [ -n "$last_exit" ] && [ "$last_exit" != "0" ] 2>/dev/null; then
+            log "Service failed to start with exit code $last_exit" "ERROR"
+            echo -e "  ${RED}Service failed to start (exit code: $last_exit)${NC}"
+        else
+            log "Service registered but may still be starting" "WARN"
+            echo -e "  ${YELLOW}Service registered but may still be starting...${NC}"
+        fi
+        echo -e "  ${GRAY}Check logs: tail -f /usr/local/var/log/MidTerm.log${NC}"
+
+        # Additional diagnostics
+        log "=== Service Diagnostics ==="
+        log "Checking if mt binary exists and is executable..."
+        if [ -f "$install_dir/mt" ]; then
+            log "  mt exists: yes"
+            log "  mt executable: $([ -x "$install_dir/mt" ] && echo 'yes' || echo 'no')"
+            log "  mt size: $(stat -f%z "$install_dir/mt" 2>/dev/null || stat -c%s "$install_dir/mt" 2>/dev/null) bytes"
+        else
+            log "  mt exists: NO" "ERROR"
+        fi
+
+        log "Checking plist file..."
+        if [ -f "$plist_path" ]; then
+            log "  plist exists: yes"
+            log "  plist owner: $(stat -f '%Su:%Sg' "$plist_path" 2>/dev/null || stat -c '%U:%G' "$plist_path" 2>/dev/null)"
+        else
+            log "  plist exists: NO" "ERROR"
+        fi
+
+        log "Checking MidTerm.log for errors..."
+        if [ -f "/usr/local/var/log/MidTerm.log" ]; then
+            log "Last 10 lines of MidTerm.log:"
+            tail -10 "/usr/local/var/log/MidTerm.log" 2>/dev/null | while read -r line; do
+                log "  $line"
+            done
+        else
+            log "  MidTerm.log does not exist yet"
+        fi
+    fi
+
+    log "=== PHASE 5 complete ==="
 }
 
 install_systemd() {
@@ -1070,51 +1343,89 @@ install_as_user() {
     local install_dir="$HOME/.local/bin"
     local settings_dir="$HOME/.MidTerm"
 
-    install_binary "$install_dir"
+    # Initialize logging
+    init_log "user"
 
+    log "=== PHASE 1: Installing binaries ==="
+    install_binary "$install_dir"
+    log "Binaries installed to $install_dir"
+
+    log "=== PHASE 2: Password configuration ==="
     # Handle password - either preserve existing or hash the pending one
     existing_hash=$(get_existing_user_password_hash || true)
     if [ -n "$existing_hash" ]; then
+        log "Existing password hash found and preserved"
         echo -e "  ${GREEN}Existing password preserved${NC}"
         PASSWORD_HASH="$existing_hash"
     elif [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
         # Hash the password now that binary is installed
+        log "Hashing new password..."
         local plain_password="${PASSWORD_HASH#__PENDING__:}"
         local hash
         hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             PASSWORD_HASH="$hash"
+            log "Password hashed successfully"
             echo -e "  ${GRAY}Password: hashed${NC}"
         else
+            log "Failed to hash password" "ERROR"
             echo -e "  ${RED}Failed to hash password${NC}"
             exit 1
+        fi
+    else
+        # Broken install: password file existed but couldn't read hash
+        # Prompt for new password now that binary is installed
+        log "Could not read existing password - prompting for new one" "WARN"
+        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
+        MT_BINARY_PATH="$install_dir/mt" prompt_password
+        if [[ "$PASSWORD_HASH" == "__PENDING__:"* ]]; then
+            local plain_password="${PASSWORD_HASH#__PENDING__:}"
+            local hash
+            hash=$(echo "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+            if [[ "$hash" == '$PBKDF2$'* ]]; then
+                PASSWORD_HASH="$hash"
+                log "Password hashed successfully (after re-prompt)"
+                echo -e "  ${GRAY}Password: hashed${NC}"
+            else
+                log "Failed to hash password after re-prompt" "ERROR"
+                echo -e "  ${RED}Failed to hash password${NC}"
+                exit 1
+            fi
         fi
     fi
 
     # Store password in secrets.bin (secure storage)
     if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash 2>/dev/null; then
+            log "Password stored in secrets.bin"
             echo -e "  ${GRAY}Password: stored securely${NC}"
         else
+            log "Failed to store password in secrets.bin" "WARN"
             echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
         fi
     fi
 
+    log "=== PHASE 3: Certificate configuration ==="
     # Check existing certificate before generating
     local existing_cert="$settings_dir/midterm.pem"
     if check_existing_certificate "$existing_cert"; then
+        log "Existing certificate is valid, reusing"
         CERT_PATH="$existing_cert"
     elif ! generate_certificate "$install_dir" "$settings_dir" false; then
+        log "Certificate generation failed - app will use fallback" "WARN"
         echo -e "  ${YELLOW}Certificate generation failed - app will use fallback certificate${NC}"
     else
+        log "Certificate generated: $CERT_PATH"
         # Show fingerprint so user can verify connections from other devices
         show_certificate_fingerprint "$CERT_PATH"
         # Offer to trust certificate (user mode - prompts inline since no elevation needed)
         prompt_certificate_trust "$CERT_PATH"
     fi
 
+    log "=== PHASE 4: Writing settings ==="
     # Write user settings
     write_user_settings
+    log "Settings written to $settings_dir/settings.json"
 
     # Handle PATH modification
     if [[ ":$PATH:" != *":$install_dir:"* ]]; then
@@ -1126,6 +1437,13 @@ install_as_user() {
     mkdir -p "$lib_dir"
 
     create_uninstall_script "$lib_dir" false
+
+    log "=========================================="
+    log "INSTALLATION COMPLETE"
+    log "  Location: $install_dir/mt"
+    log "  URL: https://localhost:$PORT"
+    log "  Settings: $settings_dir"
+    log "=========================================="
 
     echo ""
     echo -e "${GREEN}Installation complete!${NC}"
@@ -1202,8 +1520,20 @@ EOF
     chmod +x "$uninstall_script"
 }
 
+# Parse command line arguments
+for arg in "$@"; do
+    case "$arg" in
+        --dev)
+            DEV_CHANNEL=true
+            ;;
+        --service)
+            # Handled below
+            ;;
+    esac
+done
+
 # Handle --service flag for sudo re-exec
-if [ "$1" = "--service" ]; then
+if [[ " $* " == *" --service "* ]] || [ "$1" = "--service" ]; then
     SERVICE_MODE=true
     # Re-read release info (lost during sudo)
     detect_platform
@@ -1230,6 +1560,13 @@ fi
 
 # Main
 print_header
+
+# Show channel info
+if [ "$DEV_CHANNEL" = true ]; then
+    echo -e "  ${YELLOW}Channel: dev (prereleases)${NC}"
+    echo ""
+fi
+
 detect_platform
 get_latest_release
 prompt_service_mode
