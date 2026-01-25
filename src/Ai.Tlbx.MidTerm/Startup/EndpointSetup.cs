@@ -425,18 +425,9 @@ public static class EndpointSetup
         // GET /api/update/log - get the update log file content
         app.MapGet("/api/update/log", () =>
         {
-            // Try settings directory first (user mode on all platforms)
-            var logPath = Path.Combine(settingsService.SettingsDirectory, "update.log");
-
-            // Unix service mode: log is in /usr/local/var/log/
-            if (!File.Exists(logPath) && !OperatingSystem.IsWindows())
-            {
-                var svcPath = "/usr/local/var/log/update.log";
-                if (File.Exists(svcPath))
-                {
-                    logPath = svcPath;
-                }
-            }
+            var isWindowsService = settingsService.IsRunningAsService && OperatingSystem.IsWindows();
+            var isUnixService = settingsService.IsRunningAsService && !OperatingSystem.IsWindows();
+            var logPath = LogPaths.GetUpdateLogPath(isWindowsService, isUnixService, settingsService.SettingsDirectory);
 
             if (!File.Exists(logPath))
             {
