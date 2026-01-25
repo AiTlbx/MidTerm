@@ -50,7 +50,7 @@ public static class EndpointSetup
             }).ToList();
 
             var updateResult = ReadAndClearUpdateResult(settingsService.SettingsDirectory);
-            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
+            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} [LOCAL]" : version;
 
             var features = new FeatureFlags
             {
@@ -175,7 +175,7 @@ public static class EndpointSetup
                 (conHostVersion is not null && manifest.MinCompatiblePty is not null &&
                  UpdateService.CompareVersions(conHostVersion, manifest.MinCompatiblePty) >= 0);
 
-            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
+            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} [LOCAL]" : version;
 
             var response = new SystemResponse
             {
@@ -200,7 +200,7 @@ public static class EndpointSetup
         // Legacy endpoints kept for backward compatibility
         app.MapGet("/api/version", () =>
         {
-            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} (DEV)" : version;
+            var displayVersion = UpdateService.IsDevEnvironment ? $"{version} [LOCAL]" : version;
             return Results.Text(displayVersion);
         });
 
