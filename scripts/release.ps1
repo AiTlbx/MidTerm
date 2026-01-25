@@ -190,9 +190,7 @@ if ($localCommit -ne $remoteCommit) {
 
 # Files to update
 $versionJsonPath = "$PSScriptRoot\..\version.json"
-$webCsprojPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj"
-$ttyHostCsprojPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj"
-$ttyHostProgramPath = "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm.TtyHost\Program.cs"
+# Csproj files read version dynamically from version.json - no paths needed
 
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
@@ -251,25 +249,11 @@ Write-Host "  Updated: version.json (web=$newVersion, pty=$($versionJson.pty))" 
 
 # Web csproj reads version dynamically from version.json - no update needed
 
-# Update TtyHost files only for PTY-breaking changes
+# TtyHost csproj reads version dynamically from version.json - no update needed
 if ($isPtyBreaking) {
-    # Update TtyHost csproj (regex handles versions with -dev suffix)
-    $content = Get-Content $ttyHostCsprojPath -Raw
-    $content = $content -replace "<Version>[^<]+</Version>", "<Version>$newVersion</Version>"
-    # FileVersion must be exactly 4 parts - add .0 only if version is 3-part
-    $versionParts = $newVersion.Split('.').Count
-    $fileVersion = if ($versionParts -eq 3) { "$newVersion.0" } else { $newVersion }
-    $content = $content -replace "<FileVersion>[^<]+</FileVersion>", "<FileVersion>$fileVersion</FileVersion>"
-    Set-Content $ttyHostCsprojPath $content -NoNewline
-    Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost.csproj" -ForegroundColor Gray
-
-    # Update TtyHost Program.cs (regex handles versions with -dev suffix)
-    $content = Get-Content $ttyHostProgramPath -Raw
-    $content = $content -replace 'public const string Version = "[^"]+"', "public const string Version = `"$newVersion`""
-    Set-Content $ttyHostProgramPath $content -NoNewline
-    Write-Host "  Updated: Ai.Tlbx.MidTerm.TtyHost\Program.cs" -ForegroundColor Gray
+    Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  Skipped: TtyHost files (web-only release)" -ForegroundColor DarkGray
+    Write-Host "  TtyHost: skipped (web-only release)" -ForegroundColor DarkGray
 }
 
 # Git operations
