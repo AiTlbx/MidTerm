@@ -26,8 +26,8 @@ MidTerm is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/
 **Default port:** 2000
 
 **Settings locations:**
-- Service mode: `%ProgramData%\MidTerm\settings.json` (Win) or `/usr/local/etc/MidTerm/settings.json` (Unix)
-- User mode: `~/.MidTerm/settings.json`
+- Service mode: `%ProgramData%\MidTerm\settings.json` (Win) or `/usr/local/etc/midterm/settings.json` (Unix)
+- User mode: `~/.midterm/settings.json`
 
 ## Build Commands
 
@@ -458,6 +458,23 @@ With `-mthostUpdate yes`: Both mt and mthost bumped, terminals restart.
 5. Register service (if system install)
 
 **Password preservation:** Install scripts check for existing `passwordHash` in settings and preserve it during updates.
+
+## ⚠️ Version Management - DO NOT CHANGE ⚠️
+
+**version.json is the single source of truth for all version numbers.**
+
+Both csproj files read their versions dynamically at build time via MSBuild targets:
+- `Ai.Tlbx.MidTerm.csproj` reads `web` → `$(WebVersion)`
+- `Ai.Tlbx.MidTerm.TtyHost.csproj` reads `pty` → `$(PtyVersion)`
+
+**DO NOT:**
+- Add hardcoded `<Version>X.Y.Z</Version>` to csproj files
+- Pass `-p:Version` to dotnet build/publish commands
+- Update csproj files in release scripts
+
+**Release scripts only update version.json** - the csproj files pick up the new version automatically on next build.
+
+This architecture exists because hardcoded versions caused update failures where the wrong version was baked into binaries.
 
 ## Important Rules
 
