@@ -29,6 +29,13 @@ public static class Program
         IntPtr lpBytesRead,
         out uint lpTotalBytesAvail,
         IntPtr lpBytesLeftThisMessage);
+#else
+    // SIGPIPE handling via native interop (not available in PosixSignal enum)
+    private const int SIGPIPE = 13;
+    private static readonly IntPtr SIG_IGN = new(1);
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern IntPtr signal(int signum, IntPtr handler);
 #endif
 
     private const int HeartbeatIntervalMs = 5000;
@@ -77,10 +84,10 @@ public static class Program
         // Register Unix signal handlers for graceful shutdown
         PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal);
         PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal);
-        // SIGPIPE: Ignore (don't crash) when client disconnects mid-write
-        PosixSignalRegistration.Create(PosixSignal.SIGPIPE, ctx => ctx.Cancel = false);
-        // SIGHUP: Handle terminal hangup (treat as shutdown)
         PosixSignalRegistration.Create(PosixSignal.SIGHUP, OnSignal);
+        // SIGPIPE: Ignore to prevent crash when client disconnects mid-write
+        // (not available in PosixSignal enum, use native signal())
+        signal(SIGPIPE, SIG_IGN);
 #endif
 
         Log.Info(() => $"mthost {VersionInfo.Version} starting, session={config.SessionId}");
