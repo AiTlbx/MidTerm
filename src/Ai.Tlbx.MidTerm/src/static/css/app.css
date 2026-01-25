@@ -245,6 +245,7 @@ html, body {
     display: flex;
     flex-direction: column;
     position: relative;
+    overflow-x: hidden;
 }
 
 .sidebar-resize-grip {
@@ -324,6 +325,7 @@ html, body {
 .session-list {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: var(--accent-blue-25) var(--bg-sidebar);
 }
@@ -5143,8 +5145,7 @@ html, body {
     line-height: 1.5;
     color: var(--text-primary);
     background: var(--bg-primary);
-    white-space: pre-wrap;
-    word-break: break-all;
+    white-space: pre;
     overflow-x: auto;
 }
 
