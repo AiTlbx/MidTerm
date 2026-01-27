@@ -293,8 +293,8 @@ check_existing_password_file() {
     # NOTE: Unix uses secrets.json, Windows uses secrets.bin
     # This matches UnixFileSecretStorage.cs
     if [ "$mode" = "service" ]; then
-        secrets_path="/usr/local/etc/MidTerm/secrets.json"
-        settings_path="/usr/local/etc/MidTerm/settings.json"
+        secrets_path="/usr/local/etc/midterm/secrets.json"
+        settings_path="/usr/local/etc/midterm/settings.json"
     else
         secrets_path="$HOME/.midterm/secrets.json"
         settings_path="$HOME/.midterm/settings.json"
@@ -315,15 +315,15 @@ check_existing_password_file() {
 }
 
 get_existing_password_hash() {
-    local settings_dir="/usr/local/etc/MidTerm"
-    # NOTE: Unix uses secrets.json, Windows uses secrets.bin
+    # NOTE: C# uses lowercase /usr/local/etc/midterm - must match!
+    local settings_dir="/usr/local/etc/midterm"
     local secrets_path="$settings_dir/secrets.json"
     local settings_path="$settings_dir/settings.json"
-    local mt_path="/usr/local/bin/mt"
 
     # Check secrets.json first (preferred secure storage)
-    if [ -f "$secrets_path" ] && [ -f "$mt_path" ]; then
-        local hash=$("$mt_path" --read-secret password_hash --service-mode 2>/dev/null || true)
+    # Read JSON directly - format is {"password_hash": "$PBKDF2$..."}
+    if [ -f "$secrets_path" ]; then
+        local hash=$(grep -o '"password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0
@@ -650,7 +650,7 @@ generate_certificate() {
 }
 
 write_service_settings() {
-    local config_dir="/usr/local/etc/MidTerm"
+    local config_dir="/usr/local/etc/midterm"
     local settings_path="$config_dir/settings.json"
     local old_settings_path="$config_dir/settings.json.old"
 
@@ -726,14 +726,13 @@ write_user_settings() {
 
 get_existing_user_password_hash() {
     local settings_dir="$HOME/.midterm"
-    # NOTE: Unix uses secrets.json, Windows uses secrets.bin
     local secrets_path="$settings_dir/secrets.json"
     local settings_path="$settings_dir/settings.json"
-    local mt_path="$HOME/.local/bin/mt"
 
     # Check secrets.json first (preferred secure storage)
-    if [ -f "$secrets_path" ] && [ -f "$mt_path" ]; then
-        local hash=$("$mt_path" --read-secret password_hash 2>/dev/null || true)
+    # Read JSON directly - format is {"password_hash": "$PBKDF2$..."}
+    if [ -f "$secrets_path" ]; then
+        local hash=$(grep -o '"password_hash"[[:space:]]*:[[:space:]]*"[^"]*"' "$secrets_path" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
         if [[ "$hash" == '$PBKDF2$'* ]]; then
             echo "$hash"
             return 0
@@ -1017,7 +1016,7 @@ install_binary() {
 install_as_service() {
     local install_dir="/usr/local/bin"
     local lib_dir="/usr/local/lib/MidTerm"
-    local settings_dir="/usr/local/etc/MidTerm"
+    local settings_dir="/usr/local/etc/midterm"
 
     # Check for root FIRST - don't initialize logging until elevated (requires write to /usr/local)
     if [ "$EUID" -ne 0 ]; then
@@ -1073,13 +1072,29 @@ install_as_service() {
             exit 1
         fi
     else
-        # PASSWORD_HASH should have been passed through sudo - if empty, that's a bug
-        log "PASSWORD_HASH not passed through sudo correctly" "ERROR"
-        log "PASSWORD_HASH value: '${PASSWORD_HASH:0:20}...'" "DEBUG"
-        echo -e "  ${RED}Error: Password was not passed through sudo correctly.${NC}"
-        echo -e "  ${RED}This is a bug in the installer. Please report this issue.${NC}"
-        echo -e "  ${GRAY}Workaround: Run the installer again.${NC}"
-        exit 1
+        # Could not read existing password and no password was passed through sudo
+        # This can happen if secrets file exists but is unreadable/incompatible
+        # Per robustness rules: losing password is better than failing the update
+        log "Could not read existing password - prompting for new one" "WARN"
+        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
+        prompt_password
+
+        # Hash the new password
+        if [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
+            local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
+            local plain_password
+            plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+            local hash
+            hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+            if [[ "$hash" == '$PBKDF2$'* ]]; then
+                PASSWORD_HASH="$hash"
+                log "Password hashed successfully"
+            else
+                log "Failed to hash password" "ERROR"
+                echo -e "  ${RED}Failed to hash password${NC}"
+                exit 1
+            fi
+        fi
     fi
 
     # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
@@ -1439,13 +1454,28 @@ install_as_user() {
             exit 1
         fi
     else
-        # PASSWORD_HASH should have been set during prompting - if empty, that's a bug
-        log "PASSWORD_HASH not set correctly" "ERROR"
-        log "PASSWORD_HASH value: '${PASSWORD_HASH:0:20}...'" "DEBUG"
-        echo -e "  ${RED}Error: Password was not set correctly.${NC}"
-        echo -e "  ${RED}This is a bug in the installer. Please report this issue.${NC}"
-        echo -e "  ${GRAY}Workaround: Run the installer again.${NC}"
-        exit 1
+        # Could not read existing password and no password was passed
+        # Per robustness rules: losing password is better than failing the update
+        log "Could not read existing password - prompting for new one" "WARN"
+        echo -e "  ${YELLOW}Could not read existing password - please set a new one${NC}"
+        prompt_password
+
+        # Hash the new password
+        if [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
+            local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
+            local plain_password
+            plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+            local hash
+            hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
+            if [[ "$hash" == '$PBKDF2$'* ]]; then
+                PASSWORD_HASH="$hash"
+                log "Password hashed successfully"
+            else
+                log "Failed to hash password" "ERROR"
+                echo -e "  ${RED}Failed to hash password${NC}"
+                exit 1
+            fi
+        fi
     fi
 
     # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
@@ -1549,7 +1579,7 @@ sudo rm -f /usr/local/bin/mt
 sudo rm -f /usr/local/bin/mthost
 sudo rm -f /usr/local/bin/mt-host  # legacy cleanup
 sudo rm -rf /usr/local/lib/MidTerm
-sudo rm -rf /usr/local/etc/MidTerm
+sudo rm -rf /usr/local/etc/midterm
 
 echo "MidTerm uninstalled."
 EOF
