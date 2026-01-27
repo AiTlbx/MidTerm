@@ -6,7 +6,7 @@
 
 import { $authStatus } from '../../stores';
 import { bindClick } from '../../utils';
-import { checkAuthStatus, dismissSecurityWarning } from './status';
+import { checkAuthStatus, dismissSecurityWarning, logout } from './status';
 
 let passwordModalHasPassword = false;
 
@@ -162,4 +162,6 @@ export function bindAuthEvents(): void {
   if (passwordForm) {
     passwordForm.addEventListener('submit', handlePasswordSubmit);
   }
+
+  bindClick('btn-logout', logout);
 }

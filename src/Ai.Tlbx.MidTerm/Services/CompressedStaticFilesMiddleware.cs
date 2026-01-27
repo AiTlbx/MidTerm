@@ -45,6 +45,20 @@ public sealed class CompressedStaticFilesMiddleware
         }
 
         var extension = Path.GetExtension(path);
+
+        // Handle extensionless paths - try .html
+        if (string.IsNullOrEmpty(extension))
+        {
+            var htmlPath = path + ".html";
+            var htmlBrPath = htmlPath + ".br";
+            var htmlFileInfo = _fileProvider.GetFileInfo(htmlBrPath.TrimStart('/'));
+            if (htmlFileInfo.Exists)
+            {
+                path = htmlPath;
+                extension = ".html";
+            }
+        }
+
         if (!CompressibleExtensions.TryGetValue(extension, out var contentType))
         {
             await _next(context);

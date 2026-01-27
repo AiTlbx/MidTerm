@@ -7,6 +7,12 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// Generates bulletproof update scripts for Windows, Linux, and macOS.
 /// Scripts include: aggressive process termination, file lock waiting,
 /// copy verification, rollback on failure, and detailed logging.
+///
+/// SYNC: Generated scripts use paths that MUST match:
+///   - SettingsService.cs (GetSettingsPath method)
+///   - LogPaths.cs (constants and GetSettingsDirectory method)
+///   - install.sh (PATH_CONSTANTS section)
+///   - install.ps1 (Path Constants section)
 /// </summary>
 public static class UpdateScriptGenerator
 {
@@ -36,6 +42,11 @@ public static class UpdateScriptGenerator
         // IMPORTANT: Binary dir != Settings dir on Windows
         // Binaries: C:\Program Files\MidTerm (installDir)
         // Settings: C:\ProgramData\MidTerm (settingsDir) for service mode, or user profile for user mode
+        //
+        // SYNC: These paths MUST match:
+        //   - install.ps1 (Path Constants section)
+        //   - SettingsService.cs (GetSettingsPath method)
+        //   - LogPaths.cs (GetSettingsDirectory method)
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? currentBinaryPath;
         var settingsDir = settingsDirectory;
         var newMtPath = Path.Combine(extractedDir, "mt.exe");
@@ -282,6 +293,7 @@ try {{
 
     # Backup credential files (critical for security persistence)
     # IMPORTANT: These are in SettingsDir, NOT InstallDir!
+    # SYNC: secrets.bin on Windows, secrets.json on Unix - must match SettingsService.cs!
     $settingsPath = Join-Path $SettingsDir 'settings.json'
     $secretsPath = Join-Path $SettingsDir 'secrets.bin'
     $certPath = Join-Path $SettingsDir 'midterm.pem'
@@ -619,7 +631,10 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         // - Config/secrets: /usr/local/etc/midterm/ (service) or ~/.midterm/ (user)
         // - Logs: /usr/local/var/log/ (service) or ~/.midterm/ (user)
         // The settingsDirectory parameter tells us which mode we're in.
-        // Path logic is centralized in LogPaths.cs - shell scripts must match.
+        //
+        // SYNC: These paths come from LogPaths.cs and MUST also match:
+        //   - install.sh (PATH_CONSTANTS section)
+        //   - SettingsService.cs (GetSettingsPath method)
         var installDir = Path.GetDirectoryName(currentBinaryPath) ?? "/usr/local/bin";
         var configDir = settingsDirectory;
 

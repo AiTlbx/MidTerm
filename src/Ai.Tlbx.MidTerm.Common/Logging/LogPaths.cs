@@ -1,9 +1,19 @@
 namespace Ai.Tlbx.MidTerm.Common.Logging;
 
+/// <summary>
+/// Centralized path constants for MidTerm directories.
+/// SYNC: These paths MUST match the following files:
+///   - install.sh (PATH_CONSTANTS section)
+///   - install.ps1 (Path Constants section)
+///   - UpdateScriptGenerator.cs (uses these constants via this class)
+///   - SettingsService.cs (GetSettingsPath method)
+/// </summary>
 public static class LogPaths
 {
+    // === UNIX SERVICE PATHS ===
+    // SYNC: Must match install.sh PATH_CONSTANTS section
     private const string UnixServiceLogDir = "/usr/local/var/log";
-    private const string UnixServiceSettingsDir = "/usr/local/etc/midterm";
+    private const string UnixServiceSettingsDir = "/usr/local/etc/midterm";  // lowercase 'midterm'
 
     public static string GetLogDirectory(bool isWindowsService, bool isUnixService = false)
     {

@@ -9,6 +9,7 @@ export {
   updateSecurityWarning,
   updatePasswordStatus,
   dismissSecurityWarning,
+  logout,
 } from './status';
 
 export {
