@@ -75,3 +75,15 @@ export function dismissSecurityWarning(): void {
     warning.classList.add('hidden');
   }
 }
+
+/**
+ * Logout: clear session and redirect to login page
+ */
+export async function logout(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch {
+    // Ignore errors - we're logging out anyway
+  }
+  window.location.href = '/login';
+}

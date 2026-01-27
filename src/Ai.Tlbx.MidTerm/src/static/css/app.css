@@ -1829,7 +1829,7 @@ html, body {
 
 @keyframes float {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
+    50% { transform: translateY(-10px); }
 }
 
 .empty-state p {
@@ -3095,13 +3095,21 @@ html, body {
 .login-logo {
     width: 80px;
     height: 80px;
+    max-width: 100%;
+    object-fit: contain;
     margin-bottom: 24px;
-    animation: logo-appear 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    animation: logo-appear 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+               logo-float 4s ease-in-out 0.8s infinite;
 }
 
 @keyframes logo-appear {
     0% { opacity: 0; transform: scale(0.8) translateY(20px); }
     100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes logo-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
 }
 
 .login-header {
