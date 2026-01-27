@@ -34,21 +34,32 @@ public sealed class SettingsService
         _secretStorage = SecretStorageFactory.Create(settingsDirectory, IsRunningAsService);
     }
 
+    /// <summary>
+    /// Returns the settings file path based on service mode.
+    /// SYNC: These paths MUST match:
+    ///   - install.sh (PATH_CONSTANTS section)
+    ///   - install.ps1 (Path Constants section)
+    ///   - LogPaths.cs (GetSettingsDirectory method)
+    ///   - UpdateScriptGenerator.cs (CONFIG_DIR variable)
+    /// </summary>
     private static string GetSettingsPath(bool isService)
     {
         if (isService)
         {
             if (OperatingSystem.IsWindows())
             {
+                // Windows service: %ProgramData%\MidTerm (typically C:\ProgramData\MidTerm)
                 var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
                 return Path.Combine(programData, "MidTerm", "settings.json");
             }
             else
             {
+                // Unix service: lowercase 'midterm' - MUST match install.sh
                 return "/usr/local/etc/midterm/settings.json";
             }
         }
 
+        // User mode: ~/.midterm
         var userDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var configDir = Path.Combine(userDir, ".midterm");
         return Path.Combine(configDir, "settings.json");

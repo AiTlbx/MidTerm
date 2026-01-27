@@ -26,6 +26,23 @@ OLD_HOST_SERVICE_NAME="MidTerm-host"
 OLD_LAUNCHD_HOST_LABEL="com.aitlbx.MidTerm-host"
 OLD_LAUNCHD_LABEL="com.aitlbx.MidTerm"
 
+# ============================================================================
+# PATH CONSTANTS - SYNC: These paths MUST match:
+#   - SettingsService.cs (GetSettingsPath method)
+#   - LogPaths.cs (constants and GetSettingsDirectory method)
+#   - UpdateScriptGenerator.cs (CONFIG_DIR variable in generated scripts)
+#   - install.ps1 (Path Constants section)
+# ============================================================================
+# Unix service mode paths (lowercase 'midterm' - critical!)
+UNIX_SERVICE_SETTINGS_DIR="/usr/local/etc/midterm"
+UNIX_SERVICE_LOG_DIR="/usr/local/var/log"
+UNIX_SERVICE_BIN_DIR="/usr/local/bin"
+# Unix user mode paths
+UNIX_USER_SETTINGS_DIR="$HOME/.midterm"
+# Secrets file (NOT secrets.bin - that's Windows only!)
+UNIX_SECRETS_FILENAME="secrets.json"
+# ============================================================================
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -290,14 +307,13 @@ check_existing_password_file() {
     local mode="$1"  # "service" or "user"
     local secrets_path settings_path
 
-    # NOTE: Unix uses secrets.json, Windows uses secrets.bin
-    # This matches UnixFileSecretStorage.cs
+    # Uses PATH_CONSTANTS defined above - keep in sync!
     if [ "$mode" = "service" ]; then
-        secrets_path="/usr/local/etc/midterm/secrets.json"
-        settings_path="/usr/local/etc/midterm/settings.json"
+        secrets_path="$UNIX_SERVICE_SETTINGS_DIR/$UNIX_SECRETS_FILENAME"
+        settings_path="$UNIX_SERVICE_SETTINGS_DIR/settings.json"
     else
-        secrets_path="$HOME/.midterm/secrets.json"
-        settings_path="$HOME/.midterm/settings.json"
+        secrets_path="$UNIX_USER_SETTINGS_DIR/$UNIX_SECRETS_FILENAME"
+        settings_path="$UNIX_USER_SETTINGS_DIR/settings.json"
     fi
 
     # Check secrets.json exists and has content
@@ -315,9 +331,9 @@ check_existing_password_file() {
 }
 
 get_existing_password_hash() {
-    # NOTE: C# uses lowercase /usr/local/etc/midterm - must match!
-    local settings_dir="/usr/local/etc/midterm"
-    local secrets_path="$settings_dir/secrets.json"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    local settings_dir="$UNIX_SERVICE_SETTINGS_DIR"
+    local secrets_path="$settings_dir/$UNIX_SECRETS_FILENAME"
     local settings_path="$settings_dir/settings.json"
 
     # Check secrets.json first (preferred secure storage)
@@ -650,7 +666,8 @@ generate_certificate() {
 }
 
 write_service_settings() {
-    local config_dir="/usr/local/etc/midterm"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    local config_dir="$UNIX_SERVICE_SETTINGS_DIR"
     local settings_path="$config_dir/settings.json"
     local old_settings_path="$config_dir/settings.json.old"
 
@@ -693,7 +710,8 @@ write_service_settings() {
 }
 
 write_user_settings() {
-    local config_dir="$HOME/.midterm"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    local config_dir="$UNIX_USER_SETTINGS_DIR"
     local settings_path="$config_dir/settings.json"
     local old_settings_path="$config_dir/settings.json.old"
 
@@ -725,8 +743,9 @@ write_user_settings() {
 }
 
 get_existing_user_password_hash() {
-    local settings_dir="$HOME/.midterm"
-    local secrets_path="$settings_dir/secrets.json"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    local settings_dir="$UNIX_USER_SETTINGS_DIR"
+    local secrets_path="$settings_dir/$UNIX_SECRETS_FILENAME"
     local settings_path="$settings_dir/settings.json"
 
     # Check secrets.json first (preferred secure storage)
@@ -1014,9 +1033,10 @@ install_binary() {
 }
 
 install_as_service() {
-    local install_dir="/usr/local/bin"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    local install_dir="$UNIX_SERVICE_BIN_DIR"
     local lib_dir="/usr/local/lib/MidTerm"
-    local settings_dir="/usr/local/etc/midterm"
+    local settings_dir="$UNIX_SERVICE_SETTINGS_DIR"
 
     # Check for root FIRST - don't initialize logging until elevated (requires write to /usr/local)
     if [ "$EUID" -ne 0 ]; then
@@ -1420,7 +1440,8 @@ EOF
 
 install_as_user() {
     local install_dir="$HOME/.local/bin"
-    local settings_dir="$HOME/.midterm"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    local settings_dir="$UNIX_USER_SETTINGS_DIR"
 
     # Initialize logging
     init_log "user"

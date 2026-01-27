@@ -88,6 +88,23 @@ $AssetPattern = "mt-win-x64.zip"
 # Certificate subject CN - must match CertificateGenerator.CertificateSubject in C#
 $CertificateSubject = "CN=ai.tlbx.midterm"
 
+# ============================================================================
+# PATH CONSTANTS - SYNC: These paths MUST match:
+#   - SettingsService.cs (GetSettingsPath method)
+#   - LogPaths.cs (constants and GetSettingsDirectory method)
+#   - UpdateScriptGenerator.cs (SettingsDir variable in generated scripts)
+#   - install.sh (PATH_CONSTANTS section)
+# ============================================================================
+# Windows service mode: %ProgramData%\MidTerm (typically C:\ProgramData\MidTerm)
+$WIN_SERVICE_SETTINGS_DIR = "$env:ProgramData\MidTerm"
+$WIN_SERVICE_INSTALL_DIR = "$env:ProgramFiles\MidTerm"
+# Windows user mode: %LOCALAPPDATA%\MidTerm and %USERPROFILE%\.midterm
+$WIN_USER_INSTALL_DIR = "$env:LOCALAPPDATA\MidTerm"
+$WIN_USER_SETTINGS_DIR = "$env:USERPROFILE\.midterm"
+# Secrets file (secrets.bin on Windows, secrets.json on Unix)
+$WIN_SECRETS_FILENAME = "secrets.bin"
+# ============================================================================
+
 function Write-Header
 {
     Write-Host ""
@@ -117,8 +134,8 @@ function Get-CurrentUserInfo
 function Test-ExistingPassword
 {
     # Check if password exists in secure storage (secrets.bin)
-    # This file contains DPAPI-encrypted secrets - we can check if password_hash key exists
-    $secretsPath = "$env:ProgramData\MidTerm\secrets.bin"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    $secretsPath = "$WIN_SERVICE_SETTINGS_DIR\$WIN_SECRETS_FILENAME"
     if (Test-Path $secretsPath)
     {
         try
@@ -133,7 +150,7 @@ function Test-ExistingPassword
     }
 
     # Legacy: check settings.json (old broken path - will be migrated)
-    $settingsPath = "$env:ProgramData\MidTerm\settings.json"
+    $settingsPath = "$WIN_SERVICE_SETTINGS_DIR\settings.json"
     if (Test-Path $settingsPath)
     {
         try
@@ -626,7 +643,8 @@ function Write-ServiceSettings
         [string]$CertPath = $null
     )
 
-    $configDir = "$env:ProgramData\MidTerm"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    $configDir = $WIN_SERVICE_SETTINGS_DIR
     $settingsPath = Join-Path $configDir "settings.json"
     $oldSettingsPath = Join-Path $configDir "settings.json.old"
 
@@ -668,7 +686,7 @@ function Write-ServiceSettings
     if ($PasswordHash)
     {
         $mtPath = Join-Path $InstallDir "mt.exe"
-        $secretsPath = "$env:ProgramData\MidTerm\secrets.bin"
+        $secretsPath = "$WIN_SERVICE_SETTINGS_DIR\$WIN_SECRETS_FILENAME"
         try
         {
             $PasswordHash | & $mtPath --write-secret password_hash --service-mode 2>&1 | Out-Null
@@ -706,7 +724,8 @@ function Install-MidTerm
 
     if ($AsService)
     {
-        $installDir = "$env:ProgramFiles\MidTerm"
+        # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+        $installDir = $WIN_SERVICE_INSTALL_DIR
         Write-Log "Install directory: $installDir"
 
         # Stop and remove old two-service architecture if present
@@ -750,7 +769,8 @@ function Install-MidTerm
     }
     else
     {
-        $installDir = "$env:LOCALAPPDATA\MidTerm"
+        # Uses PATH_CONSTANTS defined above
+        $installDir = $WIN_USER_INSTALL_DIR
     }
 
     # Create install directory
@@ -903,7 +923,8 @@ function Install-MidTerm
 
     Write-Log "=== PHASE 4: Certificate configuration ==="
     # Always generate certificate now that mt.exe is installed (always HTTPS)
-    $settingsDir = if ($AsService) { "$env:ProgramData\MidTerm" } else { "$env:USERPROFILE\.midterm" }
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    $settingsDir = if ($AsService) { $WIN_SERVICE_SETTINGS_DIR } else { $WIN_USER_SETTINGS_DIR }
     Write-Log "Settings directory: $settingsDir"
     $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService -TrustCert $TrustCert
     if (-not $CertPath)
@@ -964,7 +985,8 @@ function Install-MidTerm
     else
     {
         # Write user settings
-        $userSettingsDir = Join-Path $env:USERPROFILE ".midterm"
+        # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+        $userSettingsDir = $WIN_USER_SETTINGS_DIR
         $userSettingsPath = Join-Path $userSettingsDir "settings.json"
         if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
 
@@ -1331,7 +1353,8 @@ for ($i = 0; $i -lt $maxAttempts; $i++)
 
 if ($asService)
 {
-    $installDir = "$env:ProgramFiles\MidTerm"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    $installDir = $WIN_SERVICE_INSTALL_DIR
 
     # Check for existing password in secure storage (preserve on update)
     if (Test-ExistingPassword)
@@ -1433,8 +1456,9 @@ if ($asService)
 else
 {
     # User install - still require password
-    $userSettingsDir = Join-Path $env:USERPROFILE ".midterm"
-    $userSecretsPath = Join-Path $userSettingsDir "secrets.bin"
+    # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
+    $userSettingsDir = $WIN_USER_SETTINGS_DIR
+    $userSecretsPath = Join-Path $userSettingsDir $WIN_SECRETS_FILENAME
 
     # Check for existing password in secure storage
     $hasExistingPassword = $false
