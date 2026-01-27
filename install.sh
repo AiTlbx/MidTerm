@@ -290,15 +290,17 @@ check_existing_password_file() {
     local mode="$1"  # "service" or "user"
     local secrets_path settings_path
 
+    # NOTE: Unix uses secrets.json, Windows uses secrets.bin
+    # This matches UnixFileSecretStorage.cs
     if [ "$mode" = "service" ]; then
-        secrets_path="/usr/local/etc/MidTerm/secrets.bin"
+        secrets_path="/usr/local/etc/MidTerm/secrets.json"
         settings_path="/usr/local/etc/MidTerm/settings.json"
     else
-        secrets_path="$HOME/.midterm/secrets.bin"
+        secrets_path="$HOME/.midterm/secrets.json"
         settings_path="$HOME/.midterm/settings.json"
     fi
 
-    # Check secrets.bin exists and has content
+    # Check secrets.json exists and has content
     if [ -f "$secrets_path" ] && [ -s "$secrets_path" ]; then
         return 0
     fi
@@ -314,11 +316,12 @@ check_existing_password_file() {
 
 get_existing_password_hash() {
     local settings_dir="/usr/local/etc/MidTerm"
-    local secrets_path="$settings_dir/secrets.bin"
+    # NOTE: Unix uses secrets.json, Windows uses secrets.bin
+    local secrets_path="$settings_dir/secrets.json"
     local settings_path="$settings_dir/settings.json"
     local mt_path="/usr/local/bin/mt"
 
-    # Check secrets.bin first (preferred secure storage)
+    # Check secrets.json first (preferred secure storage)
     if [ -f "$secrets_path" ] && [ -f "$mt_path" ]; then
         local hash=$("$mt_path" --read-secret password_hash --service-mode 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
@@ -661,7 +664,7 @@ write_service_settings() {
         mv "$settings_path" "$old_settings_path"
     fi
 
-    # Build JSON - passwordHash NOT included (stored in secrets.bin)
+    # Build JSON - passwordHash NOT included (stored in secure secrets storage)
     local json_content="{
   \"runAsUser\": \"$INSTALLING_USER\",
   \"authenticationEnabled\": true"
@@ -702,7 +705,7 @@ write_user_settings() {
         mv "$settings_path" "$old_settings_path"
     fi
 
-    # Build JSON - passwordHash NOT included (stored in secrets.bin)
+    # Build JSON - passwordHash NOT included (stored in secure secrets storage)
     local json_content="{
   \"authenticationEnabled\": true"
 
@@ -723,11 +726,12 @@ write_user_settings() {
 
 get_existing_user_password_hash() {
     local settings_dir="$HOME/.midterm"
-    local secrets_path="$settings_dir/secrets.bin"
+    # NOTE: Unix uses secrets.json, Windows uses secrets.bin
+    local secrets_path="$settings_dir/secrets.json"
     local settings_path="$settings_dir/settings.json"
     local mt_path="$HOME/.local/bin/mt"
 
-    # Check secrets.bin first (preferred secure storage)
+    # Check secrets.json first (preferred secure storage)
     if [ -f "$secrets_path" ] && [ -f "$mt_path" ]; then
         local hash=$("$mt_path" --read-secret password_hash 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
@@ -1078,13 +1082,13 @@ install_as_service() {
         exit 1
     fi
 
-    # Store password in secrets.bin (secure storage)
+    # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
     if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode 2>/dev/null; then
-            log "Password stored in secrets.bin"
+            log "Password stored in secure secrets storage"
             echo -e "  ${GRAY}Password: stored securely${NC}"
         else
-            log "Failed to store password in secrets.bin" "WARN"
+            log "Failed to store password in secure storage" "WARN"
             echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
         fi
     fi
@@ -1257,61 +1261,86 @@ EOF
     log "Waiting for service to start..."
     sleep 2
 
-    # Check if service is running (PID > 0 means running)
-    local service_info
-    service_info=$(launchctl list "$LAUNCHD_LABEL" 2>/dev/null || true)
-    log "launchctl list output: $service_info"
+    # Check if service is running
+    # Strategy: Use pgrep first (most reliable), then launchctl list as fallback
+    local pid=""
+    local last_exit=""
 
-    local pid
-    pid=$(echo "$service_info" | awk 'NR==1 {print $1}')
-    log "Parsed PID: $pid"
+    # Method 1: pgrep - directly checks if the process is running
+    pid=$(pgrep -f "^${install_dir}/mt" 2>/dev/null | head -1 || true)
+    if [ -z "$pid" ]; then
+        # Also try without ^ anchor (some systems don't show full path)
+        pid=$(pgrep -f "/mt$" 2>/dev/null | head -1 || true)
+    fi
 
-    if [ -n "$pid" ] && [ "$pid" != "-" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
-        log "Service started successfully with PID $pid"
+    if [ -n "$pid" ]; then
+        log "Service started successfully with PID $pid (via pgrep)"
         echo -e "  ${GREEN}Service started successfully (PID $pid)${NC}"
     else
-        # Service registered but not running - check for errors
-        local last_exit
-        last_exit=$(echo "$service_info" | awk 'NR==1 {print $2}')
-        log "Service not running. Last exit code: $last_exit" "WARN"
+        # Method 2: Parse launchctl list output (JSON-like format)
+        # Note: launchctl list $LABEL returns JSON-like dict, NOT tabular format
+        local service_info
+        service_info=$(launchctl list "$LAUNCHD_LABEL" 2>&1 || true)
+        log "launchctl list output: $service_info"
 
-        if [ -n "$last_exit" ] && [ "$last_exit" != "0" ] 2>/dev/null; then
-            log "Service failed to start with exit code $last_exit" "ERROR"
-            echo -e "  ${RED}Service failed to start (exit code: $last_exit)${NC}"
-        else
-            log "Service registered but may still be starting" "WARN"
-            echo -e "  ${YELLOW}Service registered but may still be starting...${NC}"
-        fi
-        echo -e "  ${GRAY}Check logs: tail -f /usr/local/var/log/MidTerm.log${NC}"
+        # Extract PID from JSON-like output: "PID" = 12345;
+        pid=$(echo "$service_info" | grep -o '"PID"[[:space:]]*=[[:space:]]*[0-9]*' | grep -o '[0-9]*' || true)
+        # Extract LastExitStatus for error reporting
+        last_exit=$(echo "$service_info" | grep -o '"LastExitStatus"[[:space:]]*=[[:space:]]*[0-9]*' | grep -o '[0-9]*' || true)
 
-        # Additional diagnostics
-        log "=== Service Diagnostics ==="
-        log "Checking if mt binary exists and is executable..."
-        if [ -f "$install_dir/mt" ]; then
-            log "  mt exists: yes"
-            log "  mt executable: $([ -x "$install_dir/mt" ] && echo 'yes' || echo 'no')"
-            log "  mt size: $(stat -f%z "$install_dir/mt" 2>/dev/null || stat -c%s "$install_dir/mt" 2>/dev/null) bytes"
-        else
-            log "  mt exists: NO" "ERROR"
-        fi
+        log "Parsed PID: $pid, LastExitStatus: $last_exit"
 
-        log "Checking plist file..."
-        if [ -f "$plist_path" ]; then
-            log "  plist exists: yes"
-            log "  plist owner: $(stat -f '%Su:%Sg' "$plist_path" 2>/dev/null || stat -c '%U:%G' "$plist_path" 2>/dev/null)"
+        if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
+            log "Service started successfully with PID $pid (via launchctl)"
+            echo -e "  ${GREEN}Service started successfully (PID $pid)${NC}"
         else
-            log "  plist exists: NO" "ERROR"
-        fi
+            # Service registered but not running - check for errors
+            log "Service not running. Last exit code: $last_exit" "WARN"
 
-        log "Checking MidTerm.log for errors..."
-        if [ -f "/usr/local/var/log/MidTerm.log" ]; then
-            log "Last 10 lines of MidTerm.log:"
-            tail -10 "/usr/local/var/log/MidTerm.log" 2>/dev/null | while read -r line; do
-                log "  $line"
-            done
-        else
-            log "  MidTerm.log does not exist yet"
+            if [ -n "$last_exit" ] && [ "$last_exit" != "0" ] 2>/dev/null; then
+                log "Service failed to start with exit code $last_exit" "ERROR"
+                echo -e "  ${RED}Service failed to start (exit code: $last_exit)${NC}"
+            else
+                log "Service registered but may still be starting" "WARN"
+                echo -e "  ${YELLOW}Service registered but may still be starting...${NC}"
+            fi
+            echo -e "  ${GRAY}Check logs: tail -f /usr/local/var/log/MidTerm.log${NC}"
         fi
+    fi
+
+    # Skip diagnostics section if service is running
+    if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
+        log "=== PHASE 5 complete ==="
+        return 0
+    fi
+
+    # Additional diagnostics (only run if service failed to start)
+    log "=== Service Diagnostics ==="
+    log "Checking if mt binary exists and is executable..."
+    if [ -f "$install_dir/mt" ]; then
+        log "  mt exists: yes"
+        log "  mt executable: $([ -x "$install_dir/mt" ] && echo 'yes' || echo 'no')"
+        log "  mt size: $(stat -f%z "$install_dir/mt" 2>/dev/null || stat -c%s "$install_dir/mt" 2>/dev/null) bytes"
+    else
+        log "  mt exists: NO" "ERROR"
+    fi
+
+    log "Checking plist file..."
+    if [ -f "$plist_path" ]; then
+        log "  plist exists: yes"
+        log "  plist owner: $(stat -f '%Su:%Sg' "$plist_path" 2>/dev/null || stat -c '%U:%G' "$plist_path" 2>/dev/null)"
+    else
+        log "  plist exists: NO" "ERROR"
+    fi
+
+    log "Checking MidTerm.log for errors..."
+    if [ -f "/usr/local/var/log/MidTerm.log" ]; then
+        log "Last 10 lines of MidTerm.log:"
+        tail -10 "/usr/local/var/log/MidTerm.log" 2>/dev/null | while read -r line; do
+            log "  $line"
+        done
+    else
+        log "  MidTerm.log does not exist yet"
     fi
 
     log "=== PHASE 5 complete ==="
@@ -1419,13 +1448,13 @@ install_as_user() {
         exit 1
     fi
 
-    # Store password in secrets.bin (secure storage)
+    # Store password in secure secrets storage (secrets.json on Unix, secrets.bin on Windows)
     if [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
         if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash 2>/dev/null; then
-            log "Password stored in secrets.bin"
+            log "Password stored in secure secrets storage"
             echo -e "  ${GRAY}Password: stored securely${NC}"
         else
-            log "Failed to store password in secrets.bin" "WARN"
+            log "Failed to store password in secure storage" "WARN"
             echo -e "  ${YELLOW}Warning: Could not store password in secure storage${NC}"
         fi
     fi
