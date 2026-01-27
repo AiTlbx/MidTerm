@@ -648,8 +648,10 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
             ? $"launchctl bootstrap system /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || launchctl load /Library/LaunchDaemons/{LaunchdLabel}.plist 2>/dev/null || true"
             : $"systemctl start {SystemdService} 2>/dev/null || true";
 
+        // NOTE: launchctl print only checks if service is REGISTERED, not RUNNING
+        // Use pgrep to actually verify the process is running
         var checkServiceCmd = isMacOs
-            ? $"launchctl print system/{LaunchdLabel} >/dev/null 2>&1"
+            ? $"pgrep -f \"$CURRENT_MT\" >/dev/null 2>&1"
             : $"systemctl is-active --quiet {SystemdService}";
 
         var script = $@"#!/bin/bash
@@ -1127,26 +1129,46 @@ fi
 # Try to start service
 log ""Starting service...""
 {startServiceCmd}
-sleep 8
+sleep 5
 
-# Check if service is running
-if {checkServiceCmd}; then
-    log ""Service started successfully""
+# Check if process is running (pgrep is reliable, unlike launchctl print)
+MT_PID=$(pgrep -f ""$CURRENT_MT"" 2>/dev/null | head -1 || true)
+
+if [[ -n ""$MT_PID"" ]]; then
+    log ""Service started successfully (PID: $MT_PID)""
     STARTED_OK=true
 else
-    # Service not running, start directly
-    log ""Service not running, starting mt directly...""
-    nohup ""$CURRENT_MT"" > /dev/null 2>&1 &
-    sleep 8
+    # Service command didn't start the process - try direct start as fallback
+    log ""Service not running, starting mt directly..."" ""WARN""
+    nohup ""$CURRENT_MT"" > ""$MAIN_LOG"" 2>&1 &
+    sleep 3
 
-    if pgrep -f ""$CURRENT_MT"" > /dev/null 2>&1; then
-        log ""mt started successfully (PID: $(pgrep -f ""$CURRENT_MT"" | head -1))""
+    MT_PID=$(pgrep -f ""$CURRENT_MT"" 2>/dev/null | head -1 || true)
+    if [[ -n ""$MT_PID"" ]]; then
+        log ""mt started directly (PID: $MT_PID)""
         STARTED_OK=true
-    else
-        log ""mt failed to start"" ""ERROR""
-        write_result false ""mt failed to start after installation""
-        exit 1
     fi
+fi
+
+if [[ ""$STARTED_OK"" != ""true"" ]]; then
+    log ""mt failed to start"" ""ERROR""
+
+    # Diagnostics
+    log ""=== Startup Failure Diagnostics ===""
+    log ""Binary exists: $([ -f ""$CURRENT_MT"" ] && echo 'yes' || echo 'NO')""
+    log ""Binary executable: $([ -x ""$CURRENT_MT"" ] && echo 'yes' || echo 'NO')""
+    if $IS_MACOS; then
+        log ""Codesign: $(codesign -v ""$CURRENT_MT"" 2>&1 || echo 'FAILED')""
+    fi
+    if [[ -f ""$MAIN_LOG"" ]]; then
+        log ""Last 10 lines of $MAIN_LOG:""
+        tail -10 ""$MAIN_LOG"" 2>/dev/null | while read -r line; do
+            log ""  $line""
+        done
+    fi
+
+    write_result false ""mt failed to start - check $MAIN_LOG for details""
+    exit 1
 fi
 
 # === POST-UPDATE CERTIFICATE VERIFICATION ===
