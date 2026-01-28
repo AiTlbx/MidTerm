@@ -4077,11 +4077,48 @@ html, body {
     font-weight: 500;
 }
 
-.platform-panel {
-    margin-top: 16px;
+.platform-group {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
 }
 
-.platform-panel.hidden {
+.platform-group:first-of-type {
+    margin-top: 16px;
+    padding-top: 0;
+    border-top: none;
+}
+
+.platform-group-title {
+    margin: 0 0 16px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.platform-panel {
+    margin-top: 16px;
+    padding: 16px;
+    background-color: var(--bg-primary);
+    border-radius: 6px;
+}
+
+.platform-panel h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.detected-badge {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent-green);
+    margin-left: 8px;
+}
+
+.detected-badge.hidden {
     display: none;
 }
 
