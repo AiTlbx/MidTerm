@@ -1117,9 +1117,9 @@ html, body {
     inset: 0;
 }
 
-/* Focus indicator for active pane */
+/* Focus indicator for active pane - subtle grey */
 .layout-leaf.focused {
-    outline: 2px solid var(--accent-blue);
+    outline: 2px solid var(--border-color-light);
     outline-offset: -2px;
 }
 
@@ -1134,11 +1134,16 @@ html, body {
     display: none;
 }
 
+/* Animated marching ants for dock zones */
+@keyframes marching-ants {
+    0% { background-position: 0 0, 0 100%, 0 0, 100% 0; }
+    100% { background-position: 40px 0, -40px 100%, 0 -40px, 100% 40px; }
+}
+
 /* Dock zone base styles */
 .dock-zone {
     position: absolute;
     background-color: transparent;
-    transition: background-color 0.15s ease;
 }
 
 /* Zone positions - each takes 25% of the edge */
@@ -1170,39 +1175,43 @@ html, body {
     width: 25%;
 }
 
-/* Highlighted zone - visual feedback for drop target */
+/* Highlighted zone - gold marching ants border */
 .dock-zone.highlighted {
-    background-color: var(--accent-blue-25);
-    border: 2px dashed var(--accent-blue);
+    background-color: rgba(255, 193, 7, 0.08);
     border-radius: var(--radius-md);
+    background-image:
+        repeating-linear-gradient(90deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px),
+        repeating-linear-gradient(90deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px),
+        repeating-linear-gradient(0deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px),
+        repeating-linear-gradient(0deg, var(--accent-gold) 0, var(--accent-gold) 6px, transparent 6px, transparent 12px);
+    background-size: 12px 2px, 12px 2px, 2px 12px, 2px 12px;
+    background-position: 0 0, 0 100%, 0 0, 100% 0;
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    animation: marching-ants 0.4s linear infinite;
 }
 
-/* Center indicator - shows target session */
+/* Center indicator - subtle outline for target area */
 .dock-center {
     position: absolute;
     top: 25%;
     left: 25%;
     right: 25%;
     bottom: 25%;
-    border: 1px solid var(--border-color);
+    border: 1px dashed var(--border-color);
     border-radius: var(--radius-md);
-    background-color: var(--bg-tertiary);
+    background-color: transparent;
 }
 
-/* Sidebar session item - layout indicator */
+/* Sessions in layout - visual grouping */
+.session-item.in-layout {
+    background-color: var(--bg-tertiary);
+    margin-left: 6px;
+    border-left: 2px solid var(--border-color-light);
+}
+
+/* Hide layout badge - visual grouping is enough */
 .session-item .layout-badge {
     display: none;
-    margin-left: 4px;
-    padding: 1px 4px;
-    font-size: 9px;
-    background-color: var(--accent-blue-15);
-    color: var(--accent-blue);
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-}
-
-.session-item.in-layout .layout-badge {
-    display: inline-block;
 }
 
 /* Undock button - visible when session is in layout */
