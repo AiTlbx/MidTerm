@@ -445,6 +445,7 @@ function filterLayoutToValidSessions(node: LayoutNode | null): LayoutNode | null
 /**
  * Restore layout from localStorage.
  * Validates that sessions still exist before restoring.
+ * Falls back to separate sessions on any failure.
  */
 export function restoreLayoutFromStorage(): void {
   const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -452,34 +453,51 @@ export function restoreLayoutFromStorage(): void {
 
   try {
     const layout = JSON.parse(stored) as { root: LayoutNode | null };
-    if (!layout.root) return;
+    if (!layout.root) {
+      clearLayoutStorage();
+      return;
+    }
 
     // Filter to only valid (existing) sessions
     const filteredRoot = filterLayoutToValidSessions(layout.root);
 
     // Need at least 2 sessions for a layout
-    if (filteredRoot && filteredRoot.type === 'split') {
-      const ids: string[] = [];
-      collectSessionIdsFromNode(filteredRoot, ids);
-      if (ids.length >= 2) {
-        $layout.set({ root: filteredRoot });
+    if (!filteredRoot || filteredRoot.type !== 'split') {
+      clearLayoutStorage();
+      return;
+    }
 
-        // Restore focused session if valid
-        const focusedId = localStorage.getItem(FOCUSED_STORAGE_KEY);
-        if (focusedId && ids.includes(focusedId)) {
-          $focusedSessionId.set(focusedId);
-          $activeSessionId.set(focusedId);
-        } else {
-          $focusedSessionId.set(ids[0] ?? null);
-          $activeSessionId.set(ids[0] ?? null);
-        }
-      }
+    const ids: string[] = [];
+    collectSessionIdsFromNode(filteredRoot, ids);
+    if (ids.length < 2) {
+      clearLayoutStorage();
+      return;
+    }
+
+    // Restore layout
+    $layout.set({ root: filteredRoot });
+
+    // Restore focused session if valid
+    const focusedId = localStorage.getItem(FOCUSED_STORAGE_KEY);
+    if (focusedId && ids.includes(focusedId)) {
+      $focusedSessionId.set(focusedId);
+      $activeSessionId.set(focusedId);
+    } else {
+      $focusedSessionId.set(ids[0] ?? null);
+      $activeSessionId.set(ids[0] ?? null);
     }
   } catch {
-    // Invalid JSON, ignore
-    localStorage.removeItem(LAYOUT_STORAGE_KEY);
-    localStorage.removeItem(FOCUSED_STORAGE_KEY);
+    // Any error - clear storage and fall back to separate sessions
+    clearLayoutStorage();
   }
+}
+
+/**
+ * Clear layout data from localStorage.
+ */
+function clearLayoutStorage(): void {
+  localStorage.removeItem(LAYOUT_STORAGE_KEY);
+  localStorage.removeItem(FOCUSED_STORAGE_KEY);
 }
 
 /**
